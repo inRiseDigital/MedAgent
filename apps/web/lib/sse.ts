@@ -16,9 +16,9 @@
  * 3. On error/close (including the server's 15-min max stream age), fetch
  *    a FRESH ticket and reconnect with exponential backoff + jitter.
  *
- * S1 scaffold — the BFF ticket route (/api/sse/ticket) and notify-service
- * land in S2 per docs/solution/11; this wrapper is complete enough for the
- * queue page to wire against.
+ * The BFF ticket route (/api/sse/ticket) and notify-service issuance
+ * (POST /notify/ticket) now exist; this wrapper is what the queue page wires
+ * against. Live end-to-end wiring to the queue UI lands in S3 (06 §3).
  */
 
 export type ConnectionState = "connecting" | "open" | "reconnecting" | "closed";

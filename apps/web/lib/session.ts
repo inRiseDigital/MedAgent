@@ -1,20 +1,16 @@
 /*
- * S1 scaffold — BFF session model stub, completed in S2 per
- * docs/solution/02 §4 and 06 §2.2 (ADR W-2).
+ * BFF session model — EDGE-SAFE surface only.
  *
- * Design being implemented:
- * - apps/web is a CONFIDENTIAL OIDC client of Keycloak (Auth Code + PKCE).
- * - Access/refresh tokens live in an ENCRYPTED SERVER-SIDE session record
- *   (Redis-backed, SESSION_REDIS_URL), keyed by the __Host-session cookie.
- *   Tokens NEVER reach browser JavaScript — the prototype's localStorage
- *   model is explicitly rejected (06 §2.1).
- * - Silent refresh happens server-side from the session's refresh token;
- *   idle/max lifetimes follow Keycloak SSO settings (12 h max, 30 min idle
- *   for doctor roles — 02).
+ * apps/web is a CONFIDENTIAL OIDC client of Keycloak (Auth Code + PKCE).
+ * Access/refresh tokens live in an encrypted server-side record (Redis),
+ * keyed by the __Host-session cookie; tokens NEVER reach browser JavaScript
+ * (docs/solution/06 §2.1, 02 §4 ADR W-2).
  *
- * This module stays edge-safe: proxy.ts imports the cookie name and the
- * cheap presence check; full validation (Redis lookup, expiry, roles) is
- * S2 work and runs here + in route handlers.
+ * This module is imported by proxy.ts, which runs on the edge runtime, so it
+ * must stay free of node:crypto / redis. The actual session store (record
+ * lookup, decryption, silent refresh) lives in lib/session-store.ts
+ * (Node-only, "server-only") and is imported exclusively by route handlers
+ * and server components.
  */
 import type { NextRequest } from "next/server";
 
@@ -50,21 +46,6 @@ export function hasSessionCookie(request: NextRequest): boolean {
   return Boolean(request.cookies.get(SESSION_COOKIE)?.value);
 }
 
-/**
- * Resolve and validate the server-side session record for this request.
- * S2: look up the cookie value in Redis, decrypt, check expiry, refresh
- * the access token if stale, return roles for route-group mapping.
- */
-export async function getSession(): Promise<Session | null> {
-  // S1 scaffold — no session store yet; every caller must treat null as
-  // "unauthenticated" (implemented in S2 per docs/solution/11).
-  return null;
-}
-
-/**
- * S2: return the session's current access token for server-side attachment
- * to ts-sdk calls (BFF pattern — the browser never sees it).
- */
-export async function getAccessToken(): Promise<string | null> {
-  return null;
-}
+// Server-side session resolution (record lookup, silent refresh, access-token
+// retrieval) lives in lib/session-store.ts — Node-only, never imported here so
+// this module stays edge-safe for proxy.ts.

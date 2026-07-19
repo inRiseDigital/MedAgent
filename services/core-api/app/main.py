@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from app.auth import JWKSCache
 from app.config import Settings
 from app.logging_config import configure_logging
-from app.routers import face_events, patients, queue
+from app.routers import authz, face_events, patients, queue
 from app.telemetry import configure_telemetry
 
 API_V1_PREFIX = "/api/v1"
@@ -56,6 +56,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # SSE ticket issuance lives in notify-service (02 §11) — it owns the full
     # ticket lifecycle (issue + redeem) since it holds the Redis pub/sub and the
     # channel routing. core-api does not issue SSE tickets.
+    #
+    # Care-relationship decision service for the HAPI authz interceptor
+    # (02 §7.2, 03 §5.1). Mounted at /internal/* — NOT /api/v1 and never routed
+    # through the public gateway; reachable only on the internal service network.
+    app.include_router(authz.router)
 
     @app.get("/healthz", tags=["health"])
     async def healthz() -> dict[str, str]:
