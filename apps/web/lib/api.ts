@@ -1,0 +1,65 @@
+/*
+ * Server-side API helper for the BFF (Node runtime only). Attaches the
+ * session's access token to service calls — the browser never sees the token
+ * (docs/solution/06 §2.2 ADR W-2). Used by server components and BFF route
+ * handlers; never import from a client component.
+ *
+ * S1 talks to core-api directly by its dev URL. In staging+ these calls route
+ * through the gateway (01 §1); only the base URL changes.
+ */
+import "server-only";
+
+import { getAccessToken } from "@/lib/session-store";
+
+export class ApiError extends Error {
+  constructor(
+    readonly status: number,
+    message: string,
+  ) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
+function coreApiBaseUrl(): string {
+  return (process.env.CORE_API_URL ?? "http://localhost:8001").replace(/\/$/, "");
+}
+
+/**
+ * Current facility for the signed-in user. S1: a single-hospital pilot default
+ * from env. TODO(S2): derive from the staff member's Keycloak facility claim
+ * (02 §3) so a clinician only ever sees their own facility's queue.
+ */
+export function currentFacilityId(): string {
+  return process.env.PILOT_FACILITY_ID ?? "pilot-hospital-1";
+}
+
+async function coreApiGet<T>(path: string): Promise<T> {
+  const token = await getAccessToken();
+  if (!token) throw new ApiError(401, "unauthenticated");
+
+  const res = await fetch(`${coreApiBaseUrl()}${path}`, {
+    headers: { authorization: `Bearer ${token}` },
+    cache: "no-store",
+  });
+  if (!res.ok) throw new ApiError(res.status, `core-api ${path} -> ${res.status}`);
+  return (await res.json()) as T;
+}
+
+export interface QueueRow {
+  id: string;
+  patient_id: string;
+  facility_id: string;
+  state: "waiting" | "in_consultation" | "done" | "manual_verification";
+  arrival_ts: string;
+  source: "face" | "manual";
+  sequence: number;
+  display_name: string;
+  phn_fragment: string;
+  needs_manual_verification: boolean;
+}
+
+export async function fetchQueue(facilityId: string): Promise<QueueRow[]> {
+  const params = new URLSearchParams({ facility_id: facilityId });
+  return coreApiGet<QueueRow[]>(`/api/v1/queue?${params.toString()}`);
+}

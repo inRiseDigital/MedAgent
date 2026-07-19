@@ -32,6 +32,18 @@ class QueueEntryOut(BaseModel):
     source: CheckinSource
 
 
+class QueueRowOut(QueueEntryOut):
+    """Enriched queue row for the doctor workspace (06 §3): adds server-assigned
+    arrival sequence and minimal patient display fields. Display-only demographic
+    data — opening the clinical record still requires a care-relationship grant
+    (02 §7)."""
+
+    sequence: int
+    display_name: str
+    phn_fragment: str
+    needs_manual_verification: bool
+
+
 class ManualCheckinRequest(BaseModel):
     patient_id: UUID
     facility_id: str
@@ -52,23 +64,45 @@ def _to_out(row: QueueEntry) -> QueueEntryOut:
     )
 
 
-@router.get("", response_model=list[QueueEntryOut])
+def _phn_fragment(phn: str) -> str:
+    """Last four digits only — enough to disambiguate at a glance without
+    exposing the full identifier in the queue view (06 §3)."""
+    return f"…{phn[-4:]}" if len(phn) >= 4 else phn
+
+
+@router.get("", response_model=list[QueueRowOut])
 async def current_queue(
     principal: Annotated[Principal, Depends(require_user)],
     session: Annotated[AsyncSession, Depends(get_session)],
     facility_id: Annotated[str, Query(min_length=1)],
     include_done: Annotated[bool, Query()] = False,
-) -> list[QueueEntryOut]:
-    """Current queue for a facility, arrival order. TODO(S3): day rollover."""
+) -> list[QueueRowOut]:
+    """Current queue for a facility in arrival order, with server-assigned
+    sequence and patient display fields (06 §3). TODO(S3): day rollover."""
     query = (
-        select(QueueEntry)
+        select(QueueEntry, PatientMPI)
+        .join(PatientMPI, PatientMPI.id == QueueEntry.patient_id)
         .where(QueueEntry.facility_id == facility_id)
         .order_by(QueueEntry.arrival_ts)
     )
     if not include_done:
         query = query.where(QueueEntry.state != QueueState.done)
-    rows = (await session.execute(query)).scalars().all()
-    return [_to_out(r) for r in rows]
+    rows = (await session.execute(query)).all()
+    return [
+        QueueRowOut(
+            id=entry.id,
+            patient_id=entry.patient_id,
+            facility_id=entry.facility_id,
+            state=entry.state,
+            arrival_ts=entry.arrival_ts,
+            source=entry.source,
+            sequence=index + 1,
+            display_name=str(patient.demographics.get("name", "Unknown")),
+            phn_fragment=_phn_fragment(patient.phn),
+            needs_manual_verification=entry.state == QueueState.manual_verification,
+        )
+        for index, (entry, patient) in enumerate(rows)
+    ]
 
 
 @router.post("/check-in", status_code=status.HTTP_201_CREATED, response_model=QueueEntryOut)

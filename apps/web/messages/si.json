@@ -22,7 +22,13 @@
       "reconnecting": "Reconnecting",
       "closed": "Updates paused"
     },
-    "degradedBanner": "Live updates are unavailable. Showing the last known queue; retrying in the background."
+    "degradedBanner": "Live updates are unavailable. Showing the last known queue; retrying in the background.",
+    "row": {
+      "face": "Face check-in",
+      "manual": "Desk check-in",
+      "needsVerification": "Verify identity",
+      "arrivedAt": "Arrived {time}"
+    }
   },
   "patient": {
     "title": "Patient session",
