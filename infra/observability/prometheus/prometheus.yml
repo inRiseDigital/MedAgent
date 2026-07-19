@@ -1,0 +1,48 @@
+# Prometheus — dev/observability profile (10 §6).
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  # Python app services expose /metrics on their app port (8000 in-container)
+  - job_name: core-api
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["core-api:8000"]
+        labels: { service: core-api }
+
+  - job_name: agent-service
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["agent-service:8000"]
+        labels: { service: agent-service }
+
+  - job_name: notify-service
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["notify-service:8000"]
+        labels: { service: notify-service }
+
+  # OTLP-derived metrics (agent run cost/tokens, span metrics) via the collector
+  - job_name: otel-collector
+    static_configs:
+      - targets: ["otel-collector:8889"]
+
+  # Traefik metrics — requires `metrics: prometheus:` in platform/gateway
+  # static config (entryPoint :8082 by convention there)
+  - job_name: gateway
+    static_configs:
+      - targets: ["gateway:8082"]
+        labels: { service: gateway }
+
+  # HAPI FHIR — enable the Spring actuator/Micrometer endpoint in platform/fhir
+  # config before uncommenting
+  # - job_name: fhir
+  #   metrics_path: /actuator/prometheus
+  #   static_configs:
+  #     - targets: ["fhir:8080"]
+  #       labels: { service: fhir }
+
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]

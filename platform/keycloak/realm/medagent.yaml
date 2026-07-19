@@ -1,0 +1,439 @@
+# =============================================================================
+# MedAgent realm-as-code — applied idempotently by keycloak-config-cli.
+# Governing document: docs/solution/02-identity-access-mpi.md (§1 deployment,
+# §2 realm & clients, §3 role matrix, §4 MFA, §5 ACR/LoA step-up).
+#
+# RULES (02 §1, ADR I-1):
+#   * This file is the ONLY source of truth for the realm. No click-ops:
+#     admin-console edits do not persist — drift is overwritten on next apply.
+#   * NO secrets in this file. $(env:...) placeholders are substituted by
+#     config-cli at apply time (--import.var-substitution.enabled=true) from
+#     vault-injected environment (10 §5).
+#   * One realm for staff + patients (ADR I-2). `master` holds no app users.
+#   * CI runs a realm-lint step asserting no role accumulates scopes outside
+#     the §3 matrix (02 §3).
+# =============================================================================
+
+realm: medagent
+enabled: true
+displayName: MedAgent Platform
+
+# --- Realm hygiene & sessions (02 §1, §4) ------------------------------------
+bruteForceProtected: true            # supersedes prototype hand-rolled lockout (00 §1)
+ssoSessionMaxLifespan: 43200         # 12 h staff SSO cap (02 §4)
+ssoSessionIdleTimeout: 1800          # 30 min idle timeout (02 §4)
+# Patient portal sessions: longer-lived per 07 UX with OTP-on-new-device as the
+# compensating control — client-level overrides on `web`, tuned in S3 (02 §4).
+
+# --- ACR -> LoA map (02 §5.1) --------------------------------------------------
+# loa1 = password/SSO cookie; loa2 = fresh second factor (<= 300 s, see flow below).
+attributes:
+  acr.loa.map: '{"loa1":1,"loa2":2}'
+
+# =============================================================================
+# ROLES — ALL 11 spec actors defined day 1 (02 §3); Phase A activates a subset.
+# "Active" = assignable at the pilot. Dormant roles exist so the matrix, lint
+# and token shapes are stable from S1.
+# Facility/department are TOKEN CLAIMS sourced from PractitionerRole, NOT roles.
+# =============================================================================
+roles:
+  realm:
+    # ---- Pilot-ACTIVE roles (6): doctor, nurse, receptionist, admin, patient, guardian
+    - name: doctor
+      description: "ACTIVE Phase A. Scopes: clinical.read, clinical.write, rx.sign (loa2). Care relationship required; break-glass eligible. (02 §3)"
+    - name: nurse
+      description: "ACTIVE Phase A. Scopes: clinical.read (summary), clinical.write (vitals only, FR-4.5). Same-facility care relationship; no Rx. (02 §3)"
+    - name: receptionist
+      description: "ACTIVE Phase A. Scopes: queue.manage + MPI demographic search. Never clinical resources. (02 §3)"
+    - name: admin
+      description: "ACTIVE Phase A. Scopes: admin.iam, admin.config, admin.audit, admin.consent. NO clinical record access — administration is not care. (02 §3)"
+    - name: patient
+      description: "ACTIVE Phase A. Scope: patient.self — own compartment only. (02 §3)"
+    - name: guardian
+      description: "ACTIVE Phase A (READ-ONLY). Scope: patient.self proxied to linked ward within grant window; expiry computed at majority (02 §9, ADR I-9)."
+    # ---- Defined, DORMANT until their Phase B modules land
+    - name: midwife_phm
+      description: "DORMANT (Phase B field app, 09). clinical.read (child-health subset), clinical.write (growth, immunisation — FR-7.3/7.4); PHM-area cohort visibility."
+    - name: lab_tech
+      description: "DORMANT (Phase B LIS hub). Lab order/specimen/result workflow (FR-8.x); order-scoped visibility only."
+    - name: radiologist
+      description: "DORMANT (Phase B imaging). Worklist + report authoring (FR-9.3/9.4); study-scoped visibility only."
+    - name: moh_planner
+      description: "DORMANT (Phase B analytics). analytics.national — aggregate/de-identified ONLY, never row-level PHI (FR-14.4)."
+    # ---- Modifier role (not a standing grant)
+    - name: break_glass
+      description: >-
+        MODIFIER role — model designed day 1; Phase A operates break-glass as an
+        AUDITED MANUAL PROCEDURE granted in core-api app_db, NOT via this role
+        (02 §6, ADR I-4: no realm mutation in emergencies). The role exists so
+        eligibility can be expressed and linted; it carries no scopes itself.
+        Automated self-service workflow activates Phase B.
+    # ---- Internal composite for authentication-flow conditioning (not a spec actor)
+    - name: staff
+      description: "INTERNAL composite — groups staff roles so the browser flow's conditional TOTP (02 §4) keys on one role. Not assignable directly; membership via composites below."
+      composite: true
+      composites:
+        realm:
+          - doctor
+          - nurse
+          - receptionist
+          - midwife_phm
+          - lab_tech
+          - radiologist
+          - admin
+
+# =============================================================================
+# CLIENT SCOPES (02 §2 scope table + per-service audience scopes)
+# Pilot uses plain OAuth2 scopes (locked D8); SMART-on-FHIR v2 mapping post-pilot.
+# =============================================================================
+clientScopes:
+  - name: clinical.read
+    protocol: openid-connect
+    description: "Read clinical FHIR resources — subject to 02 §7 relationship + consent checks"
+    attributes: { include.in.token.scope: "true" }
+  - name: clinical.write
+    protocol: openid-connect
+    description: "Propose/commit clinical writes — subject to sign-off (04)"
+    attributes: { include.in.token.scope: "true" }
+  - name: rx.sign
+    protocol: openid-connect
+    description: "Commit MedicationRequest — requires acr=loa2 (02 §5.2), doctor only"
+    attributes: { include.in.token.scope: "true" }
+  - name: queue.manage
+    protocol: openid-connect
+    description: "Check-in, manual identity fallback, queue ordering"
+    attributes: { include.in.token.scope: "true" }
+  - name: patient.self
+    protocol: openid-connect
+    description: "Patient/guardian compartment access to own (or ward's) record"
+    attributes: { include.in.token.scope: "true" }
+  - name: admin.iam
+    protocol: openid-connect
+    description: "FR-6.1 staff/role/department management"
+    attributes: { include.in.token.scope: "true" }
+  - name: admin.config
+    protocol: openid-connect
+    description: "FR-6.2 thresholds & safety rules"
+    attributes: { include.in.token.scope: "true" }
+  - name: admin.audit
+    protocol: openid-connect
+    description: "FR-6.3 audit review (split from user management by design)"
+    attributes: { include.in.token.scope: "true" }
+  - name: admin.consent
+    protocol: openid-connect
+    description: "FR-6.4 consent records & DSR workflow"
+    attributes: { include.in.token.scope: "true" }
+  - name: analytics.national
+    protocol: openid-connect
+    description: "De-identified/aggregate dashboards only — never row-level PHI (Phase B)"
+    attributes: { include.in.token.scope: "true" }
+
+  # ---- Audience scopes: enforced PER SERVICE (02 §2). Every resource server
+  #      rejects tokens whose aud does not include itself; a token minted for
+  #      chat cannot be replayed against the FHIR path.
+  - name: aud:core-api
+    protocol: openid-connect
+    protocolMappers:
+      - name: audience-core-api
+        protocol: openid-connect
+        protocolMapper: oidc-audience-mapper
+        config:
+          included.client.audience: core-api
+          access.token.claim: "true"
+          id.token.claim: "false"
+  - name: aud:agent-service
+    protocol: openid-connect
+    protocolMappers:
+      - name: audience-agent-service
+        protocol: openid-connect
+        protocolMapper: oidc-audience-mapper
+        config:
+          included.client.audience: agent-service
+          access.token.claim: "true"
+          id.token.claim: "false"
+  - name: aud:notify-service
+    protocol: openid-connect
+    protocolMappers:
+      - name: audience-notify-service
+        protocol: openid-connect
+        protocolMapper: oidc-audience-mapper
+        config:
+          included.client.audience: notify-service
+          access.token.claim: "true"
+          id.token.claim: "false"
+  - name: aud:fhir-gateway
+    protocol: openid-connect
+    protocolMappers:
+      - name: audience-fhir-gateway
+        protocol: openid-connect
+        protocolMapper: oidc-audience-mapper
+        config:
+          included.client.audience: fhir-gateway
+          access.token.claim: "true"
+          id.token.claim: "false"
+
+# --- Role -> scope wiring per the 02 §3 matrix (realm-lint asserts this stays exact)
+scopeMappings:
+  - clientScope: clinical.read
+    roles: [doctor, nurse, midwife_phm, lab_tech, radiologist]
+  - clientScope: clinical.write
+    roles: [doctor, nurse, midwife_phm]
+  - clientScope: rx.sign
+    roles: [doctor]
+  - clientScope: queue.manage
+    roles: [receptionist, nurse]
+  - clientScope: patient.self
+    roles: [patient, guardian]
+  - clientScope: admin.iam
+    roles: [admin]
+  - clientScope: admin.config
+    roles: [admin]
+  - clientScope: admin.audit
+    roles: [admin]
+  - clientScope: admin.consent
+    roles: [admin]
+  - clientScope: analytics.national
+    roles: [moh_planner]
+
+# =============================================================================
+# CLIENTS (02 §2)
+# NOT a client here (deliberately): the face-recognition service. Its webhook is
+# HMAC-SHA256 signed + timestamped with key rotation, and outbound calls use the
+# S2S credentials of its API contract — 05 §3 / ADR F-2 there. Keeping it out of
+# the realm keeps the trust boundary explicit and contract-only (locked D5).
+# =============================================================================
+clients:
+  # --- web: the single Next.js app (doctor workspace + patient portal + kiosk routes)
+  - clientId: web
+    name: "MedAgent web (BFF)"
+    protocol: openid-connect
+    publicClient: false                     # CONFIDENTIAL — secret held by the Next.js BFF (06 §2)
+    secret: $(env:KC_WEB_CLIENT_SECRET)     # env-substituted at apply time; never in git
+    standardFlowEnabled: true               # Authorization Code
+    implicitFlowEnabled: false              # no implicit/hybrid (02 §2)
+    directAccessGrantsEnabled: false
+    serviceAccountsEnabled: false
+    # Exact redirect URIs only (02 §2). Localhost dev; staging/pilot URIs are
+    # appended per-environment by config-cli overlay files, never wildcards.
+    redirectUris:
+      - "https://localhost/api/auth/callback/*"
+      - "http://localhost:3000/api/auth/callback/*"
+    webOrigins:
+      - "https://localhost"
+      - "http://localhost:3000"
+    attributes:
+      pkce.code.challenge.method: "S256"    # PKCE S256 ENFORCED (02 §2)
+      post.logout.redirect.uris: "https://localhost/*##http://localhost:3000/*"
+    defaultClientScopes: [profile, email]
+    # Audiences requested per call path (02 §2) — optional so a chat token need
+    # not carry the FHIR audience.
+    optionalClientScopes:
+      - clinical.read
+      - clinical.write
+      - rx.sign
+      - queue.manage
+      - patient.self
+      - admin.iam
+      - admin.config
+      - admin.audit
+      - admin.consent
+      - aud:core-api
+      - aud:agent-service
+      - aud:notify-service
+      - aud:fhir-gateway
+
+  # --- kiosk-device: one credential per physical kiosk station (06 §2.2)
+  - clientId: kiosk-device
+    name: "Check-in kiosk station"
+    protocol: openid-connect
+    publicClient: false
+    secret: $(env:KC_KIOSK_DEVICE_CLIENT_SECRET)   # rotated per secrets schedule (08); per-station clients stamped from this template in S3
+    standardFlowEnabled: false
+    directAccessGrantsEnabled: false
+    serviceAccountsEnabled: true            # client-credentials service account
+    attributes:
+      # Station scoping: each deployed station gets its own client (kiosk-device-<station>)
+      # carrying its station id as a hardcoded-claim mapper; this entry is the template.
+      medagent.station_id: "dev-station-01"
+    # Minimal scopes: check-in queue read/write ONLY — no clinical scopes, no impersonation (02 §2).
+    defaultClientScopes: [queue.manage, "aud:core-api"]
+    optionalClientScopes: []
+    protocolMappers:
+      - name: station-id-claim
+        protocol: openid-connect
+        protocolMapper: oidc-hardcoded-claim-mapper
+        config:
+          claim.name: station_id
+          claim.value: "dev-station-01"
+          access.token.claim: "true"
+          jsonType.label: String
+
+  # --- core-api: resource server (aud core-api); service account used for
+  #     Keycloak Admin API calls (FR-6.1 wrapper, 02 §10.1 — manage-users only).
+  - clientId: core-api
+    name: "core-api resource server"
+    protocol: openid-connect
+    publicClient: false
+    secret: $(env:KC_CORE_API_CLIENT_SECRET)
+    standardFlowEnabled: false
+    directAccessGrantsEnabled: false
+    serviceAccountsEnabled: true
+    defaultClientScopes: []
+    optionalClientScopes: []
+    # TODO(S2): service-account role mapping -> realm-management:manage-users ONLY (02 §10.1).
+
+  # --- agent-service: resource server for chat AND service client for its own
+  #     scheduled jobs. Interactive agent calls always carry the CLINICIAN'S
+  #     token forward — the service account never widens a user's access (02 §2).
+  - clientId: agent-service
+    name: "agent-service resource server / S2S client"
+    protocol: openid-connect
+    publicClient: false
+    secret: $(env:KC_AGENT_SERVICE_CLIENT_SECRET)
+    standardFlowEnabled: false
+    directAccessGrantsEnabled: false
+    serviceAccountsEnabled: true
+    defaultClientScopes: ["aud:core-api", "aud:fhir-gateway"]
+    optionalClientScopes: []
+
+  # --- notify-service: bearer-only usage — validates SSE ticket-issuing requests
+  #     (02 §11); no user-facing login, no service account.
+  - clientId: notify-service
+    name: "notify-service resource server"
+    protocol: openid-connect
+    publicClient: false
+    bearerOnly: true
+    standardFlowEnabled: false
+    directAccessGrantsEnabled: false
+    serviceAccountsEnabled: false
+
+  # --- fhir-gateway: logical audience for direct FHIR-path requests validated by
+  #     the HAPI authz interceptor (03 §5.1). Bearer-only: nothing logs in as it.
+  - clientId: fhir-gateway
+    name: "FHIR path logical audience"
+    protocol: openid-connect
+    publicClient: false
+    bearerOnly: true
+    standardFlowEnabled: false
+    directAccessGrantsEnabled: false
+    serviceAccountsEnabled: false
+
+  # --- keycloak-config-cli: CI-only realm administration (02 §2); secret in CI vault.
+  - clientId: keycloak-config-cli
+    name: "keycloak-config-cli (CI)"
+    protocol: openid-connect
+    publicClient: false
+    secret: $(env:KC_CONFIG_CLI_CLIENT_SECRET)
+    standardFlowEnabled: false
+    directAccessGrantsEnabled: false
+    serviceAccountsEnabled: true
+    # TODO(S2): service-account role mapping -> realm administration scope.
+
+# =============================================================================
+# AUTHENTICATION FLOWS (02 §4 MFA, §5 step-up ACR/LoA) — S1 SKELETON
+# Browser flow: cookie / IdP-redirect / forms(username+password -> conditional
+# staff TOTP -> conditional LoA2 fresh-OTP subflow, Max Age 300 s).
+# The loa2 condition is what makes e-prescribing step-up (FR-4.8, 02 §5.2) and
+# break-glass activation strongly authenticated; enforcement of the acr CLAIM
+# happens server-side at commit paths (agent-service/core-api), never in the UI.
+# =============================================================================
+browserFlow: medagent-browser
+
+authenticationFlows:
+  - alias: medagent-browser
+    description: "MedAgent browser flow with conditional staff TOTP + ACR/LoA step-up (02 §4/§5) — S1 skeleton"
+    providerId: basic-flow
+    topLevel: true
+    builtIn: false
+    authenticationExecutions:
+      - authenticator: auth-cookie
+        requirement: ALTERNATIVE
+        priority: 10
+        autheticatorFlow: false
+      - authenticator: identity-provider-redirector   # future SLUDI/e-Signet brokering (02 §8.5) — config, not code
+        requirement: ALTERNATIVE
+        priority: 20
+        autheticatorFlow: false
+      - flowAlias: medagent-browser-forms
+        requirement: ALTERNATIVE
+        priority: 30
+        autheticatorFlow: true
+
+  - alias: medagent-browser-forms
+    description: "Password + conditional second factor"
+    providerId: basic-flow
+    topLevel: false
+    builtIn: false
+    authenticationExecutions:
+      - authenticator: auth-username-password-form
+        requirement: REQUIRED
+        priority: 10
+        autheticatorFlow: false
+      # Staff MFA: conditional TOTP bound to staff roles, NOT global — kiosk and
+      # patient flows untouched (02 §4). Patients: password + OTP-on-new-device
+      # via SMS authenticator, added S3 with the SMS gateway adapter.
+      - flowAlias: medagent-staff-otp
+        requirement: CONDITIONAL
+        priority: 20
+        autheticatorFlow: true
+      # Step-up: runs ONLY when the client requests acr loa2 (claims / acr_values).
+      - flowAlias: medagent-loa2-stepup
+        requirement: CONDITIONAL
+        priority: 30
+        autheticatorFlow: true
+
+  - alias: medagent-staff-otp
+    description: "TOTP required for staff roles at every login (02 §4)"
+    providerId: basic-flow
+    topLevel: false
+    builtIn: false
+    authenticationExecutions:
+      - authenticator: conditional-user-role
+        requirement: REQUIRED
+        priority: 10
+        autheticatorFlow: false
+        authenticatorConfig: staff-role-condition
+      - authenticator: auth-otp-form
+        requirement: REQUIRED
+        priority: 20
+        autheticatorFlow: false
+
+  - alias: medagent-loa2-stepup
+    description: "LoA2 step-up: fresh OTP, Max Age 300 s — e-prescribing sign-off, break-glass, ward-consent, admin changes (02 §5.2)"
+    providerId: basic-flow
+    topLevel: false
+    builtIn: false
+    authenticationExecutions:
+      - authenticator: conditional-level-of-authentication
+        requirement: REQUIRED
+        priority: 10
+        autheticatorFlow: false
+        authenticatorConfig: loa2-condition
+      - authenticator: auth-otp-form
+        requirement: REQUIRED
+        priority: 20
+        autheticatorFlow: false
+
+authenticatorConfig:
+  - alias: staff-role-condition
+    config:
+      condUserRole: staff          # internal composite role above
+      negate: "false"
+  - alias: loa2-condition
+    config:
+      loa-condition-level: "2"     # maps to acr loa2 via realm acr.loa.map
+      loa-max-age: "300"           # 02 §5.1: second factor must be <= 5 min fresh
+      # loa-store-in-user-session default: a stale morning login cannot satisfy
+      # an afternoon step-up.
+
+# --- Required actions (02 §4): TOTP enrolment at first staff login. Enrolment is
+# attached per-user at account creation by core-api's FR-6.1 wrapper (staff only,
+# so patient onboarding stays friction-free); the action itself is enabled here.
+requiredActions:
+  - alias: CONFIGURE_TOTP
+    name: Configure OTP
+    enabled: true
+    defaultAction: false
+
+# WebAuthn/passkeys as preferred second factor where hardware allows (02 §4):
+# policy + registration required-action configured in S3 — tracked TODO.

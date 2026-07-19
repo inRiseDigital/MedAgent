@@ -1,0 +1,29 @@
+/*
+ * Global stylesheet — docs/solution/06 §4 (ADR W-3).
+ * Theme = semantic CSS custom properties from @medagent/ui tokens.css,
+ * light on :root, dark on :root[data-theme="dark"], mapped into Tailwind
+ * by the shared preset (loaded via @config). `dark:` variants use the
+ * selector strategy on [data-theme="dark"].
+ *
+ * NO `!important` — the prototype's ~180-line `.dark !important` override
+ * sheet is explicitly killed, not ported (06 §4.2). Lint enforces this
+ * from S2.
+ */
+@import "tailwindcss";
+@import "@medagent/ui/styles/tokens.css";
+
+@config "../tailwind.config.ts";
+
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+  /* 14 px clinical body density in the workspace; portal layouts step up
+     to 16 px (06 §4.3, 07 §2). */
+  font-size: 0.875rem;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Tabular numerals for vitals, times and lab values (06 §4.3). */
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}

@@ -1,0 +1,3 @@
+# mkcert-generated local certs live here — never commit key material
+*
+!.gitignore

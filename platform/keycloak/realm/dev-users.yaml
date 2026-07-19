@@ -1,0 +1,70 @@
+# =============================================================================
+# DEV ONLY — throwaway test users for the local compose stack.
+#
+#   *** NEVER apply this file in staging or pilot. ***
+#
+# It is excluded from the CI apply step by path (only medagent.yaml is applied
+# beyond dev — see ../README.md and infra/ci); the compose dev profile passes it
+# as an extra --import.files.locations entry. Passwords below are deliberately
+# worthless and marked temporary (users are forced to keep them in dev only
+# because required actions are stripped for frictionless local login).
+#
+# Real staff accounts are created via core-api's FR-6.1 admin wrapper
+# (02 §10.1), never by editing realm files and never via the admin console.
+# =============================================================================
+
+realm: medagent
+enabled: true
+
+users:
+  # --- Doctor (staff): exercises clinical scopes + care-relationship denials
+  - username: dr_demo
+    enabled: true
+    firstName: Demo
+    lastName: Doctor
+    email: dr_demo@dev.medagent.local
+    emailVerified: true
+    credentials:
+      - type: password
+        value: "dev-only-dr_demo"     # DEV ONLY throwaway — rotate = delete the stack
+        temporary: false
+    realmRoles:
+      - doctor
+    # NOTE: TOTP enrolment (CONFIGURE_TOTP) is intentionally NOT attached in dev;
+    # the conditional staff-OTP subflow will prompt enrolment if you add it:
+    # requiredActions: [CONFIGURE_TOTP]
+    attributes:
+      medagent.dev_note: ["DEV ONLY — not a real person, not a pilot account"]
+
+  # --- Receptionist (staff): demographics + queue only, never clinical payloads
+  - username: reception_demo
+    enabled: true
+    firstName: Demo
+    lastName: Receptionist
+    email: reception_demo@dev.medagent.local
+    emailVerified: true
+    credentials:
+      - type: password
+        value: "dev-only-reception_demo"   # DEV ONLY throwaway
+        temporary: false
+    realmRoles:
+      - receptionist
+    attributes:
+      medagent.dev_note: ["DEV ONLY — not a real person, not a pilot account"]
+
+  # --- Patient: portal self-access (patient.self compartment)
+  - username: patient_demo
+    enabled: true
+    firstName: Demo
+    lastName: Patient
+    email: patient_demo@dev.medagent.local
+    emailVerified: true
+    credentials:
+      - type: password
+        value: "dev-only-patient_demo"     # DEV ONLY throwaway
+        temporary: false
+    realmRoles:
+      - patient
+    attributes:
+      medagent.dev_note: ["DEV ONLY — not a real person, not a pilot account"]
+      # Linked to a Synthea-seeded demo Patient/MPI record by the seed job (10 §2.3).

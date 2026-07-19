@@ -1,0 +1,106 @@
+# HAPI FHIR JPA server starter configuration — MedAgent platform.
+# Governing document: docs/solution/03-fhir-data-platform.md §1 (config knob table).
+# Phase A pilot settings. Every deviation from starter defaults is deliberate
+# and traced to 03; do not tune here without updating the doc.
+
+spring:
+  datasource:
+    # Postgres datasource from env — per-service credentials, never committed
+    # (10 §5 secrets policy). Example: jdbc:postgresql://postgres:5432/hapi_db
+    url: ${HAPI_DB_URL}
+    username: ${HAPI_DB_USER}
+    password: ${HAPI_DB_PASS}
+    driverClassName: org.postgresql.Driver
+    hikari:
+      # Pilot sizing per 03 §1 / §6.2 — matches 2-replica app-tier fan-in.
+      maximum-pool-size: 20
+  jpa:
+    properties:
+      hibernate.dialect: ca.uhn.fhir.jpa.model.dialect.HapiFhirPostgresDialect
+      # Hibernate Search (Lucene/ES) OFF in Phase A — 03 §6.3 defines the
+      # explicit switch-on triggers. Do not enable "just in case".
+      hibernate.search.enabled: false
+
+hapi:
+  fhir:
+    # --- Core (03 §1 table) --------------------------------------------------
+    fhir_version: R4                       # spec mandate; R5 on roadmap (spec §5.1)
+    server_address: http://fhir:8080/fhir  # internal address; never public (01 §1 rule 1)
+    default_encoding: json
+
+    # --- MedAgent interceptor pipeline (03 §2, §5) ---------------------------
+    # Registered via the starter's custom-interceptor mechanism. Order in the
+    # request flow is pointcut-driven, not list-driven, but authz must fail
+    # fastest and cheapest (03 §2): authz -> consent -> validation -> storage -> audit.
+    custom-interceptor-classes:
+      - lk.medagent.fhir.AuthzInterceptor
+      - lk.medagent.fhir.ConsentInterceptor
+      - lk.medagent.fhir.AuditInterceptor
+
+    # --- Partitioning: enabled EMPTY on day 1 (ADR F-2) ----------------------
+    # Phase A runs one clinical partition (pilot-facility) plus `audit` (03 §5.4)
+    # and `synthetic` (03 §7) partitions. Request-tenant partition interceptor
+    # maps requests to partitions; Phase B maps partition <-> facility.
+    partitioning:
+      allow_references_across_partitions: false
+      partitioning_include_in_search_hashes: false
+
+    # --- Validation on write (03 §1: reject malformed writes at the door) ----
+    validation:
+      requests_enabled: true               # FR-4.9 quality gate
+      responses_enabled: false
+    # Platform IG (medagent.fhir.r4) — profiles per 03 §3. The IG package is
+    # produced in platform/fhir/ig (S2+); registration stub kept here so the
+    # config shape is fixed from S1.
+    # implementationguides:
+    #   medagent:
+    #     packageUrl: file:///app/config/ig/medagent.fhir.r4.tgz
+    #     name: medagent.fhir.r4
+    #     version: 0.1.0
+
+    # --- Referential integrity & id discipline (03 §1, ADR F-3) --------------
+    enforce_referential_integrity_on_write: true
+    enforce_referential_integrity_on_delete: true
+    allow_external_references: false       # closed store; interop via 09 layer only
+    client_id_strategy: NOT_ALLOWED        # server-assigned ids only — citation anchors (FR-3.4)
+
+    # --- No destruction paths (03 §1, §8.2) -----------------------------------
+    allow_multiple_delete: false
+    expunge_enabled: false                 # sole exception (§8.2 DSR erasure) is
+    delete_expunge_enabled: false          # admin-gated + dual-controlled, Phase A: off
+
+    # --- Eventing / surface reduction (03 §1) ---------------------------------
+    subscription:
+      resthook_enabled: false              # real-time events flow app-side via Redis (01)
+      websocket_enabled: false
+      email_enabled: false
+    cors:
+      allow_Credentials: false
+      allowed_origin: []                   # browser traffic never reaches HAPI directly
+    narrative_enabled: false               # narratives generated at presentation layer
+    tester: null                           # starter Web UI (testpage overlay) disabled
+
+    # --- Export & performance (03 §1, §6) --------------------------------------
+    bulk_export_enabled: true              # $everything / $export for DSR (03 §8.1)
+    reuse_cached_search_results_millis: 60000
+    default_page_size: 20
+    max_page_size: 200
+    advanced_lucene_indexing: false        # ES offload deferred with §6.3 triggers (ADR F-7)
+
+# ------------------------------------------------------------------------------
+# MedAgent interceptor settings (read by lk.medagent.fhir.* via environment).
+# ------------------------------------------------------------------------------
+medagent:
+  authz:
+    # core-api decision service (02 §7.2) + shared Redis decision cache (ADR F-4).
+    decision-url: ${MEDAGENT_AUTHZ_DECISION_URL:http://core-api:8000/internal/authz/decision}
+    redis-url: ${MEDAGENT_REDIS_URL:redis://redis:6379/0}
+    # S1 bootstrap ONLY: allow reads through while the decision service is being
+    # built. Writes are NEVER permissive. Must be false in staging/pilot —
+    # asserted by a CI config check before S3.
+    permissive-read: ${MEDAGENT_AUTHZ_PERMISSIVE_READ:false}
+  consent:
+    redis-url: ${MEDAGENT_REDIS_URL:redis://redis:6379/0}
+    cache-ttl-seconds: 60                  # 03 §5.2; invalidation is event-driven, TTL is the backstop
+  audit:
+    partition-name: audit                  # 03 §5.4 append-only monthly range partitions

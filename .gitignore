@@ -1,0 +1,47 @@
+# Dependencies
+node_modules/
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Builds
+.next/
+dist/
+build/
+out/
+*.tsbuildinfo
+target/
+*.jar
+!platform/fhir/lib/*.jar
+
+# Env & secrets — never commit real values (10 §5)
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+!**/test-fixtures/**/*.key
+
+# SOPS: only encrypted files belong in git
+infra/secrets/*
+!infra/secrets/*.enc.yaml
+!infra/secrets/.sops.yaml
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Test / coverage
+coverage/
+htmlcov/
+.coverage
+playwright-report/
+
+# Local data
+*.local.db
+seed-cache/

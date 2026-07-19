@@ -1,0 +1,15 @@
+# Dashboard provider — loads JSON dashboards mounted from
+# infra/observability/grafana/dashboards/ (10 §6.2, dashboards as code).
+apiVersion: 1
+
+providers:
+  - name: medagent
+    orgId: 1
+    folder: MedAgent
+    type: file
+    disableDeletion: true
+    updateIntervalSeconds: 30
+    allowUiUpdates: false # edit JSON in git, not in the UI
+    options:
+      path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: false

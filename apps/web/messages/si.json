@@ -1,0 +1,72 @@
+{
+  "common": {
+    "appName": "MedAgent",
+    "scaffold": "S1 scaffold — this screen is implemented in S2/S3 per the sprint plan.",
+    "loading": "Loading"
+  },
+  "nav": {
+    "skipToContent": "Skip to content",
+    "queue": "Live queue",
+    "day": "Today",
+    "patients": "Patients",
+    "proposals": "Proposals",
+    "signOut": "Sign out"
+  },
+  "queue": {
+    "title": "Live queue",
+    "description": "Patients appear here as they check in, in arrival order.",
+    "empty": "No patients waiting. Check-ins will appear here in real time.",
+    "connection": {
+      "connecting": "Connecting",
+      "open": "Live",
+      "reconnecting": "Reconnecting",
+      "closed": "Updates paused"
+    },
+    "degradedBanner": "Live updates are unavailable. Showing the last known queue; retrying in the background."
+  },
+  "patient": {
+    "title": "Patient session",
+    "summaryTitle": "Patient summary",
+    "summaryPlaceholder": "Photo, age, sex, blood group, allergy chips and active medications render here from the core-api summary endpoint.",
+    "chatTitle": "AI assistant",
+    "chatPlaceholder": "Cited chat over this patient's record streams here via the agent-service.",
+    "patientLabel": "Patient {id}"
+  },
+  "portal": {
+    "title": "My health",
+    "greeting": "Your records, appointments, reminders and consent controls will live here.",
+    "languageNote": "English · සිංහල · தமிழ் — the language switcher is permanent in the header from day 1."
+  },
+  "kiosk": {
+    "title": "Welcome",
+    "subtitle": "Look at the camera to check in",
+    "idleBody": "Checking for your appointment…",
+    "recognised": {
+      "title": "You're checked in",
+      "body": "Please take a seat. You'll be called shortly.",
+      "queueNote": "Your doctor has been notified."
+    },
+    "notRecognised": {
+      "title": "Let's check you in at the desk",
+      "body": "Please see the receptionist — they'll find your record and check you in. This never affects your care.",
+      "assistNote": "A staff member has been notified to assist you."
+    },
+    "demo": {
+      "label": "Scaffold state preview",
+      "idle": "Idle",
+      "recognised": "Recognised",
+      "notRecognised": "Not recognised"
+    }
+  },
+  "errors": {
+    "title": "Something went wrong",
+    "body": "The error has been reported. You can retry, or contact support with the reference below.",
+    "retry": "Try again",
+    "traceLabel": "Reference"
+  },
+  "notFound": {
+    "title": "Page not found",
+    "body": "The page you're looking for doesn't exist or has moved.",
+    "backToQueue": "Go to the live queue"
+  }
+}

@@ -1,0 +1,139 @@
+# =============================================================================
+# Traefik dynamic configuration — route -> service map per 01 §1 / §2.
+# Host `localhost` = dev; staging/pilot hostnames are injected per environment
+# by IaC (10 §4) — the topology below is identical in every environment (01 §6).
+#
+# JWT validation note (S1): authN is enforced AT THE SERVICES in S1 (every
+# resource server validates issuer/audience/scopes; HAPI additionally re-verifies
+# in the authz interceptor, 03 §5.1 defence-in-depth). A gateway-level JWT
+# plugin is evaluated later under ADR A-2 — if adopted it ADDS an outer layer,
+# it never replaces service-side validation.
+# =============================================================================
+
+http:
+  routers:
+    # --- core-api BFF: /api/core/* -> core-api:8000 (prefix stripped)
+    core-api:
+      entryPoints: [websecure]
+      rule: "Host(`localhost`) && PathPrefix(`/api/core`)"
+      middlewares: [security-headers, rate-limit-default, strip-api-core]
+      service: core-api
+      tls: {}
+
+    # --- agent-service (chat streaming): /api/agent/* -> agent-service:8000
+    agent-service:
+      entryPoints: [websecure]
+      rule: "Host(`localhost`) && PathPrefix(`/api/agent`)"
+      middlewares: [security-headers, rate-limit-default, strip-api-agent]
+      service: agent-service
+      tls: {}
+
+    # --- notify-service (SSE tickets + streams, 02 §11): /notify/* — prefix KEPT
+    #     (service serves /notify/ticket and /notify/stream). Access log drops
+    #     RequestPath so the ?ticket= parameter is never persisted (traefik.yaml).
+    notify-service:
+      entryPoints: [websecure]
+      rule: "Host(`localhost`) && PathPrefix(`/notify`)"
+      middlewares: [security-headers, rate-limit-default]
+      service: notify-service
+      tls: {}
+
+    # --- Keycloak: /auth/* — prefix KEPT (KC_HTTP_RELATIVE_PATH=/auth in
+    #     platform/keycloak/Dockerfile). Admin console is NOT reachable through
+    #     this public route: it binds to an internal hostname (02 §1).
+    keycloak:
+      entryPoints: [websecure]
+      rule: "Host(`localhost`) && PathPrefix(`/auth`)"
+      middlewares: [security-headers, rate-limit-auth]
+      service: keycloak
+      tls: {}
+
+    # --- HAPI FHIR: INTERNAL ENTRYPOINT ONLY — HAPI is never exposed publicly
+    #     (01 §1 design rule 1; 03 §1: reachable only from core-api,
+    #     agent-service and this authenticated internal route). This router
+    #     exists solely for service-to-service calls that choose to transit the
+    #     gateway (uniform TLS + access logging); the `internal` entrypoint is
+    #     never port-published on the host (see traefik.yaml). Tokens on this
+    #     path must carry the `fhir-gateway` audience (02 §2), re-verified by
+    #     the HAPI authz interceptor (03 §5.1).
+    fhir-internal:
+      entryPoints: [internal]          # deliberately NOT websecure
+      rule: "PathPrefix(`/fhir`)"
+      middlewares: [security-headers]
+      service: fhir
+      tls: {}
+
+    # --- web app (doctor workspace / patient portal / kiosk routes): catch-all,
+    #     lowest priority so the prefixed routes above always win.
+    web:
+      entryPoints: [websecure]
+      rule: "Host(`localhost`)"
+      priority: 1
+      middlewares: [security-headers, rate-limit-default]
+      service: web
+      tls: {}
+
+  middlewares:
+    # Strip the public API prefixes; services serve from /.
+    strip-api-core:
+      stripPrefix:
+        prefixes: ["/api/core"]
+    strip-api-agent:
+      stripPrefix:
+        prefixes: ["/api/agent"]
+
+    # Security headers (NFR-10 edge posture): HSTS, no-sniff, frame denial.
+    security-headers:
+      headers:
+        stsSeconds: 31536000
+        stsIncludeSubdomains: true
+        stsPreload: false              # enable at pilot once the hostname is final
+        contentTypeNosniff: true
+        frameDeny: true
+        referrerPolicy: "strict-origin-when-cross-origin"
+        browserXssFilter: true
+        customResponseHeaders:
+          Server: ""                   # no version disclosure
+          X-Powered-By: ""
+
+    # Rate-limit defaults — pilot-sized; tuned from k6 baselines (10 §8).
+    # SSE long-poll/streams are connection-held, not request-heavy, so the
+    # default limiter is safe for /notify.
+    rate-limit-default:
+      rateLimit:
+        average: 100                   # req/s sustained per source
+        burst: 200
+        period: 1s
+    # Tighter limiter on the auth surface (login brute force is also handled by
+    # Keycloak's realm brute-force detection, 02 §1 — this is the outer layer).
+    rate-limit-auth:
+      rateLimit:
+        average: 20
+        burst: 40
+        period: 1s
+
+  services:
+    core-api:
+      loadBalancer:
+        servers:
+          - url: "http://core-api:8000"
+    agent-service:
+      loadBalancer:
+        servers:
+          - url: "http://agent-service:8000"
+    notify-service:
+      loadBalancer:
+        servers:
+          - url: "http://notify-service:8000"
+    keycloak:
+      loadBalancer:
+        servers:
+          - url: "http://keycloak:8080"
+    fhir:
+      loadBalancer:
+        servers:
+          - url: "http://fhir:8080"
+    web:
+      loadBalancer:
+        servers:
+          - url: "http://web:3000"

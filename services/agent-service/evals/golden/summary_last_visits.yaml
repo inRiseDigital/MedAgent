@@ -1,0 +1,16 @@
+# Example golden case: summary QA over the pinned Synthea seed (04 §6).
+id: summary-last-3-visits-demo-001
+class: summary_qa
+seed_version: v0
+input:
+  patient_ref: synthea-demo-patient-001   # deterministic demo subset, 10 §2.3
+  question: "What were this patient's last 3 visits?"
+expected:
+  must_mention:
+    - encounter dates for the three most recent encounters
+    - encounter types (e.g. outpatient consultation)
+  citations:
+    required: true
+    resource_types: [Encounter]
+  refusal: false
+grader: llm_rubric   # prose answer — human-audited rubric grader (S3)

@@ -1,0 +1,159 @@
+# Merge-to-main image pipeline (10 §3.5, §1): build once per merge commit,
+# Trivy scan (CRITICAL/HIGH fail), SBOM (syft) attached, cosign keyless sign,
+# push GHCR tagged {sha}. Promotion is retag-and-deploy of the SAME digest:
+# dev (on merge) -> staging (auto) -> pilot (protected environment, manual
+# approval). Deploy steps are placeholders until infra/iac lands (S6-adjacent).
+name: build-images
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: build-images-main
+  cancel-in-progress: false # every merge commit gets its immutable {sha} images
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write # cosign keyless OIDC (10 §1 provenance)
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: ${{ github.repository_owner }}/medagent
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: web
+            context: apps/web
+            dockerfile: apps/web/Dockerfile
+          - name: core-api
+            context: services/core-api
+            dockerfile: services/core-api/Dockerfile
+          - name: agent-service
+            context: services/agent-service
+            dockerfile: services/agent-service/Dockerfile
+          - name: notify-service
+            context: services/notify-service
+            dockerfile: services/notify-service/Dockerfile
+          - name: fhir
+            context: platform/fhir
+            dockerfile: platform/fhir/Dockerfile
+          - name: keycloak
+            context: platform/keycloak
+            dockerfile: platform/keycloak/Dockerfile
+          # gateway (Traefik + dynamic config) and seed (Synthea loader) images
+          # join the matrix when their Dockerfiles land (10 §1 image list):
+          # - name: gateway
+          #   context: platform/gateway
+          #   dockerfile: platform/gateway/Dockerfile
+          # - name: seed
+          #   context: infra/compose/seed
+          #   dockerfile: infra/compose/seed/Dockerfile
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build image (runtime target, not dev)
+        uses: docker/build-push-action@v6
+        id: build
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          push: false
+          load: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-${{ matrix.name }}:${{ github.sha }}
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,scope=${{ matrix.name }},mode=max
+
+      - name: Trivy scan — CRITICAL/HIGH fail the build (10 §3.5)
+        uses: aquasecurity/trivy-action@0.30.0
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-${{ matrix.name }}:${{ github.sha }}
+          format: table
+          exit-code: "1"
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          trivyignores: .trivyignore # time-boxed exceptions with expiry dates only
+
+      - name: Push
+        run: docker push ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-${{ matrix.name }}:${{ github.sha }}
+
+      - name: Resolve pushed digest
+        id: digest
+        run: |
+          DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-${{ matrix.name }}:${{ github.sha }})
+          echo "ref=$DIGEST" >> "$GITHUB_OUTPUT"
+
+      - name: SBOM (syft) — attached to the run, and to the release at promotion
+        uses: anchore/sbom-action@v0
+        with:
+          image: ${{ steps.digest.outputs.ref }}
+          format: spdx-json
+          artifact-name: sbom-${{ matrix.name }}-${{ github.sha }}.spdx.json
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Sign image (keyless OIDC — verification enforced at deploy from staging onward)
+        run: cosign sign --yes ${{ steps.digest.outputs.ref }}
+
+  # ---------------------------------------------------------------------------
+  # Trivy config/IaC + filesystem scan (10 §3.5 scans image + fs + IaC)
+  # ---------------------------------------------------------------------------
+  trivy-config:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Trivy filesystem + config scan
+        uses: aquasecurity/trivy-action@0.30.0
+        with:
+          scan-type: config
+          scan-ref: .
+          format: table
+          exit-code: "1"
+          severity: CRITICAL,HIGH
+
+  # ---------------------------------------------------------------------------
+  # Deploy chain — placeholders until infra/iac lands (10 §3.5/§4):
+  # dev (on merge) -> staging (automatic after dev healthchecks) ->
+  # staging smoke + k6 baseline (infra/perf) -> pilot (protected environment,
+  # required reviewer approval, agreed deploy window). Rollback = re-deploy
+  # previous digest.
+  # ---------------------------------------------------------------------------
+  # deploy-dev:
+  #   needs: [build, trivy-config]
+  #   runs-on: ubuntu-latest
+  #   environment: dev
+  #   steps:
+  #     - name: Deploy same-digest images to shared dev
+  #       run: echo "tofu apply / ansible-playbook — lands with infra/iac (S6-adjacent)"
+  #
+  # deploy-staging:
+  #   needs: deploy-dev
+  #   runs-on: ubuntu-latest
+  #   environment: staging
+  #   steps:
+  #     - name: Promote same digest to staging + run k6 baseline (infra/perf)
+  #       run: echo "retag-and-deploy previous job's digests; k6 run infra/perf/checkin-burst.js"
+  #
+  # deploy-pilot:
+  #   needs: deploy-staging
+  #   runs-on: ubuntu-latest
+  #   environment: pilot   # protected: required reviewers + deploy window
+  #   steps:
+  #     - name: Promote same digest to pilot
+  #       run: echo "cosign verify + retag-and-deploy — manual approval gate"

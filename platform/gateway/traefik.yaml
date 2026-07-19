@@ -1,0 +1,83 @@
+# =============================================================================
+# Traefik static configuration — MedAgent gateway (single entry point).
+# Governing document: docs/solution/01-system-architecture.md §1 (edge layer,
+# design rules); ops standards in 10 §1/§2.1. Traefik chosen per ADR A-2
+# (lightweight, config-as-code; APISIX reconsidered only if plugin-level FHIR
+# authz at the gateway becomes preferable to the HAPI interceptors).
+#
+# Route/middleware/TLS definitions are DYNAMIC config: see dynamic/*.yaml
+# (providers.file below). This file changes rarely; routes change often.
+# =============================================================================
+
+log:
+  level: INFO
+  format: json
+
+# Access log: structured JSON (10 §6.1 — logs are structured, trace-correlated).
+# NOTE (02 §11 / ADR I-10): SSE tickets travel as a query parameter; the
+# RequestPath is dropped from access logs and replaced by the redacted router
+# name + kept fields so tickets are never persisted in logs — defence in depth
+# even though a ticket is single-use and dead <= 30 s after issue.
+accessLog:
+  format: json
+  fields:
+    defaultMode: keep
+    names:
+      RequestPath: drop        # ticket redaction (02 §11); router name still identifies the route
+    headers:
+      defaultMode: drop        # no Authorization/Cookie material in logs, ever
+      names:
+        User-Agent: keep
+        X-Request-Id: keep
+
+api:
+  dashboard: false             # no admin surfaces on a health-data gateway
+  insecure: false
+
+providers:
+  file:
+    directory: /etc/traefik/dynamic   # dynamic/routes.yaml, dynamic/tls.yaml
+    watch: true
+
+entryPoints:
+  # Public HTTP — exists only to redirect to TLS.
+  web:
+    address: ":80"
+    http:
+      redirections:
+        entryPoint:
+          to: websecure
+          scheme: https
+
+  # Public HTTPS — the ONLY public entry point (01 §1: every access passes the
+  # gateway where authN, consent and audit are enforced downstream).
+  websecure:
+    address: ":443"
+    http:
+      tls: {}                  # certificates declared in dynamic/tls.yaml (mkcert in dev, ACME in staging/pilot)
+    # Trust X-Forwarded-* only from the internal docker network (compose sets
+    # the subnet); everything else gets the headers stripped/rewritten.
+    forwardedHeaders:
+      trustedIPs:
+        - "127.0.0.1/32"
+        - "172.16.0.0/12"      # compose/internal network range — tighten per env in IaC
+
+  # INTERNAL entry point — never port-published on the host. Carries ONLY the
+  # /fhir service-to-service route (dynamic/routes.yaml): HAPI is never exposed
+  # publicly (01 §1 design rule 1, 03 §1). Compose/IaC bind this to the internal
+  # service network exclusively.
+  internal:
+    address: ":8443"
+    http:
+      tls: {}
+    forwardedHeaders:
+      trustedIPs:
+        - "127.0.0.1/32"
+        - "172.16.0.0/12"
+
+# OpenTelemetry wiring (10 §6.1: the gateway injects/propagates traceparent) —
+# enabled with the observability compose profile in S2:
+# tracing:
+#   otlp:
+#     grpc:
+#       endpoint: otel-collector:4317

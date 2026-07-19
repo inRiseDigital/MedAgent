@@ -1,0 +1,49 @@
+# ============================================================================
+# Test-profile overlay (10 §2.2 'test'): ephemeral stack for CI integration
+# tests and local `make test-integration`.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.test.yml \
+#     --profile test up -d
+#
+# Implemented as an overlay rather than inline profile services because the
+# ephemeral variant changes EXISTING services (tmpfs Postgres, randomised host
+# ports, no persistence) — duplicating the whole stack under a profile would
+# drift. The bare `--profile test` on docker-compose.yml alone (current
+# Makefile) still works but keeps persistent volumes; the Makefile target
+# should grow the second -f flag (Makefile is outside infra/, not touched here).
+# ============================================================================
+
+services:
+  gateway:
+    ports: !override
+      - "80"   # random host ports — CI runners run stacks in parallel
+      - "443"
+
+  keycloak:
+    ports: !override
+      - "8080"
+
+  minio:
+    ports: !override
+      - "9001"
+    volumes: !override []
+
+  mailpit:
+    ports: !override
+      - "8025"
+
+  postgres:
+    # ephemeral: schema + fixtures rebuilt per run, nothing survives teardown
+    volumes: !override
+      - ./initdb:/docker-entrypoint-initdb.d:ro
+    tmpfs:
+      - /var/lib/postgresql/data
+
+  web:
+    # integration suites drive APIs through the gateway; skip the dev server
+    profiles: [never]
+
+  face-sim:
+    # the suite invokes sim.py directly (signature/replay cases) — keep it
+    environment:
+      GATEWAY_URL: https://gateway

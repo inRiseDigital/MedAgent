@@ -1,0 +1,19 @@
+# Example golden case: Rx-safety verdict fixture — 100 % pass is a hard CI gate
+# (04 §6). Verdicts are produced by deterministic code (agents/03), so the
+# grader is exact-match.
+id: rx-safety-warfarin-ibuprofen-001
+class: rx_safety
+seed_version: v0
+input:
+  patient_ref: synthea-demo-patient-002
+  active_medications:
+    - rxcui: "855332"        # warfarin sodium 5 MG oral tablet
+  proposal:
+    type: PrescriptionProposal
+    rxcui: "310965"           # ibuprofen 400 MG oral tablet
+    dose: "400 mg PO TID"
+expected:
+  verdict: block              # major interaction: bleeding risk
+  codes_include: ["DDI:WARFARIN-NSAID"]
+  rationale_mentions: ["bleeding"]
+grader: exact

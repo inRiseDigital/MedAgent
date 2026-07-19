@@ -1,0 +1,532 @@
+# ============================================================================
+# MedAgent Platform — local development stack (10-devops-infrastructure.md §2)
+#
+#   docker compose up                          -> core stack (default profile)
+#   docker compose --profile observability up  -> + Grafana/Loki/Tempo/Prometheus/otel-collector
+#   docker compose --profile seed up seed      -> Synthea seed job (§2.3)
+#   make test-integration                      -> ephemeral 'test' profile; combine with
+#                                                 docker-compose.test.yml overlay for tmpfs
+#                                                 Postgres + random host ports (see that file)
+#
+# Entry point: https://localhost (Traefik gateway, mkcert-trusted certs).
+# Secrets: dev-only defaults below (interpolated from ./.env, template .env.example).
+# In shared-dev/staging/pilot the per-service *.env files referenced under
+# `env_file:` are SOPS-decrypted at deploy time (infra/secrets/, 10 §5) and
+# injected as runtime env — never baked into images, never committed plaintext.
+# ============================================================================
+
+name: medagent
+
+x-service-defaults: &service-defaults
+  restart: unless-stopped
+  security_opt:
+    - no-new-privileges:true
+
+# Python app services share this healthcheck shape (/healthz per 10 §1).
+x-python-healthcheck: &python-healthcheck
+  test:
+    [
+      "CMD",
+      "python",
+      "-c",
+      "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=3).status == 200 else 1)",
+    ]
+  interval: 10s
+  timeout: 5s
+  retries: 6
+  start_period: 15s
+
+networks:
+  # gateway <-> app services (and dev-tool UIs published to the host)
+  edge:
+  # app services <-> platform (fhir, postgres, redis are ONLY here — 01 §1:
+  # nothing reaches HAPI except through the gateway path; internal: true also
+  # removes outbound internet for members attached only to this network)
+  internal:
+    internal: true
+
+volumes:
+  pg_data:
+  minio_data:
+  grafana_data:
+  seed_bundles:
+
+services:
+  # ==========================================================================
+  # Edge
+  # ==========================================================================
+  gateway:
+    <<: *service-defaults
+    image: traefik:v3.3
+    ports:
+      - "80:80"
+      - "443:443"
+    networks: [edge]
+    volumes:
+      # platform/gateway is the single source of routing truth (01 §2):
+      #   traefik.yml (static config, must enable ping for the healthcheck)
+      #   dynamic/    (route -> service map, TLS options)
+      - ../../platform/gateway:/etc/traefik:ro
+      # mkcert-generated locally-trusted certs (gitignored; see infra/compose/README.md)
+      - ./certs:/certs:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    healthcheck:
+      test: ["CMD", "traefik", "healthcheck", "--ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+
+  # ==========================================================================
+  # Channels
+  # ==========================================================================
+  web:
+    <<: *service-defaults
+    build:
+      context: ../../apps/web
+      dockerfile: Dockerfile
+      target: dev
+    # Next.js dev server, hot reload via bind mount (10 §2.1)
+    command: ["pnpm", "dev", "--port", "3000", "--hostname", "0.0.0.0"]
+    networks: [edge, internal]
+    volumes:
+      - ../../apps/web:/app
+      - /app/node_modules # keep container-installed deps out of the bind mount
+      - /app/.next
+    environment:
+      NODE_ENV: development
+      NEXT_PUBLIC_API_BASE_URL: https://localhost/api
+      NEXT_PUBLIC_KEYCLOAK_URL: https://localhost/auth
+      NEXT_PUBLIC_KEYCLOAK_REALM: medagent
+    env_file:
+      # SOPS-injected in real environments (10 §5) — optional locally
+      - path: ./env/web.env
+        required: false
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+    depends_on:
+      core-api:
+        condition: service_healthy
+
+  # ==========================================================================
+  # Application services (Python/FastAPI, port 8000 in-container)
+  # ==========================================================================
+  core-api:
+    <<: *service-defaults
+    build:
+      context: ../../services/core-api
+      dockerfile: Dockerfile
+      target: dev
+    command:
+      ["uvicorn", "app.main:app", "--reload", "--host", "0.0.0.0", "--port", "8000"]
+    networks: [edge, internal]
+    ports:
+      - "8001:8000" # dev convenience: direct OpenAPI for ts-sdk generate + debugging; real traffic via gateway
+    volumes:
+      - ../../services/core-api:/app
+    environment:
+      # per-service DB role, least privilege (10 §5; initdb/01-databases.sh)
+      DATABASE_URL: postgresql+asyncpg://core_api:${CORE_API_DB_PASSWORD:-dev-core-api-pw}@postgres:5432/app_db
+      REDIS_URL: redis://core-api:${CORE_API_REDIS_PASSWORD:-dev-core-api-redis-pw}@redis:6379/0
+      FHIR_BASE_URL: http://fhir:8080/fhir
+      KEYCLOAK_URL: http://keycloak:8080
+      KEYCLOAK_REALM: medagent
+      S3_ENDPOINT: http://minio:9000
+      S3_BUCKET: patient-files
+      FACE_WEBHOOK_HMAC_KEY_ID: ${FACE_WEBHOOK_HMAC_KEY_ID:-dev-key-1}
+      FACE_WEBHOOK_HMAC_SECRET: ${FACE_WEBHOOK_HMAC_SECRET:-dev-face-webhook-secret}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      OTEL_SERVICE_NAME: core-api
+    env_file:
+      # SOPS-injected in real environments (10 §5) — optional locally
+      - path: ./env/core-api.env
+        required: false
+    healthcheck: *python-healthcheck
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      fhir:
+        condition: service_started # HAPI first boot is slow; readiness gated via /readyz dependency checks
+      keycloak:
+        condition: service_started
+
+  agent-service:
+    <<: *service-defaults
+    build:
+      context: ../../services/agent-service
+      dockerfile: Dockerfile
+      target: dev
+    command:
+      ["uvicorn", "app.main:app", "--reload", "--host", "0.0.0.0", "--port", "8000"]
+    networks: [edge, internal]
+    ports:
+      - "8002:8000" # dev convenience: direct OpenAPI for ts-sdk generate + debugging; real traffic via gateway
+    volumes:
+      - ../../services/agent-service:/app
+    environment:
+      # agent-service owns the LangGraph checkpointer tables in app_db (01 §3)
+      DATABASE_URL: postgresql+asyncpg://agent_service:${AGENT_SERVICE_DB_PASSWORD:-dev-agent-service-pw}@postgres:5432/app_db
+      REDIS_URL: redis://agent-service:${AGENT_SERVICE_REDIS_PASSWORD:-dev-agent-service-redis-pw}@redis:6379/0
+      FHIR_BASE_URL: http://fhir:8080/fhir
+      CORE_API_BASE_URL: http://core-api:8000
+      KEYCLOAK_URL: http://keycloak:8080
+      KEYCLOAK_REALM: medagent
+      # ANTHROPIC_API_KEY: never here — SOPS env file only; dev uses the scoped
+      # low-limit key from the vault (10 §2.4). Held ONLY by agent-service (10 §5).
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      OTEL_SERVICE_NAME: agent-service
+    env_file:
+      # SOPS-injected in real environments (10 §5) — optional locally
+      - path: ./env/agent-service.env
+        required: false
+    healthcheck: *python-healthcheck
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  notify-service:
+    <<: *service-defaults
+    build:
+      context: ../../services/notify-service
+      dockerfile: Dockerfile
+      target: dev
+    command:
+      ["uvicorn", "app.main:app", "--reload", "--host", "0.0.0.0", "--port", "8000"]
+    networks: [edge, internal]
+    ports:
+      - "8003:8000" # dev convenience: direct OpenAPI for ts-sdk generate + debugging; real traffic via gateway
+    volumes:
+      - ../../services/notify-service:/app
+    environment:
+      # stateless fan-out over Redis pub/sub (01 §1); read-mostly DB access
+      DATABASE_URL: postgresql+asyncpg://notify_service:${NOTIFY_SERVICE_DB_PASSWORD:-dev-notify-service-pw}@postgres:5432/app_db
+      REDIS_URL: redis://notify-service:${NOTIFY_SERVICE_REDIS_PASSWORD:-dev-notify-service-redis-pw}@redis:6379/0
+      SMTP_HOST: mailpit
+      SMTP_PORT: "1025"
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      OTEL_SERVICE_NAME: notify-service
+    env_file:
+      # SOPS-injected in real environments (10 §5) — optional locally
+      - path: ./env/notify-service.env
+        required: false
+    healthcheck: *python-healthcheck
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+
+  # ==========================================================================
+  # Platform
+  # ==========================================================================
+  fhir:
+    <<: *service-defaults
+    build:
+      context: ../../platform/fhir
+      dockerfile: Dockerfile
+    # NO published ports, internal network only (01 §1: nothing reaches HAPI
+    # except through the gateway path with a validated token; interceptors
+    # enforce authz/consent/audit in-process).
+    networks: [internal]
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/hapi_db
+      SPRING_DATASOURCE_USERNAME: hapi
+      SPRING_DATASOURCE_PASSWORD: ${HAPI_DB_PASSWORD:-dev-hapi-pw}
+      SPRING_DATASOURCE_DRIVERCLASSNAME: org.postgresql.Driver
+      HAPI_FHIR_FHIR_VERSION: R4
+    healthcheck:
+      # requires curl in the platform/fhir image (added by our extension layer;
+      # the upstream hapiproject/hapi base is distroless)
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/fhir/metadata"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 120s
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  keycloak:
+    <<: *service-defaults
+    build:
+      context: ../../platform/keycloak
+      dockerfile: Dockerfile
+    # realm-as-code: keycloak-config-cli baked into the image applies
+    # platform/keycloak/realm/ on boot — no click-ops (02, 10 §2.1)
+    command: ["start-dev", "--import-realm"]
+    networks: [edge, internal]
+    ports:
+      - "8081:8080" # dev convenience only; real traffic goes via the gateway
+    volumes:
+      - ../../platform/keycloak/realm:/opt/keycloak/data/import:ro
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD:-dev-keycloak-pw}
+      KC_HEALTH_ENABLED: "true"
+      KC_HOSTNAME: https://localhost/auth
+      KC_PROXY_HEADERS: xforwarded
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USER:-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-dev-admin-pw}
+    healthcheck:
+      # KC 26 management interface (:9000) has /health/ready; image ships no curl,
+      # so use the bash /dev/tcp probe
+      test:
+        [
+          "CMD-SHELL",
+          "exec 3<>/dev/tcp/127.0.0.1/9000 && echo -en 'GET /health/ready HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q '\"status\": \"UP\"' <&3",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  postgres:
+    <<: *service-defaults
+    image: postgres:16-alpine
+    networks: [internal]
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      # creates app_db / hapi_db / keycloak + per-service least-privilege roles
+      - ./initdb:/docker-entrypoint-initdb.d:ro
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_SUPERUSER_PASSWORD:-dev-superuser-pw}
+      # consumed by initdb/01-databases.sh (separate credentials per service, NFR-10)
+      CORE_API_DB_PASSWORD: ${CORE_API_DB_PASSWORD:-dev-core-api-pw}
+      AGENT_SERVICE_DB_PASSWORD: ${AGENT_SERVICE_DB_PASSWORD:-dev-agent-service-pw}
+      NOTIFY_SERVICE_DB_PASSWORD: ${NOTIFY_SERVICE_DB_PASSWORD:-dev-notify-service-pw}
+      HAPI_DB_PASSWORD: ${HAPI_DB_PASSWORD:-dev-hapi-pw}
+      KEYCLOAK_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD:-dev-keycloak-pw}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d app_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  redis:
+    <<: *service-defaults
+    image: redis:7-alpine
+    command: ["redis-server", "--aclfile", "/etc/redis/users.acl"]
+    networks: [internal]
+    volumes:
+      # per-service ACL users (10 §5 least privilege); dev passwords only —
+      # real environments get a SOPS-rendered ACL file
+      - ./redis/users.acl:/etc/redis/users.acl:ro
+    healthcheck:
+      # default ACL user is restricted to +ping exactly for this probe
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+
+  minio:
+    <<: *service-defaults
+    image: minio/minio:RELEASE.2025-04-22T22-12-26Z # pinned — no `latest` (10 §1)
+    command: ["server", "/data", "--console-address", ":9001"]
+    networks: [edge, internal]
+    ports:
+      - "9001:9001" # console, dev convenience (10 §2.1)
+    volumes:
+      - minio_data:/data
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-dev-minio-root}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-dev-minio-root-pw}
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:9000/minio/health/live"]
+      interval: 15s
+      timeout: 5s
+      retries: 6
+
+  createbuckets:
+    # one-shot: create + version the patient-files bucket then exit
+    image: minio/mc:RELEASE.2025-04-16T18-13-26Z
+    security_opt:
+      - no-new-privileges:true
+    restart: "no"
+    networks: [internal]
+    entrypoint: >
+      /bin/sh -c "
+        mc alias set local http://minio:9000 $${MINIO_ROOT_USER} $${MINIO_ROOT_PASSWORD} &&
+        mc mb --ignore-existing local/patient-files &&
+        mc version enable local/patient-files &&
+        echo 'buckets ready'
+      "
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-dev-minio-root}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-dev-minio-root-pw}
+    depends_on:
+      minio:
+        condition: service_healthy
+
+  mailpit:
+    <<: *service-defaults
+    image: axllent/mailpit:v1.24
+    networks: [edge, internal]
+    ports:
+      - "8025:8025" # web UI; SMTP :1025 stays network-internal
+    environment:
+      MP_SMTP_AUTH_ACCEPT_ANY: "1"
+      MP_SMTP_AUTH_ALLOW_INSECURE: "1"
+    # image is scratch-based (no shell/curl) — rely on container status; the
+    # notify-service /readyz dependency check covers SMTP reachability
+
+  # ==========================================================================
+  # Dev tools
+  # ==========================================================================
+  face-sim:
+    # Phase A dev stub for the EXTERNAL face-recognition service (05):
+    # emits HMAC-signed FaceCheckinEvent webhooks on demand.
+    #   docker compose exec face-sim python /opt/face-sim/sim.py send
+    #   docker compose exec face-sim python /opt/face-sim/sim.py send --replay
+    #   docker compose exec face-sim python /opt/face-sim/sim.py send --bad-signature
+    image: python:3.12-slim
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    command: ["python", "/opt/face-sim/sim.py", "idle"]
+    networks: [edge]
+    volumes:
+      - ./face-sim:/opt/face-sim:ro
+    environment:
+      GATEWAY_URL: https://gateway
+      FACE_WEBHOOK_HMAC_KEY_ID: ${FACE_WEBHOOK_HMAC_KEY_ID:-dev-key-1}
+      FACE_WEBHOOK_HMAC_SECRET: ${FACE_WEBHOOK_HMAC_SECRET:-dev-face-webhook-secret}
+      # mkcert CA isn't in the container trust store; sim verifies TLS unless set
+      FACE_SIM_INSECURE_TLS: "1"
+
+  # ==========================================================================
+  # Profile: seed (10 §2.3) — Synthea generate-or-restore, load via gateway,
+  # register in MPI so PHNs are issued through the real issuance path
+  # ==========================================================================
+  seed:
+    profiles: [seed]
+    image: python:3.12-slim
+    security_opt:
+      - no-new-privileges:true
+    restart: "no"
+    command: ["python", "/opt/seed/seed.py"]
+    networks: [edge, internal]
+    volumes:
+      - ./seed:/opt/seed:ro
+      - seed_bundles:/bundles
+    environment:
+      GATEWAY_URL: https://gateway
+      KEYCLOAK_URL: http://keycloak:8080
+      KEYCLOAK_REALM: medagent
+      SEED_CLIENT_ID: seed-job
+      SEED_CLIENT_SECRET: ${SEED_CLIENT_SECRET:-dev-seed-client-secret}
+      SEED_VERSION: v1
+      SEED_INSECURE_TLS: "1"
+    depends_on:
+      core-api:
+        condition: service_healthy
+      fhir:
+        condition: service_healthy
+
+  # ==========================================================================
+  # Profile: test (10 §2.2/§3.4) — runner for the integration suite.
+  # For the fully ephemeral variant (tmpfs Postgres, random host ports) layer
+  # the overlay:  docker compose -f docker-compose.yml -f docker-compose.test.yml --profile test ...
+  # ==========================================================================
+  integration-tests:
+    profiles: [test]
+    image: python:3.12-slim
+    security_opt:
+      - no-new-privileges:true
+    restart: "no"
+    networks: [edge, internal]
+    # Suite lands with S2+ (gateway auth flows, interceptor behaviour, webhook
+    # signature/replay, check-in -> SSE e2e, recorded-LLM chat happy path — 10 §3.4)
+    command:
+      [
+        "python",
+        "-c",
+        "print('integration-tests: suite not yet implemented (S1 scaffold) — see 10 §3.4'); raise SystemExit(0)",
+      ]
+    environment:
+      GATEWAY_URL: https://gateway
+      TEST_INSECURE_TLS: "1"
+    depends_on:
+      core-api:
+        condition: service_healthy
+      notify-service:
+        condition: service_healthy
+
+  # ==========================================================================
+  # Profile: observability (10 §2.2, §6) — configs in infra/observability/
+  # ==========================================================================
+  otel-collector:
+    <<: *service-defaults
+    profiles: [observability]
+    image: otel/opentelemetry-collector-contrib:0.123.0
+    command: ["--config=/etc/otelcol/config.yaml"]
+    networks: [internal]
+    volumes:
+      - ../observability/otel-collector/config.yaml:/etc/otelcol/config.yaml:ro
+
+  prometheus:
+    <<: *service-defaults
+    profiles: [observability]
+    image: prom/prometheus:v3.3.0
+    networks: [edge, internal]
+    ports:
+      - "9090:9090" # dev convenience
+    volumes:
+      - ../observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+
+  tempo:
+    <<: *service-defaults
+    profiles: [observability]
+    image: grafana/tempo:2.7.2
+    command: ["-config.file=/etc/tempo/tempo.yaml"]
+    networks: [internal]
+    volumes:
+      - ../observability/tempo/tempo.yaml:/etc/tempo/tempo.yaml:ro
+
+  loki:
+    <<: *service-defaults
+    profiles: [observability]
+    image: grafana/loki:3.4.3
+    # ships a workable default config for dev; hardened config lands with S6
+    command: ["-config.file=/etc/loki/local-config.yaml"]
+    networks: [internal]
+
+  grafana:
+    <<: *service-defaults
+    profiles: [observability]
+    image: grafana/grafana:11.6.1
+    networks: [edge, internal]
+    ports:
+      - "3001:3000" # dev convenience (web dev server may occupy 3000 on host)
+    volumes:
+      - grafana_data:/var/lib/grafana
+      # dashboards + datasources provisioned as code (10 §6.2)
+      - ../observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-dev-grafana-pw}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    depends_on:
+      - prometheus
+      - tempo
+      - loki

@@ -1,0 +1,84 @@
+/*
+ * MedAgent design tokens — single source of truth for both themes.
+ * docs/solution/06 §4.1–4.2: calm neutral clinical palette (slate-derived
+ * surfaces), one restrained accent (teal), colour reserved for clinical
+ * meaning (severity, verdicts, statuses).
+ *
+ * Dark mode: same token names, dark values, switched on [data-theme="dark"].
+ * NO `!important`, ever — it is lint-banned in packages/ui and apps/web
+ * (06 §4.2, ADR W-3). Components consume semantic Tailwind utilities mapped
+ * from these variables in tailwind-preset.ts; raw palette utilities
+ * (bg-white, text-gray-*) are lint-warned.
+ *
+ * Contrast: every token pair must hold WCAG 2.1 AA (>= 4.5:1 text, 3:1 UI)
+ * in both themes; the token-level contrast unit test lands with the
+ * Storybook/axe CI gate (06 §4.5, S2).
+ */
+
+:root {
+  /* Surfaces */
+  --background: #f8fafc;          /* page */
+  --foreground: #0f172a;          /* primary text on page */
+  --card: #ffffff;                /* raised surface */
+  --card-foreground: #0f172a;
+  --muted: #f1f5f9;               /* inset surface */
+  --muted-foreground: #475569;    /* secondary text */
+
+  /* Borders / focus */
+  --border: #e2e8f0;
+  --border-strong: #cbd5e1;
+  --ring: #0f766e;                /* 2px focus-visible ring token (06 §4.5) */
+
+  /* Restrained interactive accent */
+  --primary: #0f766e;
+  --primary-foreground: #ffffff;
+
+  /* Clinical meaning — status / severity */
+  --destructive: #b91c1c;
+  --destructive-foreground: #ffffff;
+  --warning: #b45309;
+  --warning-foreground: #ffffff;
+  --success: #15803d;
+  --success-foreground: #ffffff;
+
+  /* Rx-safety verdict banner states (06 §7) */
+  --verdict-pass: #15803d;
+  --verdict-warn: #b45309;
+  --verdict-block: #b91c1c;
+
+  /* Tinted chip backgrounds (severity chips, verdict banners) */
+  --destructive-surface: #fef2f2;
+  --warning-surface: #fffbeb;
+  --success-surface: #f0fdf4;
+}
+
+:root[data-theme="dark"] {
+  --background: #0f172a;
+  --foreground: #f1f5f9;
+  --card: #1e293b;
+  --card-foreground: #f1f5f9;
+  --muted: #1e293b;
+  --muted-foreground: #94a3b8;
+
+  --border: #334155;
+  --border-strong: #475569;
+  --ring: #2dd4bf;
+
+  --primary: #2dd4bf;
+  --primary-foreground: #042f2e;
+
+  --destructive: #f87171;
+  --destructive-foreground: #450a0a;
+  --warning: #fbbf24;
+  --warning-foreground: #451a03;
+  --success: #4ade80;
+  --success-foreground: #052e16;
+
+  --verdict-pass: #4ade80;
+  --verdict-warn: #fbbf24;
+  --verdict-block: #f87171;
+
+  --destructive-surface: #451a1a;
+  --warning-surface: #422006;
+  --success-surface: #052e16;
+}

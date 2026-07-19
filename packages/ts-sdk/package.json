@@ -1,0 +1,20 @@
+{
+  "name": "@medagent/ts-sdk",
+  "version": "0.1.0",
+  "private": true,
+  "description": "OpenAPI-generated TypeScript clients + typed fetch wrappers for core-api, agent-service and notify-service. The ONLY HTTP surface for apps/web (docs/solution/06 ADR W-5).",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./generated/*": "./src/generated/*.ts"
+  },
+  "scripts": {
+    "generate": "node scripts/generate.mjs",
+    "typecheck": "tsc --noEmit",
+    "lint": "echo \"(ts-sdk) lint lands with the shared flat config in S2\""
+  },
+  "devDependencies": {
+    "openapi-typescript": "^7.8.0",
+    "typescript": "^5.8.0"
+  }
+}

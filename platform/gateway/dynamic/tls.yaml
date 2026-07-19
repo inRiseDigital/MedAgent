@@ -1,0 +1,32 @@
+# =============================================================================
+# TLS material — dynamic config (Traefik only supports certificate stores in
+# dynamic files, hence separate from ../traefik.yaml).
+#
+# Dev: mkcert locally-trusted certs (10 §2.1 — `https://localhost` mirrors
+# staging routing so auth flows are realistic). Paths come from ENVIRONMENT
+# via Traefik's Go templating in file-provider configs:
+#   MKCERT_CERT_FILE=/certs/localhost.pem
+#   MKCERT_KEY_FILE=/certs/localhost-key.pem
+# Compose mounts the mkcert output at /certs and sets both vars.
+#
+# Staging/pilot: this file is superseded by ACME (automated TLS per 10 §5
+# rotation table: "TLS — automated (ACME/Traefik), continuous"); the ACME
+# resolver is added to the static config by IaC, and this cert store is not
+# shipped there.
+# =============================================================================
+
+tls:
+  certificates:
+    - certFile: '{{ env "MKCERT_CERT_FILE" }}'
+      keyFile: '{{ env "MKCERT_KEY_FILE" }}'
+
+  stores:
+    default:
+      defaultCertificate:
+        certFile: '{{ env "MKCERT_CERT_FILE" }}'
+        keyFile: '{{ env "MKCERT_KEY_FILE" }}'
+
+  options:
+    default:
+      minVersion: VersionTLS12       # TLS 1.3 preferred (NFR-10); 1.2 floor for pilot-site clients
+      sniStrict: true

@@ -1,0 +1,94 @@
+# AI eval gate (10 §3.3, 04 §6): any change touching agent-service prompts,
+# tools, graph topology, model pin, or the DDI dataset runs the golden eval
+# set. A regression blocks merge with the same standing as a failing unit test
+# — configure `eval-gate / golden-evals` as a REQUIRED status check on main
+# (10 §3.6). Untouched paths -> workflow doesn't trigger -> required check is
+# satisfied via branch-protection "required on matching paths" semantics; keep
+# these paths in lockstep with services/agent-service layout.
+name: eval-gate
+
+on:
+  pull_request:
+    paths:
+      # prompts / tools / graph topology (align with agent-service layout)
+      - "services/agent-service/app/prompts/**"
+      - "services/agent-service/app/tools/**"
+      - "services/agent-service/app/graph/**"
+      # model pin (04: pinned model + pricing table)
+      - "services/agent-service/app/models.py"
+      - "services/agent-service/model-pins.toml"
+      # DDI dataset + the eval harness itself
+      - "services/agent-service/data/ddi/**"
+      - "services/agent-service/evals/**"
+
+concurrency:
+  group: eval-gate-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write # results comment
+
+jobs:
+  golden-evals:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./infra/ci/actions/setup-python-uv
+        with:
+          working-directory: services/agent-service
+
+      - name: Run golden evaluation set
+        working-directory: services/agent-service
+        env:
+          # scoped, low-limit eval key (10 §2.4/§5) — GitHub environment secret,
+          # never the production-billing key
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY_EVALS }}
+          EVAL_BASELINE_REF: main # harness compares against main's recorded baseline
+        # Hard thresholds enforced by the harness itself (10 §3.3):
+        #   Rx-safety fixtures 100 %, citation faithfulness >= 98 %,
+        #   no regression vs main baseline. Non-zero exit = gate failed.
+        run: uv run python evals/run.py --output eval-results.json
+
+      - name: Upload raw results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-results
+          path: services/agent-service/eval-results.json
+          if-no-files-found: ignore
+
+      - name: Post results comment (pass rate, cost, latency per case class)
+        if: always() && github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const path = 'services/agent-service/eval-results.json';
+            let body = '## AI eval gate\n\n';
+            if (fs.existsSync(path)) {
+              const r = JSON.parse(fs.readFileSync(path, 'utf8'));
+              body += `**${r.passed ? 'PASSED' : 'FAILED'}** — pass rate ${r.pass_rate ?? 'n/a'}\n\n`;
+              body += '| Case class | Pass | Cost | p50 | p95 |\n|---|---|---|---|---|\n';
+              for (const c of r.case_classes ?? []) {
+                body += `| ${c.name} | ${c.pass_rate} | ${c.cost_usd} | ${c.latency_p50_ms} ms | ${c.latency_p95_ms} ms |\n`;
+              }
+            } else {
+              body += 'Harness produced no results file — see job log.\n';
+            }
+            body += '\n_Required check: a regression blocks merge (10 §3.3)._';
+            const { data: comments } = await github.rest.issues.listComments({
+              ...context.repo, issue_number: context.issue.number,
+            });
+            const mine = comments.find(c => c.user.type === 'Bot' && c.body.startsWith('## AI eval gate'));
+            if (mine) {
+              await github.rest.issues.updateComment({ ...context.repo, comment_id: mine.id, body });
+            } else {
+              await github.rest.issues.createComment({ ...context.repo, issue_number: context.issue.number, body });
+            }
+      # Results also push to the eval dashboard (10 §6.3) — lands with the
+      # observability pipeline; placeholder:
+      # - name: Push metrics to eval dashboard
+      #   run: uv run python evals/push_metrics.py eval-results.json
