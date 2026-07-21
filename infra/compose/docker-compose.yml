@@ -82,16 +82,29 @@ services:
   web:
     <<: *service-defaults
     build:
-      context: ../../apps/web
-      dockerfile: Dockerfile
+      # Repo-root context so the pnpm workspace packages resolve (@medagent/ui,
+      # @medagent/ts-sdk); Dockerfile lives under apps/web.
+      context: ../../
+      dockerfile: apps/web/Dockerfile
       target: dev
     # Next.js dev server, hot reload via bind mount (10 §2.1)
-    command: ["pnpm", "dev", "--port", "3000", "--hostname", "0.0.0.0"]
+    command: ["pnpm", "--filter", "@medagent/web", "dev", "--port", "3000", "--hostname", "0.0.0.0"]
     networks: [edge, internal]
+    ports:
+      - "3000:3000" # dev convenience: direct access; real traffic via the gateway (https://localhost)
     volumes:
-      - ../../apps/web:/app
-      - /app/node_modules # keep container-installed deps out of the bind mount
-      - /app/.next
+      # Bind-mount source for hot reload; keep image-installed deps + build via
+      # anonymous volumes so the bind mount doesn't shadow node_modules.
+      - ../../apps/web:/repo/apps/web
+      - ../../packages:/repo/packages
+      - /repo/node_modules
+      - /repo/apps/web/node_modules
+      - /repo/apps/web/.next
+      # Preserve image-installed workspace-package deps (e.g. lucide-react in
+      # @medagent/ui) — the packages bind-mount above would otherwise shadow
+      # their node_modules with the host's (empty) tree.
+      - /repo/packages/ui/node_modules
+      - /repo/packages/ts-sdk/node_modules
     environment:
       NODE_ENV: development
       NEXT_PUBLIC_API_BASE_URL: https://localhost/api
