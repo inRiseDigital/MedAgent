@@ -30,8 +30,8 @@ Each task: **Build** → **Verify** (insert data / call it / assert) → commit.
 ## Phase A · S1 — Platform spine (complete + verify)
 - [~] **HAPI FHIR up** — build image (starter + interceptor JAR), pull base, healthy
   - verify: container healthy; `hapi_db` populated (hfj_* tables); `GET /fhir/metadata` returns CapabilityStatement
-- [~] **Keycloak up** — build image, realm-as-code import on boot
-  - verify: `keycloak` DB populated; realm `medagent` present with 11 roles + clients; discovery doc resolves
+- [x] **Keycloak up** — image built; realm-as-code applied via config-cli one-shot service
+  - verified: `keycloak` DB populated (100 tables); realm `medagent` with all 11 roles + 7 clients (web, core-api, agent-service, notify-service, kiosk-device, fhir-gateway, keycloak-config-cli); OIDC discovery resolves; dev users dr_demo/reception_demo/patient_demo present
 - [ ] **Seed FHIR data** — insert a Patient + Encounter + Observation via FHIR transaction (through the interceptor path)
   - verify: read back by id; search by PHN identifier; confirm AuditEvent written
 - [ ] **Real auth end-to-end** — turn AUTH_DISABLED off; obtain a token for `dr_demo` from Keycloak; call core-api + FHIR
@@ -144,3 +144,6 @@ optimises the LLM/agent layer and operations, always eval-gated and reversible.
 - 2026-07-21: Redis channel/key namespaces reconciled across builders (`events:*`, `authz:*`, `face:*`, `sse:ticket:*`); ACL rewritten to strict format. (commit 2d9845f)
 - 2026-07-21: SSE ticket issuance consolidated in notify-service per 02 §11 (removed from core-api). (commit 9a42891)
 - 2026-07-21: web Docker build fixed to repo-root context for pnpm workspace resolution. (commit 28c14ca)
+- 2026-07-21: **Keycloak realm import fixed** — compose used native `--import-realm` which cannot read config-cli YAML. Added a proper `keycloak-config` one-shot service (config-cli) and switched keycloak to plain `start-dev`. Fixed 3 realm-file bugs: a literal `$(env:...)` in a comment (config-cli substitutes over raw file text), a `break_glass` description exceeding Keycloak's varchar(255), and a `CONFIGURE_TOTP` required-action missing `providerId`.
+- 2026-07-21: **Decision — stock HAPI for dev-bootstrap.** The S1 authz interceptor is a blanket fail-closed skeleton (denies every write), so the custom fhir image cannot accept seed data. Bring up stock `hapiproject/hapi:v8.10.4` against `hapi_db` for dev/testing now; swap to the custom interceptor image in S2 when the interceptors carry real decision logic.
+- 2026-07-21: National architecture chart reviewed — confirms the six-layer design; noted Provider registry and Facility registry as explicit national core registries (map to FHIR Practitioner/PractitionerRole + Organization/Location).

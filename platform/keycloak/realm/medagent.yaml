@@ -6,9 +6,11 @@
 # RULES (02 §1, ADR I-1):
 #   * This file is the ONLY source of truth for the realm. No click-ops:
 #     admin-console edits do not persist — drift is overwritten on next apply.
-#   * NO secrets in this file. $(env:...) placeholders are substituted by
-#     config-cli at apply time (--import.var-substitution.enabled=true) from
-#     vault-injected environment (10 §5).
+#   * NO secrets in this file. Env-placeholders (env:NAME form, wrapped in the
+#     config-cli substitution delimiters) are resolved at apply time
+#     (--import.var-substitution.enabled=true) from vault-injected environment
+#     (10 §5). NOTE: config-cli substitutes over the whole file text before YAML
+#     parsing, so a literal placeholder must never appear even in a comment.
 #   * One realm for staff + patients (ADR I-2). `master` holds no app users.
 #   * CI runs a realm-lint step asserting no role accumulates scopes outside
 #     the §3 matrix (02 §3).
@@ -62,12 +64,7 @@ roles:
       description: "DORMANT (Phase B analytics). analytics.national — aggregate/de-identified ONLY, never row-level PHI (FR-14.4)."
     # ---- Modifier role (not a standing grant)
     - name: break_glass
-      description: >-
-        MODIFIER role — model designed day 1; Phase A operates break-glass as an
-        AUDITED MANUAL PROCEDURE granted in core-api app_db, NOT via this role
-        (02 §6, ADR I-4: no realm mutation in emergencies). The role exists so
-        eligibility can be expressed and linted; it carries no scopes itself.
-        Automated self-service workflow activates Phase B.
+      description: "MODIFIER — Phase A runs break-glass as an audited manual procedure in core-api app_db, not via this role (02 §6, ADR I-4). No scopes; exists so eligibility is expressible. Automated workflow is Phase B."
     # ---- Internal composite for authentication-flow conditioning (not a spec actor)
     - name: staff
       description: "INTERNAL composite — groups staff roles so the browser flow's conditional TOTP (02 §4) keys on one role. Not assignable directly; membership via composites below."
@@ -431,6 +428,7 @@ authenticatorConfig:
 # so patient onboarding stays friction-free); the action itself is enabled here.
 requiredActions:
   - alias: CONFIGURE_TOTP
+    providerId: CONFIGURE_TOTP
     name: Configure OTP
     enabled: true
     defaultAction: false

@@ -283,14 +283,13 @@ services:
     build:
       context: ../../platform/keycloak
       dockerfile: Dockerfile
-    # realm-as-code: keycloak-config-cli baked into the image applies
-    # platform/keycloak/realm/ on boot — no click-ops (02, 10 §2.1)
-    command: ["start-dev", "--import-realm"]
+    # Realm-as-code is applied by the keycloak-config one-shot below (config-cli),
+    # NOT native --import-realm: the realm files are in config-cli YAML format
+    # (02, 10 §2.1). No click-ops.
+    command: ["start-dev"]
     networks: [edge, internal]
     ports:
       - "8081:8080" # dev convenience only; real traffic goes via the gateway
-    volumes:
-      - ../../platform/keycloak/realm:/opt/keycloak/data/import:ro
     environment:
       KC_DB: postgres
       KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
@@ -315,6 +314,37 @@ services:
       start_period: 60s
     depends_on:
       postgres:
+        condition: service_healthy
+
+  # Realm-as-code apply (keycloak-config-cli) — one-shot, runs after Keycloak is
+  # healthy and applies platform/keycloak/realm/*.yaml idempotently (02 §1, 10 §3.2).
+  # Dev applies medagent.yaml + dev-users.yaml; staging/pilot override to medagent.yaml only.
+  keycloak-config:
+    build:
+      context: ../../platform/keycloak
+      dockerfile: Dockerfile
+    restart: "no"
+    networks: [internal]
+    entrypoint: ["java"]
+    command:
+      [
+        "-jar", "/opt/keycloak-config-cli/keycloak-config-cli.jar",
+        "--keycloak.url=http://keycloak:8080/auth",
+        "--keycloak.user=${KEYCLOAK_ADMIN_USER:-admin}",
+        "--keycloak.password=${KEYCLOAK_ADMIN_PASSWORD:-dev-admin-pw}",
+        "--keycloak.availability-check.enabled=true",
+        "--keycloak.availability-check.timeout=120s",
+        "--import.files.locations=/opt/keycloak-config/realm/medagent.yaml,/opt/keycloak-config/realm/dev-users.yaml",
+        "--import.var-substitution.enabled=true",
+      ]
+    environment:
+      KC_WEB_CLIENT_SECRET: ${KC_WEB_CLIENT_SECRET:-dev-web-secret}
+      KC_CORE_API_CLIENT_SECRET: ${KC_CORE_API_CLIENT_SECRET:-dev-core-api-secret}
+      KC_AGENT_SERVICE_CLIENT_SECRET: ${KC_AGENT_SERVICE_CLIENT_SECRET:-dev-agent-secret}
+      KC_KIOSK_DEVICE_CLIENT_SECRET: ${KC_KIOSK_DEVICE_CLIENT_SECRET:-dev-kiosk-secret}
+      KC_CONFIG_CLI_CLIENT_SECRET: ${KC_CONFIG_CLI_CLIENT_SECRET:-dev-config-cli-secret}
+    depends_on:
+      keycloak:
         condition: service_healthy
 
   postgres:
