@@ -39,6 +39,15 @@ function issuer(): string {
   return value.replace(/\/$/, "");
 }
 
+// Backchannel base (server-side): discovery + token exchange happen from the web
+// container, which cannot reach the public issuer hostname. Falls back to the
+// public issuer if unset. Browser-facing URLs (authorize, logout) still use the
+// public endpoints from the discovery document (02 split-horizon).
+function internalBase(): string {
+  return (process.env.KEYCLOAK_INTERNAL_URL ?? process.env.KEYCLOAK_ISSUER ?? "")
+    .replace(/\/$/, "");
+}
+
 function clientId(): string {
   const value = process.env.KEYCLOAK_CLIENT_ID;
   if (!value) throw new Error("KEYCLOAK_CLIENT_ID is not set");
@@ -69,8 +78,8 @@ export async function discover(): Promise<OidcConfig> {
   const now = Date.now();
   if (discoveryCache && discoveryCache.expiresAt > now) return discoveryCache.config;
 
-  const res = await fetch(`${issuer()}/.well-known/openid-configuration`, {
-    // Server-to-server; never cache at the fetch layer (we cache in-process).
+  const res = await fetch(`${internalBase()}/.well-known/openid-configuration`, {
+    // Server-to-server over the internal network; never cache at the fetch layer.
     cache: "no-store",
   });
   if (!res.ok) throw new Error(`OIDC discovery failed: ${res.status}`);
@@ -129,8 +138,9 @@ function toTokenSet(body: TokenEndpointResponse): TokenSet {
 }
 
 export async function exchangeCode(code: string, codeVerifier: string): Promise<TokenSet> {
-  const config = await discover();
-  const res = await fetch(config.token_endpoint, {
+  // Token exchange is backchannel — always the internal endpoint (the public
+  // token_endpoint from discovery is unreachable from the web container).
+  const res = await fetch(`${internalBase()}/protocol/openid-connect/token`, {
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded" },
     cache: "no-store",
@@ -148,8 +158,7 @@ export async function exchangeCode(code: string, codeVerifier: string): Promise<
 }
 
 export async function refreshTokens(refreshToken: string): Promise<TokenSet> {
-  const config = await discover();
-  const res = await fetch(config.token_endpoint, {
+  const res = await fetch(`${internalBase()}/protocol/openid-connect/token`, {
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded" },
     cache: "no-store",

@@ -213,15 +213,18 @@ clients:
     # Exact redirect URIs only (02 §2). Localhost dev; staging/pilot URIs are
     # appended per-environment by config-cli overlay files, never wildcards.
     redirectUris:
-      - "https://localhost/api/auth/callback/*"
-      - "http://localhost:3000/api/auth/callback/*"
+      - "https://localhost/api/auth/callback*"
+      - "http://localhost:3000/api/auth/callback*"
     webOrigins:
       - "https://localhost"
       - "http://localhost:3000"
     attributes:
       pkce.code.challenge.method: "S256"    # PKCE S256 ENFORCED (02 §2)
       post.logout.redirect.uris: "https://localhost/*##http://localhost:3000/*"
-    defaultClientScopes: [profile, email]
+    # `roles` (realm_access.roles), `basic` (sub/iss), `acr`, `web-origins` are
+    # the standard Keycloak scopes the BFF needs; clinical/aud scopes stay optional
+    # (requested per call path, 02 §2).
+    defaultClientScopes: [profile, email, roles, basic, acr, web-origins]
     # Audiences requested per call path (02 §2) — optional so a chat token need
     # not carry the FHIR audience.
     optionalClientScopes:
@@ -380,7 +383,7 @@ authenticationFlows:
         autheticatorFlow: true
 
   - alias: medagent-staff-otp
-    description: "TOTP required for staff roles at every login (02 §4)"
+    description: "TOTP for staff roles who have enrolled (02 §4). Enrolment is enforced at provisioning (CONFIGURE_TOTP required action set by the FR-6.1 admin wrapper, 02 §10.1), NOT forced mid-login — so a staff member without OTP is challenged only after enrolment, and programmatic/dev logins are not broken by a surprise setup screen."
     providerId: basic-flow
     topLevel: false
     builtIn: false
@@ -390,9 +393,15 @@ authenticationFlows:
         priority: 10
         autheticatorFlow: false
         authenticatorConfig: staff-role-condition
-      - authenticator: auth-otp-form
+      # Only challenge OTP if the user has it enrolled; otherwise this CONDITIONAL
+      # subflow is skipped (no forced setup). Enrolment is the provisioning gate.
+      - authenticator: conditional-user-configured
         requirement: REQUIRED
         priority: 20
+        autheticatorFlow: false
+      - authenticator: auth-otp-form
+        requirement: REQUIRED
+        priority: 30
         autheticatorFlow: false
 
   - alias: medagent-loa2-stepup

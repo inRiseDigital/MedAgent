@@ -17,6 +17,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 import {
+  appUrl,
   buildAuthorizeUrl,
   buildLogoutUrl,
   exchangeCode,
@@ -53,6 +54,15 @@ function baseCookieOptions() {
 function safeReturnTo(raw: string | null): string {
   if (raw && raw.startsWith("/") && !raw.startsWith("//")) return raw;
   return "/queue";
+}
+
+/** Public origin from the gateway's forwarded headers — request.url is the
+ *  container's internal bind (0.0.0.0:3000), which the browser cannot follow. */
+function publicBase(request: NextRequest): string {
+  const proto = request.headers.get("x-forwarded-proto") ?? "https";
+  const host =
+    request.headers.get("x-forwarded-host") ?? request.headers.get("host") ?? "localhost";
+  return `${proto}://${host}`;
 }
 
 function resolveAction(segments: string[]): AuthAction | null {
@@ -108,17 +118,17 @@ async function handleCallback(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: "token_exchange_failed" }, { status: 502 });
   }
 
-  const res = NextResponse.redirect(new URL(safeReturnTo(tx.returnTo), request.url));
+  // Redirect against the PUBLIC origin (from forwarded headers) — request.url is
+  // the container's internal bind (0.0.0.0:3000), which the browser cannot follow.
+  const res = NextResponse.redirect(new URL(safeReturnTo(tx.returnTo), publicBase(request)));
   res.cookies.set(SESSION_COOKIE, sessionId, baseCookieOptions());
   res.cookies.delete(TX_COOKIE);
   return res;
 }
 
-async function handleLogout(request: NextRequest): Promise<NextResponse> {
+async function handleLogout(_request: NextRequest): Promise<NextResponse> {
   const idToken = await destroySession();
-  const target = idToken
-    ? await buildLogoutUrl(idToken)
-    : new URL("/", request.url).toString();
+  const target = idToken ? await buildLogoutUrl(idToken) : appUrl();
   const res = NextResponse.redirect(target);
   res.cookies.delete(SESSION_COOKIE);
   return res;

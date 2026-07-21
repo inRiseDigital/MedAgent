@@ -112,9 +112,21 @@ services:
       - /repo/packages/ts-sdk/node_modules
     environment:
       NODE_ENV: development
+      NEXT_PUBLIC_APP_URL: https://localhost
       NEXT_PUBLIC_API_BASE_URL: https://localhost/api
       NEXT_PUBLIC_KEYCLOAK_URL: https://localhost/auth
       NEXT_PUBLIC_KEYCLOAK_REALM: medagent
+      NEXT_PUBLIC_NOTIFY_STREAM_URL: https://localhost/notify/stream
+      # BFF (server-side only, 06 §2.2). Public issuer for iss + browser-facing
+      # authorize/logout; internal URL for backchannel discovery + token exchange.
+      KEYCLOAK_ISSUER: https://localhost/auth/realms/medagent
+      KEYCLOAK_INTERNAL_URL: http://keycloak:8080/auth/realms/medagent
+      KEYCLOAK_CLIENT_ID: web
+      KEYCLOAK_CLIENT_SECRET: ${KC_WEB_CLIENT_SECRET:-dev-web-secret}
+      SESSION_SECRET: ${SESSION_SECRET:-dev-session-secret-change-me-32chars}
+      SESSION_REDIS_URL: redis://web:${WEB_REDIS_PASSWORD:-dev-web-redis-pw}@redis:6379/1
+      CORE_API_URL: http://core-api:8000
+      NOTIFY_SERVICE_URL: http://notify-service:8000
     env_file:
       # SOPS-injected in real environments (10 §5) — optional locally
       - path: ./env/web.env
@@ -302,6 +314,10 @@ services:
       KC_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD:-dev-keycloak-pw}
       KC_HEALTH_ENABLED: "true"
       KC_HOSTNAME: https://localhost/auth
+      # Frontend URLs (authorize, iss) use KC_HOSTNAME; backchannel calls (token
+      # exchange, JWKS) are accepted on the internal address they arrive on so
+      # in-cluster services/BFF can reach them (02 split-horizon).
+      KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
       KC_PROXY_HEADERS: xforwarded
       KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USER:-admin}
       KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-dev-admin-pw}

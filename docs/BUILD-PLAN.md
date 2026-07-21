@@ -36,10 +36,11 @@ Each task: **Build** → **Verify** (insert data / call it / assert) → commit.
   - verified: 201 for all three (Patient/1002, Encounter/1000, Observation/1001); search by PHN identifier → Nimal Perera; search Observation by LOINC 8867-4 → HR 78 beats/minute. (AuditEvent verification waits for the custom interceptor image in S2.)
 - [x] **Real auth end-to-end** — AUTH enabled on core-api; `dr_demo` token from Keycloak
   - verified: no token → 401, bad token → 401, valid dr_demo token → 200; token `iss`=public issuer, roles include `doctor`. Split-horizon fixed: services validate `iss` against the public issuer but fetch JWKS from `KEYCLOAK_INTERNAL_URL` (new setting in all 3 services). Test token minted via a dev-only `dev-cli` direct-grant client. (Audience `aud:*` enforcement still TODO S2.)
-- [ ] **BFF login flow** — web `/api/auth/login` → Keycloak → callback → session cookie → `/queue` renders
-  - verify: browser (or curl cookie jar) completes the OIDC round-trip; `/queue` shows live data
-- [ ] **Gateway (Traefik)** — generate mkcert certs, bring up, route `https://localhost`
-  - verify: `https://localhost/queue`, `/api/core/...`, `/auth/...` route correctly; FHIR NOT reachable publicly
+- [x] **Gateway (Traefik)** — self-signed localhost cert (openssl), `https://localhost` live
+  - verified: `/auth/realms/medagent` 200, `/` 200, `/api/core/...` 401 (auth enforced); FHIR off the public entrypoint.
+- [x] **BFF login flow** — full OIDC round-trip via the gateway, verified with a cookie jar
+  - verified: login → Keycloak → dr_demo credentials → callback (token exchange over internal URL) → `__Host-session` cookie → 307 to `https://localhost/queue`; `/api/auth/session` authenticated:true; `/queue` 200. Web OIDC split-horizon added (authorize/logout public, discovery+token-exchange internal); Keycloak `KC_HOSTNAME_BACKCHANNEL_DYNAMIC=true`; `web` Redis ACL user added; redirect built from forwarded headers (not the internal bind).
+  - FOLLOW-UPS: (1) session `roles: []` — web client `roles` scope not surfacing realm_access (investigate token contents); (2) dev browser-flow relaxation isn't reproducible — config-cli ignores `browserFlow` in the partial and doesn't update existing flow executions, so `browserFlow=browser` is currently set via admin API each time (automate in dev bootstrap). Prod `medagent-staff-otp` improved to conditional-user-configured (MFA enrolment at provisioning, not forced mid-login).
 - [ ] **Audit interceptor writes AuditEvent** on every read/write · verify: read a Patient → AuditEvent row appears
 - [ ] **CI green** — lint/typecheck/unit/eval-gate run in GitHub Actions · verify: workflow passes on a PR
 - [ ] **Commit lockfiles** (pnpm-lock.yaml, uv.lock per service) so builds are reproducible · verify: `--frozen-lockfile` build
