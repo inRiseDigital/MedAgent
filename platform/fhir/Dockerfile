@@ -9,7 +9,7 @@
 #   cd interceptors && mvn -B package
 # (CI job `platform/fhir` per 10 §3.2 does this before the image build.)
 
-FROM hapiproject/hapi:v8.10.4
+FROM hapiproject/hapi:v8.10.0-3
 
 # The starter image is a Spring Boot app launched with PropertiesLauncher.
 # /app/extra-classes is on loader.path — anything dropped here joins the

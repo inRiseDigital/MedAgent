@@ -1,0 +1,21 @@
+# Dev-bootstrap override — stock HAPI FHIR against hapi_db, WITHOUT the S1
+# fail-closed interceptors (which deny every write and would block seeding).
+# Lets us create + test the clinical FHIR data model now; the custom
+# interceptor image (platform/fhir) takes over in S2 when the interceptors
+# carry real decision logic (see docs/BUILD-PLAN.md architecture log).
+#
+# Usage:
+#   docker compose -f infra/compose/docker-compose.yml \
+#                  -f infra/compose/docker-compose.dev-fhir.yml up -d fhir
+services:
+  fhir:
+    build: !reset null
+    image: hapiproject/hapi:v8.10.0-3
+    # dev only: join edge + publish a port so the FHIR API is reachable from the
+    # host for seeding/testing. In S2 the custom image goes back to internal-only.
+    networks: [internal, edge]
+    ports:
+      - "8090:8080"
+    environment:
+      SPRING_JPA_PROPERTIES_HIBERNATE_DIALECT: ca.uhn.fhir.jpa.model.dialect.HapiFhirPostgres94Dialect
+    healthcheck: !reset null

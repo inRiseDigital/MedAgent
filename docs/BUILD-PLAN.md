@@ -28,12 +28,12 @@ Each task: **Build** → **Verify** (insert data / call it / assert) → commit.
 ---
 
 ## Phase A · S1 — Platform spine (complete + verify)
-- [~] **HAPI FHIR up** — build image (starter + interceptor JAR), pull base, healthy
-  - verify: container healthy; `hapi_db` populated (hfj_* tables); `GET /fhir/metadata` returns CapabilityStatement
+- [x] **HAPI FHIR up** (stock, dev-bootstrap) — `hapiproject/hapi:v8.10.0-3` against `hapi_db`
+  - verified: `hapi_db` populated (58 hfj_* tables); `GET /fhir/metadata` → 200. (Custom interceptor image is S2.)
 - [x] **Keycloak up** — image built; realm-as-code applied via config-cli one-shot service
   - verified: `keycloak` DB populated (100 tables); realm `medagent` with all 11 roles + 7 clients (web, core-api, agent-service, notify-service, kiosk-device, fhir-gateway, keycloak-config-cli); OIDC discovery resolves; dev users dr_demo/reception_demo/patient_demo present
-- [ ] **Seed FHIR data** — insert a Patient + Encounter + Observation via FHIR transaction (through the interceptor path)
-  - verify: read back by id; search by PHN identifier; confirm AuditEvent written
+- [x] **Seed FHIR data** — Patient + Encounter + Observation via a transaction bundle (stock HAPI, dev-bootstrap)
+  - verified: 201 for all three (Patient/1002, Encounter/1000, Observation/1001); search by PHN identifier → Nimal Perera; search Observation by LOINC 8867-4 → HR 78 beats/minute. (AuditEvent verification waits for the custom interceptor image in S2.)
 - [ ] **Real auth end-to-end** — turn AUTH_DISABLED off; obtain a token for `dr_demo` from Keycloak; call core-api + FHIR
   - verify: valid token → 200; missing/expired token → 401; wrong audience → 401
 - [ ] **BFF login flow** — web `/api/auth/login` → Keycloak → callback → session cookie → `/queue` renders
@@ -147,3 +147,6 @@ optimises the LLM/agent layer and operations, always eval-gated and reversible.
 - 2026-07-21: **Keycloak realm import fixed** — compose used native `--import-realm` which cannot read config-cli YAML. Added a proper `keycloak-config` one-shot service (config-cli) and switched keycloak to plain `start-dev`. Fixed 3 realm-file bugs: a literal `$(env:...)` in a comment (config-cli substitutes over raw file text), a `break_glass` description exceeding Keycloak's varchar(255), and a `CONFIGURE_TOTP` required-action missing `providerId`.
 - 2026-07-21: **Decision — stock HAPI for dev-bootstrap.** The S1 authz interceptor is a blanket fail-closed skeleton (denies every write), so the custom fhir image cannot accept seed data. Bring up stock `hapiproject/hapi:v8.10.4` against `hapi_db` for dev/testing now; swap to the custom interceptor image in S2 when the interceptors carry real decision logic.
 - 2026-07-21: National architecture chart reviewed — confirms the six-layer design; noted Provider registry and Facility registry as explicit national core registries (map to FHIR Practitioner/PractitionerRole + Organization/Location).
+- 2026-07-21: **Fixed invented HAPI image tag** — `hapiproject/hapi:v8.10.4` does not exist on Docker Hub; corrected the fhir Dockerfile and dev override to the real latest 8.10.x tag `v8.10.0-3`. (The pom `hapi.version=8.10.4` for the interceptor build should be re-checked against real Maven artifact versions in S2.)
+- 2026-07-21: **HAPI FHIR live + clinical data flowing** — stock HAPI on `hapi_db`; inserted Patient/Encounter/Observation via transaction bundle and verified read-back + LOINC search. dev override: `infra/compose/docker-compose.dev-fhir.yml`.
+- KNOWN ISSUE (next): Keycloak issuer split-horizon — token `iss` = `https://localhost/auth/realms/medagent` (frontend), but services reach Keycloak internally at `http://keycloak:8080/auth`. Services' auth.py must validate `iss` against the public issuer while fetching JWKS from an internal URL (add `KEYCLOAK_INTERNAL_URL`). Required before the real-auth test + BFF login.
