@@ -144,6 +144,10 @@ services:
       S3_BUCKET: patient-files
       FACE_WEBHOOK_HMAC_KEY_ID: ${FACE_WEBHOOK_HMAC_KEY_ID:-dev-key-1}
       FACE_WEBHOOK_HMAC_SECRET: ${FACE_WEBHOOK_HMAC_SECRET:-dev-face-webhook-secret}
+      # Local bootstrap escape hatch (02 auth.py) — defaults OFF (secure).
+      # `AUTH_DISABLED=true docker compose up` lets you exercise the API before
+      # Keycloak is stood up. NEVER set outside local dev.
+      AUTH_DISABLED: ${AUTH_DISABLED:-false}
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
       OTEL_SERVICE_NAME: core-api
     env_file:
@@ -182,6 +186,7 @@ services:
       CORE_API_BASE_URL: http://core-api:8000
       KEYCLOAK_URL: http://keycloak:8080
       KEYCLOAK_REALM: medagent
+      AUTH_DISABLED: ${AUTH_DISABLED:-false}
       # ANTHROPIC_API_KEY: never here — SOPS env file only; dev uses the scoped
       # low-limit key from the vault (10 §2.4). Held ONLY by agent-service (10 §5).
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
@@ -216,6 +221,7 @@ services:
       REDIS_URL: redis://notify-service:${NOTIFY_SERVICE_REDIS_PASSWORD:-dev-notify-service-redis-pw}@redis:6379/0
       SMTP_HOST: mailpit
       SMTP_PORT: "1025"
+      AUTH_DISABLED: ${AUTH_DISABLED:-false}
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
       OTEL_SERVICE_NAME: notify-service
     env_file:

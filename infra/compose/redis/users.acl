@@ -1,20 +1,4 @@
-# ============================================================================
-# Redis ACLs — per-service users, least privilege (10 §5).
-# DEV PASSWORDS ONLY. Real environments receive a SOPS-rendered ACL file at
-# deploy time (infra/secrets/); this file must never contain real credentials.
-#
-# Channel conventions (01 §1/§4.1): checkin:*  events published by core-api,
-# consumed by notify-service; consent:* cache-invalidation fan-out.
-# ============================================================================
-
-# default user: healthcheck probe only — can ping, nothing else
 user default on nopass ~none +ping
-
-# core-api: queue/rate/MPI-cache keys, publishes check-in + consent events
-user core-api on >dev-core-api-redis-pw ~core:* ~queue:* ~rate:* ~consent:* &checkin:* &consent:* &notify:* +@read +@write +@keyspace +@pubsub +ping -@admin -@dangerous
-
-# agent-service: its own cache/session keys; subscribes to consent invalidation
-user agent-service on >dev-agent-service-redis-pw ~agent:* ~consent:* &consent:* +@read +@write +@keyspace +@pubsub +ping -@admin -@dangerous
-
-# notify-service: pure pub/sub fan-out + SSE connection state
-user notify-service on >dev-notify-service-redis-pw ~notify:* &checkin:* &consent:* &notify:* +@read +@write +@keyspace +@pubsub +ping -@admin -@dangerous
+user core-api on >dev-core-api-redis-pw ~core:* ~queue:* ~rate:* ~consent:* ~authz:* ~face:* &events:checkin:* &events:consent:* +@read +@write +@keyspace +@pubsub +ping -@admin -@dangerous
+user agent-service on >dev-agent-service-redis-pw ~agent:* ~consent:* &events:consent:* +@read +@write +@keyspace +@pubsub +ping -@admin -@dangerous
+user notify-service on >dev-notify-service-redis-pw ~notify:* ~sse:ticket:* &events:checkin:* &events:user:* &events:consent:* +@read +@write +@keyspace +@pubsub +ping -@admin -@dangerous
