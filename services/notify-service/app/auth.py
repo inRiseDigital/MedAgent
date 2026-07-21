@@ -35,20 +35,24 @@ class Principal(BaseModel):
 
 
 class JWKSCache:
-    """Fetches and caches the realm JWKS via OIDC discovery."""
+    """Fetches and caches the realm signing keys from the INTERNAL certs endpoint.
 
-    def __init__(self, issuer: str, ttl_seconds: int = 300) -> None:
-        self._issuer = issuer.rstrip("/")
+    We deliberately do NOT follow the discovery document's `jwks_uri`: Keycloak
+    reports its public hostname there, which in-cluster services cannot reach
+    (split-horizon, 02). Instead we hit `{realm_base_url}/protocol/openid-connect/
+    certs` directly over the internal network. Token `iss` is still validated
+    against the public issuer in `require_user`.
+    """
+
+    def __init__(self, realm_base_url: str, ttl_seconds: int = 300) -> None:
+        self._certs_url = realm_base_url.rstrip("/") + "/protocol/openid-connect/certs"
         self._ttl = ttl_seconds
         self._keys: dict[str, Any] = {}
         self._expires_at: float = 0.0
 
     async def _refresh(self) -> None:
         async with httpx.AsyncClient(timeout=5.0) as client:
-            discovery = await client.get(f"{self._issuer}/.well-known/openid-configuration")
-            discovery.raise_for_status()
-            jwks_uri: str = discovery.json()["jwks_uri"]
-            jwks_resp = await client.get(jwks_uri)
+            jwks_resp = await client.get(self._certs_url)
             jwks_resp.raise_for_status()
             jwk_set = jwt.PyJWKSet.from_dict(jwks_resp.json())
         self._keys = {k.key_id: k.key for k in jwk_set.keys if k.key_id}

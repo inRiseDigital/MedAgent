@@ -24,8 +24,14 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     fhir_base_url: str = "http://localhost:8080/fhir"
 
-    # AuthN (02).
-    keycloak_issuer: str = "http://localhost:8081/realms/medagent"
+    # AuthN (02). Split-horizon: `keycloak_issuer` is the PUBLIC issuer that
+    # tokens carry in their `iss` claim (what browsers hit, via the gateway) and
+    # is what we validate against. `keycloak_internal_url` is the in-cluster realm
+    # base used to FETCH signing keys — Keycloak's discovery `jwks_uri` points at
+    # the public hostname, which services cannot reach, so we fetch JWKS directly
+    # from the internal certs endpoint. If unset it falls back to the issuer.
+    keycloak_issuer: str = "https://localhost/auth/realms/medagent"
+    keycloak_internal_url: str = "http://keycloak:8080/auth/realms/medagent"
     auth_disabled: bool = Field(
         default=False,
         description="Local bootstrapping escape hatch ONLY. Never true outside local dev.",

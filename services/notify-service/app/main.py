@@ -24,7 +24,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.redis = Redis.from_url(settings.redis_url, decode_responses=True)
-        app.state.jwks = JWKSCache(settings.keycloak_issuer, settings.jwks_cache_ttl_seconds)
+        app.state.jwks = JWKSCache(
+            settings.keycloak_internal_url or settings.keycloak_issuer,
+            settings.jwks_cache_ttl_seconds,
+        )
         # Adapter stubs (real SMS gateway / web push land in S5).
         app.state.sms_adapter = LoggingSmsAdapter()
         app.state.push_adapter = LoggingPushAdapter()

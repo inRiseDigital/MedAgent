@@ -31,7 +31,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.redis = Redis.from_url(settings.redis_url, decode_responses=True)
-        app.state.jwks = JWKSCache(settings.keycloak_issuer, settings.jwks_cache_ttl_seconds)
+        app.state.jwks = JWKSCache(
+            settings.keycloak_internal_url or settings.keycloak_issuer,
+            settings.jwks_cache_ttl_seconds,
+        )
         # TODO(S3): LangGraph Postgres checkpointer over app_db (tables created
         # via Alembic in core-api's tree, 10 §9 rule 4) + Anthropic client with
         # the pinned model verified at startup (04 §4).

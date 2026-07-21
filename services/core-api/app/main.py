@@ -36,7 +36,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.engine = create_async_engine(settings.database_url, pool_pre_ping=True)
         app.state.sessionmaker = async_sessionmaker(app.state.engine, expire_on_commit=False)
         app.state.redis = Redis.from_url(settings.redis_url, decode_responses=True)
-        app.state.jwks = JWKSCache(settings.keycloak_issuer, settings.jwks_cache_ttl_seconds)
+        app.state.jwks = JWKSCache(
+            settings.keycloak_internal_url or settings.keycloak_issuer,
+            settings.jwks_cache_ttl_seconds,
+        )
         try:
             yield
         finally:

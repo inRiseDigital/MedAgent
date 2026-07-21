@@ -26,7 +26,9 @@ class Settings(BaseSettings):
     core_api_base_url: str = "http://localhost:8001"
 
     # AuthN (02).
-    keycloak_issuer: str = "http://localhost:8081/realms/medagent"
+    # Split-horizon (02): public issuer validated in `iss`; internal URL for JWKS fetch.
+    keycloak_issuer: str = "https://localhost/auth/realms/medagent"
+    keycloak_internal_url: str = "http://keycloak:8080/auth/realms/medagent"
     auth_disabled: bool = Field(
         default=False,
         description="Local bootstrapping escape hatch ONLY. Never true outside local dev.",
