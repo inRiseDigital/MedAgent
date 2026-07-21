@@ -62,6 +62,11 @@ services:
       - "80:80"
       - "443:443"
     networks: [edge]
+    environment:
+      # Cert paths consumed by dynamic/tls.yaml Go-template env lookups.
+      # Dev: self-signed localhost cert (openssl); staging/pilot: ACME (10 §5).
+      MKCERT_CERT_FILE: /certs/localhost.pem
+      MKCERT_KEY_FILE: /certs/localhost-key.pem
     volumes:
       # platform/gateway is the single source of routing truth (01 §2):
       #   traefik.yml (static config, must enable ping for the healthcheck)
