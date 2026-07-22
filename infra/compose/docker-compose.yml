@@ -368,6 +368,25 @@ services:
       keycloak:
         condition: service_healthy
 
+  # Dev-only: applies the realm settings config-cli does not (client default-scope
+  # assignments — a Keycloak sub-resource — and the frictionless dev browser flow).
+  # Runs after the realm import. NEVER used in staging/pilot. See dev/keycloak-bootstrap.py.
+  keycloak-dev-bootstrap:
+    image: python:3.12-slim
+    restart: "no"
+    networks: [internal]
+    volumes:
+      - ./dev:/opt/dev:ro
+    command: ["python", "/opt/dev/keycloak-bootstrap.py"]
+    environment:
+      KC_URL: http://keycloak:8080/auth
+      KC_REALM: medagent
+      KC_ADMIN: ${KEYCLOAK_ADMIN_USER:-admin}
+      KC_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-dev-admin-pw}
+    depends_on:
+      keycloak-config:
+        condition: service_completed_successfully
+
   postgres:
     <<: *service-defaults
     image: postgres:16-alpine
