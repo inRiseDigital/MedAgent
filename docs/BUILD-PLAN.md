@@ -60,7 +60,7 @@ Each task: **Build** → **Verify** (insert data / call it / assert) → commit.
 ## Phase A · S3 — Doctor workspace & conversational agent
 - [ ] Patient summary card (FR-2.2) from FHIR query set · verify: p95 < 2s on Synthea data
 - [ ] Patient search UI (name/PHN/phone) · verify: results render, open requires grant
-- [ ] Orchestrator v1 + summary agent with citations (real LLM) · verify: eval golden set ≥150 cases, citation faithfulness ≥98%
+- [x] **Summary/Q&A agent with citations (real Claude over FHIR)** · verified: asked about Nimal Perera's allergies+meds → grounded answer citing AllergyIntolerance/1005, MedicationRequest/1004, Condition/1003, Observation/1001; flagged the penicillin allergy proactively; marked [general knowledge] vs record. LangGraph ReAct agent (claude-sonnet-5), FHIR read tools with citation tracking, streaming AI SDK frames + data-citations. (Orchestrator routing + ≥150-case eval gate still to build.)
 - [ ] **Conversational agentic interface** (primary UX): multi-turn chat over the patient
   record, context-aware (clinician/patient/encounter/consent stamped), streaming, with
   visible tool-calls and citation chips linking to source FHIR resources. Natural-language

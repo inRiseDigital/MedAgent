@@ -1,41 +1,34 @@
-"""POST /api/v1/chat — streaming chat endpoint (04 §2.4).
+"""POST /api/v1/chat — streaming cited chat over the patient's FHIR record (04 §2).
 
-Stream format: **Vercel AI SDK data (UI message) protocol over SSE** — typed
-frames (`text-start`/`text-delta`/`text-end`/`finish`) that the web app
-consumes with `useChat` (ADR AG-4: EventSource-style raw SSE cannot carry
-typed tool/proposal/citation frames).
-
-S1: echoes a stub token stream so the transport is real end-to-end. Real LLM
-wiring (LangGraph `astream_events` → this adapter, Anthropic pinned model) is
-Sprint S3.
+Runs the patient-scoped LangGraph agent and adapts its token stream to the
+**Vercel AI SDK data (UI message) protocol over SSE** — typed frames the web app
+consumes with `useChat`. Citations gathered by the read tools are emitted as a
+`data-citations` part so the UI can render source chips (FR-3.4).
 """
 
 from __future__ import annotations
 
-import asyncio
 import json
+import logging
 import uuid
 from collections.abc import AsyncIterator
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
+from app.agent.build import build_agent, resolve_patient_fhir_id
 from app.auth import Principal, require_user
-from app.graph.state import ChatMessage
+from app.config import Settings
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["chat"])
 
-_STUB_ANSWER = (
-    "This is the S1 skeleton token stream from agent-service. "
-    "The orchestrator graph exists but is not wired to the record or the LLM yet; "
-    "cited answers arrive in Sprint S3."
-)
-
 
 class ChatRequest(BaseModel):
-    messages: list[ChatMessage] = Field(min_length=1)
+    messages: list[dict[str, Any]] = Field(min_length=1)
     patient_id: str
     encounter_id: str | None = None
 
@@ -44,32 +37,94 @@ def _sse(payload: dict[str, Any]) -> str:
     return f"data: {json.dumps(payload)}\n\n"
 
 
+def _latest_user_text(messages: list[dict[str, Any]]) -> str:
+    """Newest user message text, tolerating a plain `content` string or the AI SDK `parts` array."""
+    for msg in reversed(messages):
+        if msg.get("role") != "user":
+            continue
+        content = msg.get("content")
+        if isinstance(content, str) and content.strip():
+            return content
+        text = "".join(
+            p.get("text", "")
+            for p in msg.get("parts", [])
+            if isinstance(p, dict) and p.get("type") == "text"
+        )
+        if text.strip():
+            return text
+    return ""
+
+
+def _delta_text(chunk: Any) -> str:
+    """Pull text from an AIMessageChunk whose content may be a str or a block list."""
+    content = getattr(chunk, "content", "")
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "".join(
+            b.get("text", "") for b in content if isinstance(b, dict) and b.get("type") == "text"
+        )
+    return ""
+
+
 @router.post("/chat")
 async def chat(
     body: ChatRequest,
+    request: Request,
     principal: Annotated[Principal, Depends(require_user)],
 ) -> StreamingResponse:
-    """Stream a (stubbed) assistant turn in AI SDK data-protocol frames.
-
-    TODO(S3): stamp AgentState from the verified token + body, run
-    build_graph().astream_events(...), adapt events to text/tool/citation
-    frames, record per-run cost telemetry (04 §4).
-    """
+    settings: Settings = request.app.state.settings
     message_id = f"msg_{uuid.uuid4().hex}"
     text_id = f"txt_{uuid.uuid4().hex}"
+    question = _latest_user_text(body.messages)
 
-    async def token_stream() -> AsyncIterator[str]:
+    async def stream() -> AsyncIterator[str]:
         yield _sse({"type": "start", "messageId": message_id})
         yield _sse({"type": "text-start", "id": text_id})
-        for word in _STUB_ANSWER.split(" "):
-            yield _sse({"type": "text-delta", "id": text_id, "delta": word + " "})
-            await asyncio.sleep(0.02)  # visible streaming in dev; removed with real tokens
+
+        def _fail(msg: str) -> list[str]:
+            return [
+                _sse({"type": "text-delta", "id": text_id, "delta": msg}),
+                _sse({"type": "text-end", "id": text_id}),
+                _sse({"type": "finish"}),
+                "data: [DONE]\n\n",
+            ]
+
+        if not settings.anthropic_api_key:
+            for f in _fail("Agent is not configured (no model key)."):
+                yield f
+            return
+
+        fhir_id = await resolve_patient_fhir_id(settings.fhir_base_url, body.patient_id)
+        if not fhir_id:
+            for f in _fail(f"No FHIR record found for patient {body.patient_id}."):
+                yield f
+            return
+
+        sources: list[dict[str, Any]] = []
+        agent = build_agent(settings, fhir_id, sources)
+        try:
+            async for event in agent.astream_events(
+                {"messages": [{"role": "user", "content": question}]}, version="v2"
+            ):
+                if event["event"] == "on_chat_model_stream":
+                    delta = _delta_text(event["data"]["chunk"])
+                    if delta:
+                        yield _sse({"type": "text-delta", "id": text_id, "delta": delta})
+        except Exception:  # noqa: BLE001 — never leak a stack trace to the UI
+            logger.exception("agent run failed")
+            yield _sse(
+                {"type": "text-delta", "id": text_id, "delta": "\n\n[The assistant hit an error. Please retry.]"}
+            )
+
         yield _sse({"type": "text-end", "id": text_id})
+        if sources:  # citation chips (FR-3.4): resources the tools read
+            yield _sse({"type": "data-citations", "data": sources})
         yield _sse({"type": "finish"})
         yield "data: [DONE]\n\n"
 
     return StreamingResponse(
-        token_stream(),
+        stream(),
         media_type="text/event-stream",
         headers={
             "x-vercel-ai-ui-message-stream": "v1",

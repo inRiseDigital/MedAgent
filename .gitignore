@@ -45,3 +45,7 @@ playwright-report/
 # Local data
 *.local.db
 seed-cache/
+
+# Dev compose env files may hold real dev creds — never commit (keep .example)
+infra/compose/env/*.env
+!infra/compose/env/*.env.example
