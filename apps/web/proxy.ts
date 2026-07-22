@@ -36,5 +36,11 @@ export const config = {
    * S2 extends the matcher to (patient-portal) and (kiosk) once their
    * session/role models land (07 §2, 05 §5).
    */
-  matcher: ["/queue/:path*", "/patients/:path*", "/day/:path*", "/proposals/:path*"],
+  matcher: [
+    "/queue/:path*",
+    "/patients/:path*",
+    "/day/:path*",
+    "/proposals/:path*",
+    "/portal/:path*",
+  ],
 };

@@ -110,6 +110,49 @@ def main() -> None:
     else:
         print("realm browserFlow already set")
 
+    # 3. patient identity binding: give patient_demo a PHN + map it into the web token
+    #    so the portal knows which record is the patient's own (02 §8.5 patient↔record).
+    # Keycloak 26's declarative user profile drops undeclared attributes unless
+    # unmanaged attributes are enabled — do that first, or `phn` is silently lost.
+    profile = json.loads(_req("GET", f"/admin/realms/{REALM}/users/profile", tok))
+    if profile.get("unmanagedAttributePolicy") != "ENABLED":
+        profile["unmanagedAttributePolicy"] = "ENABLED"
+        _req("PUT", f"/admin/realms/{REALM}/users/profile", tok, profile)
+        print("enabled unmanaged user attributes (dev)")
+
+    demo_phn = "55246820131"  # Nimal Perera (the demo patient with a populated record)
+    users = json.loads(_req("GET", f"/admin/realms/{REALM}/users?username=patient_demo", tok))
+    if users:
+        u = users[0]
+        attrs = u.get("attributes") or {}
+        if attrs.get("phn") != [demo_phn]:
+            attrs["phn"] = [demo_phn]
+            u["attributes"] = attrs
+            _req("PUT", f"/admin/realms/{REALM}/users/{u['id']}", tok, u)
+            print(f"patient_demo.phn -> {demo_phn}")
+        else:
+            print("patient_demo.phn already set")
+
+    web = json.loads(_req("GET", f"/admin/realms/{REALM}/clients?clientId=web", tok))[0]
+    mappers = json.loads(_req("GET", f"/admin/realms/{REALM}/clients/{web['id']}/protocol-mappers/models", tok))
+    if not any(m.get("name") == "phn" for m in mappers):
+        _req("POST", f"/admin/realms/{REALM}/clients/{web['id']}/protocol-mappers/models", tok, {
+            "name": "phn",
+            "protocol": "openid-connect",
+            "protocolMapper": "oidc-usermodel-attribute-mapper",
+            "config": {
+                "user.attribute": "phn",
+                "claim.name": "phn",
+                "jsonType.label": "String",
+                "id.token.claim": "true",
+                "access.token.claim": "true",
+                "userinfo.token.claim": "true",
+            },
+        })
+        print("added web client 'phn' claim mapper")
+    else:
+        print("web 'phn' mapper already present")
+
     print("dev bootstrap complete")
 
 

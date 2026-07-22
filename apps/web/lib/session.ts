@@ -35,6 +35,8 @@ export interface Session {
   /** Realm roles — drives route-group authorisation in proxy.ts (06 §2.2). */
   roles: Role[];
   displayName: string;
+  /** Patient's own PHN (portal patients only) — from the `phn` token claim (02 §8.5). */
+  patientPhn?: string;
 }
 
 /**

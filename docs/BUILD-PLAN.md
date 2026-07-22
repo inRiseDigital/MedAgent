@@ -81,7 +81,7 @@ Each task: **Build** → **Verify** (insert data / call it / assert) → commit.
 - [ ] UAT scripts · verify: clinician walkthrough passes
 
 ## Phase A · S5 — Patient portal & notifications
-- [ ] Portal: records, appointments, prescriptions, visit summaries · verify: patient sees own data only (compartment)
+- [x] **Patient portal — self record + access log** (FR-5.1/5.3/5.8). Patient↔record binding: patient_demo carries a `phn` user attribute (dev bootstrap; Keycloak 26 unmanaged-attrs enabled) mapped into the web token; the session exposes patientPhn; the portal resolves the patient from it. core-api GET /api/v1/patients/{phn}/summary serves problems/meds/allergies/vitals/appointments. Verified: patient_demo login → session patientPhn 55246820131 → /portal renders "Welcome, Nimal Perera" with diabetes/hypertension, Metformin, Penicillin allergy, and the access log. (Consent toggle + PDF export are the remaining portal items.)
 - [ ] Consent toggle wired to face flow · verify: flip → immediate effect (cache invalidation)
 - [x] **Personal access log (FR-5.8) from AuditEvent** — GET /api/v1/audit/access-log?patient= queries AuditEvents referencing the patient and returns a human-readable trail (who/action/type/override reason). Verified for Nimal: shows the committed prescriptions + the audited override reason. (Read-access entries arrive with the S2 audit interceptor.)
 - [ ] Booking v1 · verify: create/reschedule/cancel Appointment

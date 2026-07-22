@@ -141,6 +141,7 @@ async function handleSession(): Promise<NextResponse> {
     authenticated: true,
     displayName: session.displayName,
     roles: session.roles,
+    patientPhn: session.patientPhn ?? null,
   });
 }
 

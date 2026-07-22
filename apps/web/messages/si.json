@@ -52,7 +52,19 @@
   "portal": {
     "title": "My health",
     "greeting": "Your records, appointments, reminders and consent controls will live here.",
-    "languageNote": "English · සිංහල · தமிழ் — the language switcher is permanent in the header from day 1."
+    "languageNote": "English · සිංහල · தமிழ் — the language switcher is permanent in the header from day 1.",
+    "greetingNamed": "Welcome, {name}. Here is your health record.",
+    "noRecord": "No health record is linked to your account yet. Please see reception.",
+    "loadError": "We could not load your record right now. Please try again shortly.",
+    "problems": "Health conditions",
+    "medications": "Current medications",
+    "allergies": "Allergies",
+    "appointments": "Upcoming appointments",
+    "accessLog": "Who accessed my record",
+    "accessLogIntro": "Every time a clinician records or changes something in your record, it is logged here.",
+    "accessLogEmpty": "No access recorded yet.",
+    "none": "Nothing recorded.",
+    "noAllergies": "No known allergies recorded."
   },
   "kiosk": {
     "title": "Welcome",

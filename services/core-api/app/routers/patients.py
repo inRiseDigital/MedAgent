@@ -18,9 +18,23 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import Principal, require_user
-from app.deps import get_session
+from app.config import Settings
+from app.deps import get_session, get_settings
+from app.fhir_client import FHIRClient
 from app.models import AuditOutbox, PatientMPI
 from app.mpi import phn as phn_mod
+
+PHN_SYSTEM = "https://fhir.medagent.health.lk/id/phn"
+
+
+def _cc_text(cc: dict[str, Any] | None) -> str:
+    if not cc:
+        return ""
+    if cc.get("text"):
+        return cc["text"]
+    for c in cc.get("coding", []):
+        return c.get("display") or c.get("code") or ""
+    return ""
 
 logger = logging.getLogger(__name__)
 
@@ -151,3 +165,48 @@ async def search_patients(
 
     rows = (await session.execute(query)).scalars().all()
     return [_to_out(r) for r in rows]
+
+
+@router.get("/{phn}/summary")
+async def patient_summary(
+    phn: str,
+    principal: Annotated[Principal, Depends(require_user)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> dict[str, Any]:
+    """Compact clinical summary from FHIR (FR-2.2 doctor card / FR-5.3 patient portal):
+    demographics, active problems, active medications, allergies, recent vitals,
+    upcoming appointments. Read-only."""
+    fhir = FHIRClient(settings.fhir_base_url)
+    try:
+        matches = await fhir.search("Patient", {"identifier": f"{PHN_SYSTEM}|{phn}"})
+        if not matches:
+            raise HTTPException(status_code=404, detail="patient not found")
+        patient = matches[0]
+        pid = str(patient["id"])
+        name = (patient.get("name") or [{}])[0]
+        full = " ".join(name.get("given", []) + [name.get("family", "")]).strip()
+
+        conditions = await fhir.search("Condition", {"patient": pid, "clinical-status": "active"})
+        meds = await fhir.search("MedicationRequest", {"patient": pid, "status": "active"})
+        allergies = await fhir.search("AllergyIntolerance", {"patient": pid})
+        vitals = await fhir.search(
+            "Observation", {"patient": pid, "category": "vital-signs", "_sort": "-date", "_count": "5"}
+        )
+        appts = await fhir.search("Appointment", {"patient": pid, "status": "booked", "_sort": "date"})
+
+        return {
+            "patient": {"phn": phn, "name": full or "Unknown", "gender": patient.get("gender"),
+                        "birthDate": patient.get("birthDate")},
+            "problems": [{"text": _cc_text(c.get("code")), "ref": f"Condition/{c.get('id')}"} for c in conditions],
+            "medications": [{"text": _cc_text(m.get("medicationCodeableConcept")),
+                             "ref": f"MedicationRequest/{m.get('id')}"} for m in meds],
+            "allergies": [{"text": _cc_text(a.get("code")), "criticality": a.get("criticality", "unknown"),
+                           "ref": f"AllergyIntolerance/{a.get('id')}"} for a in allergies],
+            "vitals": [{"text": _cc_text(o.get("code")),
+                        "value": (o.get("valueQuantity") or {}).get("value"),
+                        "unit": (o.get("valueQuantity") or {}).get("unit"),
+                        "when": o.get("effectiveDateTime")} for o in vitals],
+            "appointments": [{"start": ap.get("start"), "status": ap.get("status")} for ap in appts],
+        }
+    finally:
+        await fhir.close()

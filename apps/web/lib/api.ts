@@ -63,3 +63,30 @@ export async function fetchQueue(facilityId: string): Promise<QueueRow[]> {
   const params = new URLSearchParams({ facility_id: facilityId });
   return coreApiGet<QueueRow[]>(`/api/v1/queue?${params.toString()}`);
 }
+
+export interface PatientSummary {
+  patient: { phn: string; name: string; gender?: string; birthDate?: string };
+  problems: { text: string; ref: string }[];
+  medications: { text: string; ref: string }[];
+  allergies: { text: string; criticality: string; ref: string }[];
+  vitals: { text: string; value?: number; unit?: string; when?: string }[];
+  appointments: { start?: string; status?: string }[];
+}
+
+export interface AccessLogEntry {
+  recorded?: string;
+  action?: string;
+  type?: string;
+  by?: string;
+  outcome_desc?: string | null;
+}
+
+export async function fetchPatientSummary(phn: string): Promise<PatientSummary> {
+  return coreApiGet<PatientSummary>(`/api/v1/patients/${encodeURIComponent(phn)}/summary`);
+}
+
+export async function fetchAccessLog(phn: string): Promise<AccessLogEntry[]> {
+  return coreApiGet<AccessLogEntry[]>(
+    `/api/v1/audit/access-log?patient=${encodeURIComponent(phn)}`,
+  );
+}

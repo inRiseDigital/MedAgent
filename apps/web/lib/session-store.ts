@@ -30,6 +30,7 @@ interface SessionRecord {
   sub: string;
   roles: Role[];
   displayName: string;
+  patientPhn?: string;
   tokens: TokenSet;
   absoluteExpiresAt: number;
 }
@@ -97,6 +98,7 @@ export async function createSession(tokens: TokenSet): Promise<string> {
     sub: String(claims.sub ?? ""),
     roles: rolesFromToken(tokens.access_token),
     displayName: String(claims.name ?? claims.preferred_username ?? "User"),
+    patientPhn: claims.phn ? String(claims.phn) : undefined,
     tokens,
     absoluteExpiresAt: Date.now() + ABSOLUTE_TTL_SECONDS * 1000,
   };
@@ -143,7 +145,12 @@ export async function getSession(): Promise<Session | null> {
   if (!sessionId) return null;
   const record = await readRecord(sessionId);
   if (!record) return null;
-  return { sub: record.sub, roles: record.roles, displayName: record.displayName };
+  return {
+    sub: record.sub,
+    roles: record.roles,
+    displayName: record.displayName,
+    patientPhn: record.patientPhn,
+  };
 }
 
 /**
