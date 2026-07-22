@@ -1,0 +1,17 @@
+{
+  "_comment": "DEV conservative adult max-daily-dose reference for the pilot formulary (04 dose-range check v1). Clinician-curated. Paediatric/renal adjustment is Phase B.",
+  "_version": "dev-dose-2026-07",
+  "adult_max_daily_mg": {
+    "metformin": 2550,
+    "amoxicillin": 3000,
+    "ibuprofen": 2400,
+    "naproxen": 1000,
+    "paracetamol": 4000,
+    "simvastatin": 80,
+    "atorvastatin": 80,
+    "warfarin": 15,
+    "sertraline": 200,
+    "lisinopril": 40,
+    "doxycycline": 200
+  }
+}

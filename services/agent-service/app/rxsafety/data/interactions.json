@@ -1,0 +1,18 @@
+{
+  "_comment": "DEV curated drug-drug interaction dataset (ONC high-priority style, 09 D7). Each rule matches by ingredient OR class on each side. Severity: contraindicated | major | moderate. Clinician-curated, versioned; production augments with DrugBank-open / TWOSIDES keyed by RxCUI.",
+  "_version": "dev-ddi-2026-07",
+  "rules": [
+    { "a": "warfarin", "b": "nsaid", "severity": "major", "code": "DDI_MAJOR", "rationale": "NSAIDs markedly increase bleeding risk with warfarin (antiplatelet effect + GI irritation + protein-binding displacement)." },
+    { "a": "warfarin", "b": "aspirin", "severity": "major", "code": "DDI_MAJOR", "rationale": "Additive bleeding risk; combine only with a specific indication and gastroprotection." },
+    { "a": "warfarin", "b": "macrolide", "severity": "major", "code": "DDI_MAJOR", "rationale": "Macrolides raise INR (CYP inhibition) — bleeding risk." },
+    { "a": "statin", "b": "macrolide", "severity": "major", "code": "DDI_MAJOR", "rationale": "CYP3A4 inhibition raises statin levels — myopathy/rhabdomyolysis risk (esp. simvastatin)." },
+    { "a": "ace-inhibitor", "b": "potassium-sparing-diuretic", "severity": "major", "code": "DDI_MAJOR", "rationale": "Additive hyperkalaemia risk — monitor potassium and renal function." },
+    { "a": "ssri", "b": "maoi", "severity": "contraindicated", "code": "DDI_CONTRAINDICATED", "rationale": "Serotonin syndrome — combination is contraindicated; observe washout period." },
+    { "a": "serotonergic", "b": "maoi", "severity": "contraindicated", "code": "DDI_CONTRAINDICATED", "rationale": "Risk of life-threatening serotonin syndrome with MAOIs." },
+    { "a": "methotrexate", "b": "trimethoprim", "severity": "major", "code": "DDI_MAJOR", "rationale": "Additive antifolate effect — bone-marrow suppression risk." },
+    { "a": "methotrexate", "b": "nsaid", "severity": "major", "code": "DDI_MAJOR", "rationale": "NSAIDs reduce methotrexate clearance — toxicity risk (esp. high-dose MTX)." },
+    { "a": "digoxin", "b": "amiodarone", "severity": "major", "code": "DDI_MAJOR", "rationale": "Amiodarone raises digoxin levels — toxicity; reduce digoxin dose and monitor." },
+    { "a": "clopidogrel", "b": "omeprazole", "severity": "moderate", "code": "DDI_MODERATE", "rationale": "Omeprazole may reduce clopidogrel activation (CYP2C19) — prefer pantoprazole." },
+    { "a": "ssri", "b": "nsaid", "severity": "moderate", "code": "DDI_MODERATE", "rationale": "Increased GI bleeding risk — consider gastroprotection." }
+  ]
+}

@@ -74,7 +74,7 @@ Each task: **Build** → **Verify** (insert data / call it / assert) → commit.
 
 ## Phase A · S4 — Write-back & Rx safety
 - [ ] Structured proposals (Diagnosis ICD-10, Note, Vitals, Prescription) · verify: each commits a valid FHIR resource
-- [ ] Rx-safety engine: load DDI dataset, RxCUI normalisation, allergy-class, dose checks · verify: warfarin+NSAID → block; dataset down → block all Rx
+- [x] **Deterministic Rx-safety engine (ADR AG-2)** — curated DDI dataset + drug-class map + dose ranges in agent-service (app/rxsafety); verdict pass/warn/block computed deterministically, fail-closed (dataset down → block). Wired into the chat's screen_medication tool + a POST /api/v1/rx-safety/screen endpoint for the write-back flow. Verified 8/8 clinical cases (warfarin+NSAID→block, penicillin-allergy+amoxicillin→block, cephalexin→warn cross-reactivity, SSRI+MAOI→contraindicated, dose-exceeded→warn, safe combos→pass) AND end-to-end via chat: "can I prescribe amoxicillin?" → engine BLOCK (ALLERGY_CLASS) narrated faithfully by the LLM with alternatives + sign-off deferral.
 - [ ] Interrupt-based e-sign-off + step-up auth (loa2) for prescriptions · verify: sign→commit; step-up enforced
 - [ ] Write-back proposal card + verdict banner (pass/warn/block) · verify: UI reflects engine verdict
 - [ ] UAT scripts · verify: clinician walkthrough passes

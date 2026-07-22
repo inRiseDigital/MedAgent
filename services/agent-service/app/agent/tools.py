@@ -19,6 +19,8 @@ from typing import Any
 import httpx
 from langchain_core.tools import BaseTool, tool
 
+from app.rxsafety import screen as rx_screen
+
 PHN_SYSTEM = "https://fhir.medagent.health.lk/id/phn"
 
 
@@ -298,30 +300,43 @@ def build_patient_tools(
 
     @tool
     async def screen_medication(proposed_drug: str) -> str:
-        """Safety context for a medication the clinician is CONSIDERING (not prescribing): returns
-        the patient's current medications and allergies so drug-drug interactions and drug-allergy
-        cross-reactivity can be assessed for `proposed_drug`. Use whenever the clinician asks whether
-        a drug is safe to give. Formal deterministic screening runs again at e-sign-off (04)."""
+        """Run the DETERMINISTIC Rx-safety engine for a medication the clinician is CONSIDERING.
+        Use for any 'is X safe / can I prescribe X' question. The verdict (pass/warn/block) is
+        computed by the engine, NOT by you — report it faithfully; you may explain it and add
+        [general knowledge] context, but never override a `block`. Binding screening + mandatory
+        e-sign-off run again at prescribe time (04)."""
         meds = await fhir.search("MedicationRequest", {"patient": pid, "status": "active"})
         allergies = await fhir.search("AllergyIntolerance", {"patient": pid})
-        med_lines = [
-            f"- {_cc(m.get('medicationCodeableConcept'))} [source: MedicationRequest/{m.get('id')}]"
-            for m in meds
-        ] or ["- none on record"]
-        alg_lines = [
-            f"- {_cc(a.get('code'))} (criticality: {a.get('criticality', 'unknown')}) "
-            f"[source: AllergyIntolerance/{a.get('id')}]"
+        med_names = [_cc(m.get("medicationCodeableConcept")) for m in meds]
+        alg_objs = [
+            {"substance": _cc(a.get("code")), "criticality": a.get("criticality", "unknown")}
             for a in allergies
-        ] or ["- none on record"]
-        return (
-            f"Safety context for proposed drug: {proposed_drug}\n\n"
-            f"Active medications:\n" + "\n".join(med_lines) + "\n\n"
-            f"Allergies:\n" + "\n".join(alg_lines) + "\n\n"
-            "Assess: (1) drug-drug interactions vs the active medications, (2) drug-allergy and "
-            "class cross-reactivity vs the allergies, (3) any duplicate-therapy. State a clear "
-            "verdict (safe / caution / avoid) with reasoning. Note that binding deterministic "
-            "screening and the mandatory clinician e-sign-off happen at prescribe time."
+        ]
+        v = rx_screen(proposed_drug, med_names, alg_objs)
+        lines = [
+            f"DETERMINISTIC Rx-SAFETY VERDICT for '{proposed_drug}': {v.verdict.upper()}",
+            f"codes: {', '.join(v.codes) or 'none'}",
+            f"dataset: {v.dataset_version}",
+        ]
+        if v.findings:
+            lines.append("findings:")
+            for f in v.findings:
+                lines.append(f"  - [{f['severity']}] {f['code']}: {f['rationale']}")
+        else:
+            lines.append("findings: none — no interaction/allergy/dose issue detected by the engine.")
+        med_src = "; ".join(
+            f"{_cc(m.get('medicationCodeableConcept'))} [source: MedicationRequest/{m.get('id')}]" for m in meds
+        ) or "none on record"
+        alg_src = "; ".join(
+            f"{_cc(a.get('code'))} [source: AllergyIntolerance/{a.get('id')}]" for a in allergies
+        ) or "none on record"
+        lines.append(f"screened against active meds: {med_src}")
+        lines.append(f"screened against allergies: {alg_src}")
+        lines.append(
+            "Report the verdict verbatim (safe=pass / caution=warn / avoid=block). A `block` is a "
+            "hard stop; a `warn` is overridable only with an explicit clinician reason at sign-off."
         )
+        return "\n".join(lines)
 
     return [
         get_patient_summary,
