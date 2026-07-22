@@ -165,6 +165,32 @@ def _build_resource(kind: str, pid: str, payload: dict[str, Any], principal: Pri
     return "DocumentReference", res
 
 
+class PrescreenRequest(BaseModel):
+    patient: str = Field(min_length=1)
+    drug: str = Field(min_length=1)
+    dose_mg_per_day: float | None = None
+
+
+@router.post("/prescreen")
+async def prescreen(
+    body: PrescreenRequest,
+    request: Request,
+    principal: Annotated[Principal, Depends(require_user)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> dict[str, Any]:
+    """Verdict preview for a prescription the clinician is drafting — screens
+    against the record without committing (04). Same engine as commit."""
+    token = _bearer(request)
+    fhir = FHIRClient(settings.fhir_base_url)
+    try:
+        pid = await _resolve_patient(fhir, body.patient)
+        if not pid:
+            raise HTTPException(status_code=404, detail=f"no FHIR patient for {body.patient}")
+        return await _screen_rx(settings, fhir, pid, body.drug, body.dose_mg_per_day, token)
+    finally:
+        await fhir.close()
+
+
 @router.post("/commit", status_code=status.HTTP_201_CREATED)
 async def commit(
     body: CommitRequest,

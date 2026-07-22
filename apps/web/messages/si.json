@@ -41,7 +41,8 @@
     "chatSend": "Ask",
     "chatSending": "…",
     "chatError": "The assistant hit an error. Please retry.",
-    "patientLabel": "Patient {id}"
+    "patientLabel": "Patient {id}",
+    "proposalTitle": "New prescription · sign-off"
   },
   "portal": {
     "title": "My health",
@@ -79,5 +80,26 @@
     "title": "Page not found",
     "body": "The page you're looking for doesn't exist or has moved.",
     "backToQueue": "Go to the live queue"
+  },
+  "proposal": {
+    "intro": "Draft a prescription and check it against this patient's record before signing.",
+    "drug": "Medication (e.g. amoxicillin)",
+    "dose": "Dose (e.g. 500mg TDS)",
+    "check": "Check safety",
+    "verdict": {
+      "pass": "Safe",
+      "warn": "Caution",
+      "block": "Do not prescribe"
+    },
+    "noIssues": "No issues detected",
+    "dataset": "Screened against dataset {v}",
+    "overridePrompt": "This is a caution. Enter a clinical reason to override and proceed.",
+    "overrideRequired": "A warning was raised — an override reason is required to sign.",
+    "blocked": "Blocked by the safety engine — this cannot be prescribed.",
+    "sign": "Sign & commit",
+    "committed": "Signed and committed: {ref}",
+    "screenError": "Safety screening failed. Please retry.",
+    "commitError": "Commit failed. Please retry.",
+    "footnote": "The deterministic Rx-safety engine is the authority; the record is re-screened on commit. Every sign-off is audited."
   }
 }

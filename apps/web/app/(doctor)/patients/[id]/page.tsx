@@ -15,6 +15,7 @@
 import { getTranslations } from "next-intl/server";
 import { Card, CardContent, CardHeader, CardTitle } from "@medagent/ui";
 import { ChatPanel } from "./chat-panel";
+import { ProposalPanel } from "./proposal-panel";
 
 export default async function PatientSessionPage({
   params,
@@ -51,6 +52,15 @@ export default async function PatientSessionPage({
           </CardContent>
         </Card>
       </div>
+
+      <Card aria-label={t("proposalTitle")}>
+        <CardHeader>
+          <CardTitle>{t("proposalTitle")}</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <ProposalPanel patientId={id} />
+        </CardContent>
+      </Card>
     </div>
   );
 }
