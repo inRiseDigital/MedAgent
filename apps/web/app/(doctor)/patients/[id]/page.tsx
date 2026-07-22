@@ -14,6 +14,7 @@
  */
 import { getTranslations } from "next-intl/server";
 import { Card, CardContent, CardHeader, CardTitle } from "@medagent/ui";
+import { ChatPanel } from "./chat-panel";
 
 export default async function PatientSessionPage({
   params,
@@ -46,9 +47,7 @@ export default async function PatientSessionPage({
             <CardTitle>{t("chatTitle")}</CardTitle>
           </CardHeader>
           <CardContent>
-            {/* role="log" transcript + aria-live streaming status when the
-                chat pane lands (06 §4.5, §6). */}
-            <p className="text-muted-foreground">{t("chatPlaceholder")}</p>
+            <ChatPanel patientId={id} />
           </CardContent>
         </Card>
       </div>

@@ -67,7 +67,7 @@ Each task: **Build** → **Verify** (insert data / call it / assert) → commit.
   intents route through the orchestrator to specialist agents; write intents surface as
   structured proposals (never free-text commits).
   · verify: ask "what are the active meds?" → cited answer; "prescribe X" → safety-screened proposal card
-- [ ] Chat UI (Vercel AI SDK) streaming against agent-service · verify: token stream renders, citation chips resolve
+- [x] **Chat UI in the doctor workspace** · verified end-to-end via the gateway: login (dr_demo) → BFF `/api/chat` (attaches session token) → agent-service (auth enforced) → cited streamed answer; patient page renders the ChatPanel (streaming text + citation chips + quick prompts). Custom lightweight SSE reader (no ai-sdk dep). BFF proxy streams the agent's AI SDK frames through untouched.
 - [ ] Conversational memory within an encounter (checkpointer) + resume · verify: close/reopen tab, thread resumes
 - [ ] English STT v1 (server-relayed provider) · verify: dictation → text in note field
 - [ ] AI eval harness in CI (blocks merge on regression) · verify: intentional regression fails the gate

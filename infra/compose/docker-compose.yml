@@ -126,6 +126,7 @@ services:
       SESSION_SECRET: ${SESSION_SECRET:-dev-session-secret-change-me-32chars}
       SESSION_REDIS_URL: redis://web:${WEB_REDIS_PASSWORD:-dev-web-redis-pw}@redis:6379/1
       CORE_API_URL: http://core-api:8000
+      AGENT_SERVICE_URL: http://agent-service:8000
       NOTIFY_SERVICE_URL: http://notify-service:8000
     env_file:
       # SOPS-injected in real environments (10 §5) — optional locally

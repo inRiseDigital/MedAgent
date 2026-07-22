@@ -36,6 +36,11 @@
     "summaryPlaceholder": "Photo, age, sex, blood group, allergy chips and active medications render here from the core-api summary endpoint.",
     "chatTitle": "AI assistant",
     "chatPlaceholder": "Cited chat over this patient's record streams here via the agent-service.",
+    "chatIntro": "Ask about this patient's record. Answers are grounded in the FHIR chart and cite their sources.",
+    "chatPrompt": "Ask about this patient…",
+    "chatSend": "Ask",
+    "chatSending": "…",
+    "chatError": "The assistant hit an error. Please retry.",
     "patientLabel": "Patient {id}"
   },
   "portal": {
