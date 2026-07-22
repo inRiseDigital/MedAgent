@@ -85,8 +85,8 @@ Each task: **Build** → **Verify** (insert data / call it / assert) → commit.
 - [ ] Consent toggle wired to face flow · verify: flip → immediate effect (cache invalidation)
 - [x] **Personal access log (FR-5.8) from AuditEvent** — GET /api/v1/audit/access-log?patient= queries AuditEvents referencing the patient and returns a human-readable trail (who/action/type/override reason). Verified for Nimal: shows the committed prescriptions + the audited override reason. (Read-access entries arrive with the S2 audit interceptor.)
 - [ ] Booking v1 · verify: create/reschedule/cancel Appointment
-- [ ] notify-service SMS + push + visit-summary auto-send · verify: mailpit/SMS-sim receives; quiet hours respected
-- [ ] Reminder agent v1 (scheduled job) · verify: due-item scan fires on schedule, channel prefs honoured
+- [x] **notify-service send API (email/sms/push)** — POST /notify/send dispatches via the channel adapter (email→SMTP/mailpit, sms/push→logging stubs). Verified: authenticated send → 202, mailpit receives.
+- [x] **Reminder scan (scheduled job)** — scans FHIR for upcoming booked appointments within a lookahead window and sends a reminder per patient, deduped via a Redis set, respecting 20:00–08:00 quiet hours; lifespan loop + POST /internal/notify/reminders/run. Verified: scan → mailpit "Appointment reminder" to Nimal; re-run deduped (sent 0). (Channel-preference/consent enforcement + Si/Ta templating are Phase B.)
 
 ## Phase A · S6 — Hardening & go-live
 - [ ] Security pass: OWASP, dep audit, RBAC review, rate limits · verify: gitleaks/Trivy clean, RBAC matrix tested

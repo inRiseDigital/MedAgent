@@ -37,3 +37,11 @@ class Settings(BaseSettings):
     smtp_host: str = "localhost"
     smtp_port: int = 1025
     smtp_from: str = "noreply@medagent.local"
+
+    # Reminders (FR-15.1/5.4): scan FHIR for upcoming appointments and notify.
+    fhir_base_url: str = "http://fhir:8080/fhir"
+    reminder_interval_seconds: int = 3600  # scan cadence
+    reminder_lookahead_days: int = 120  # notify for booked appointments within this window
+    reminder_quiet_start_hour: int = 20  # 20:00–08:00 local quiet hours (agents/08)
+    reminder_quiet_end_hour: int = 8
+    reminders_enabled: bool = False  # off by default; the scheduled loop opts in per env

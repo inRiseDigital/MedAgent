@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -13,8 +16,11 @@ from app.adapters import LoggingPushAdapter, LoggingSmsAdapter, SmtpEmailAdapter
 from app.auth import JWKSCache
 from app.config import Settings
 from app.logging_config import configure_logging
-from app.routers import stream, ticket
+from app.notify.reminders import run_reminders
+from app.routers import notify, stream, ticket
 from app.telemetry import configure_telemetry
+
+logger = logging.getLogger(__name__)
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -34,9 +40,25 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.email_adapter = SmtpEmailAdapter(
             settings.smtp_host, settings.smtp_port, settings.smtp_from
         )
+
+        async def _reminder_loop() -> None:
+            while True:
+                await asyncio.sleep(settings.reminder_interval_seconds)
+                try:
+                    await run_reminders(settings, app.state)
+                except Exception:  # noqa: BLE001 — never let the loop die
+                    logger.exception("reminder loop error")
+
+        reminder_task = (
+            asyncio.create_task(_reminder_loop()) if settings.reminders_enabled else None
+        )
         try:
             yield
         finally:
+            if reminder_task:
+                reminder_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await reminder_task
             await app.state.redis.aclose()
 
     app = FastAPI(title="MedAgent notify-service", version="0.1.0", lifespan=lifespan)
@@ -44,6 +66,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app.include_router(ticket.router)
     app.include_router(stream.router)
+    app.include_router(notify.router)
+    app.include_router(notify.internal_router)
 
     @app.get("/healthz", tags=["health"])
     async def healthz() -> dict[str, str]:
