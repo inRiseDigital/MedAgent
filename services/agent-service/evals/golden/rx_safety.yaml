@@ -1,0 +1,49 @@
+# Rx-safety golden set (04 §6). Verdicts come from the DETERMINISTIC engine
+# (app/rxsafety), so the grader is exact-match and the gate is 100% — any miss
+# fails CI. Keyed by drug name for the pilot dataset (production keys by RxCUI).
+class: rx_safety
+seed_version: v0
+grader: exact
+cases:
+  - id: rx-warfarin-ibuprofen
+    input: { proposed_drug: ibuprofen, current_meds: [warfarin], allergies: [] }
+    expected: { verdict: block, codes_include: [DDI_MAJOR] }
+  - id: rx-warfarin-aspirin
+    input: { proposed_drug: aspirin, current_meds: [warfarin], allergies: [] }
+    expected: { verdict: block, codes_include: [DDI_MAJOR] }
+  - id: rx-penicillin-allergy-amoxicillin
+    input: { proposed_drug: amoxicillin, current_meds: [metformin], allergies: [{ substance: Penicillin, criticality: high }] }
+    expected: { verdict: block, codes_include: [ALLERGY_CLASS] }
+  - id: rx-penicillin-allergy-cephalexin-cross
+    input: { proposed_drug: cephalexin, current_meds: [], allergies: [{ substance: Penicillin, criticality: high }] }
+    expected: { verdict: warn, codes_include: [ALLERGY_CROSS] }
+  - id: rx-simvastatin-clarithromycin
+    input: { proposed_drug: simvastatin, current_meds: [clarithromycin], allergies: [] }
+    expected: { verdict: block, codes_include: [DDI_MAJOR] }
+  - id: rx-ssri-maoi-contraindicated
+    input: { proposed_drug: sertraline, current_meds: [phenelzine], allergies: [] }
+    expected: { verdict: block, codes_include: [DDI_CONTRAINDICATED] }
+  - id: rx-ace-potassium-sparing
+    input: { proposed_drug: spironolactone, current_meds: [lisinopril], allergies: [] }
+    expected: { verdict: block, codes_include: [DDI_MAJOR] }
+  - id: rx-methotrexate-trimethoprim
+    input: { proposed_drug: trimethoprim, current_meds: [methotrexate], allergies: [] }
+    expected: { verdict: block, codes_include: [DDI_MAJOR] }
+  - id: rx-digoxin-amiodarone
+    input: { proposed_drug: amiodarone, current_meds: [digoxin], allergies: [] }
+    expected: { verdict: block, codes_include: [DDI_MAJOR] }
+  - id: rx-clopidogrel-omeprazole-moderate
+    input: { proposed_drug: clopidogrel, current_meds: [omeprazole], allergies: [] }
+    expected: { verdict: warn, codes_include: [DDI_MODERATE] }
+  - id: rx-dose-exceeded
+    input: { proposed_drug: metformin, current_meds: [], allergies: [], dose_mg_per_day: 3000 }
+    expected: { verdict: warn, codes_include: [DOSE_EXCEEDED] }
+  - id: rx-safe-paracetamol
+    input: { proposed_drug: paracetamol, current_meds: [metformin], allergies: [] }
+    expected: { verdict: pass }
+  - id: rx-safe-alternative-doxycycline
+    input: { proposed_drug: doxycycline, current_meds: [metformin], allergies: [{ substance: Penicillin, criticality: high }] }
+    expected: { verdict: pass }
+  - id: rx-unknown-drug-warn
+    input: { proposed_drug: zzznotadrug, current_meds: [], allergies: [] }
+    expected: { verdict: warn, codes_include: [UNKNOWN_DRUG] }

@@ -70,7 +70,7 @@ Each task: **Build** → **Verify** (insert data / call it / assert) → commit.
 - [x] **Chat UI in the doctor workspace** · verified end-to-end via the gateway: login (dr_demo) → BFF `/api/chat` (attaches session token) → agent-service (auth enforced) → cited streamed answer; patient page renders the ChatPanel (streaming text + citation chips + quick prompts). Custom lightweight SSE reader (no ai-sdk dep). BFF proxy streams the agent's AI SDK frames through untouched.
 - [ ] Conversational memory within an encounter (checkpointer) + resume · verify: close/reopen tab, thread resumes
 - [ ] English STT v1 (server-relayed provider) · verify: dictation → text in note field
-- [ ] AI eval harness in CI (blocks merge on regression) · verify: intentional regression fails the gate
+- [x] **AI eval gate (blocks merge on regression)** — evals/run.py runs the golden set with hard thresholds: Rx-safety graded against the deterministic engine (exact-match, 100% required), LLM classes (summary_qa/citation) run in --live mode else skipped. Verified: 14/14 rx_safety cases pass → exit 0; a planted regression (warfarin+ibuprofen mislabelled pass) → 93% → exit 1. CI (eval-gate.yml) invokes it as a required check with --output results JSON. (Growing to ≥150 cases + live citation grader is ongoing.)
 
 ## Phase A · S4 — Write-back & Rx safety
 - [x] **Structured proposals commit to FHIR + audit** (core-api /api/v1/proposals/commit) — diagnosis→Condition, prescription→MedicationRequest (with rx-safety-verdict extension), vitals→Observation, note→DocumentReference. Verified: hypertension→Condition/1013, paracetamol→MedicationRequest/1014, all audited.
