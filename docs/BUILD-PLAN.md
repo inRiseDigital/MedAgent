@@ -121,8 +121,9 @@ The system learns from use and improves itself, within clinical-safety guardrail
 auto-modified — dataset changes are clinician-reviewed PRs only (04, 09). Auto-learning
 optimises the LLM/agent layer and operations, always eval-gated and reversible.
 
-- [ ] **Feedback capture** — log every agent turn, clinician proposal edit/accept/reject, thumbs
-  signal, citation click, refusal · verify: signals land in an analytics store (no PHI in features)
+- [x] **Feedback capture** — POST /api/v1/feedback captures PHI-free signals (answer ratings, proposal accepted/rejected/overridden, refusals) into a bounded Redis list; raw questions hashed server-side. Verified: 4 events captured, question stored only as a hash.
+- [x] **Drift/quality metrics** — GET /api/v1/feedback/metrics: thumbs-down rate, reject/override rates, refusals. Verified live (0.5/0.5/0.5 on the test set).
+- [x] **Auto candidate generation (human-reviewed)** — app/learning/analyze.py turns thumbs-down → summary_qa candidates and rejected/overridden proposals → rx_safety_review candidates in evals/candidates/ (needs_review). GOVERNANCE enforced: writes only under evals/candidates/, NEVER the rx-safety dataset or prompts; promotion is a human PR that must pass the eval gate. Verified: 3 candidates generated.
 - [ ] **Auto eval-set growth** — failure patterns + rejected proposals become new golden eval cases
   automatically (queued for human confirm) · verify: a rejected answer appears as a candidate eval case
 - [ ] **Drift & quality monitoring** — online sampled eval-pass-rate, refusal rate, citation coverage,

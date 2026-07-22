@@ -49,3 +49,6 @@ seed-cache/
 # Dev compose env files may hold real dev creds — never commit (keep .example)
 infra/compose/env/*.env
 !infra/compose/env/*.env.example
+
+# Learning-loop candidate review queue — generated, ephemeral (keep README)
+services/agent-service/evals/candidates/*.json
