@@ -87,6 +87,20 @@ def main() -> None:
         print(f"  web default scope += {name}")
     print("web defaultClientScopes ensured")
 
+    # 1b. dev-cli client (direct grant) — lets dev tooling/tests mint user tokens.
+    existing = json.loads(_req("GET", f"/admin/realms/{REALM}/clients?clientId=dev-cli", tok))
+    if not existing:
+        _req("POST", f"/admin/realms/{REALM}/clients", tok, {
+            "clientId": "dev-cli",
+            "enabled": True,
+            "publicClient": True,
+            "directAccessGrantsEnabled": True,
+            "standardFlowEnabled": False,
+        })
+        print("created dev-cli client (direct grant, dev only)")
+    else:
+        print("dev-cli client already present")
+
     # 2. dev browser flow ---------------------------------------------------
     realm = json.loads(_req("GET", f"/admin/realms/{REALM}", tok))
     if realm.get("browserFlow") != DEV_BROWSER_FLOW:

@@ -73,9 +73,9 @@ Each task: **Build** → **Verify** (insert data / call it / assert) → commit.
 - [ ] AI eval harness in CI (blocks merge on regression) · verify: intentional regression fails the gate
 
 ## Phase A · S4 — Write-back & Rx safety
-- [ ] Structured proposals (Diagnosis ICD-10, Note, Vitals, Prescription) · verify: each commits a valid FHIR resource
+- [x] **Structured proposals commit to FHIR + audit** (core-api /api/v1/proposals/commit) — diagnosis→Condition, prescription→MedicationRequest (with rx-safety-verdict extension), vitals→Observation, note→DocumentReference. Verified: hypertension→Condition/1013, paracetamol→MedicationRequest/1014, all audited.
 - [x] **Deterministic Rx-safety engine (ADR AG-2)** — curated DDI dataset + drug-class map + dose ranges in agent-service (app/rxsafety); verdict pass/warn/block computed deterministically, fail-closed (dataset down → block). Wired into the chat's screen_medication tool + a POST /api/v1/rx-safety/screen endpoint for the write-back flow. Verified 8/8 clinical cases (warfarin+NSAID→block, penicillin-allergy+amoxicillin→block, cephalexin→warn cross-reactivity, SSRI+MAOI→contraindicated, dose-exceeded→warn, safe combos→pass) AND end-to-end via chat: "can I prescribe amoxicillin?" → engine BLOCK (ALLERGY_CLASS) narrated faithfully by the LLM with alternatives + sign-off deferral.
-- [ ] Interrupt-based e-sign-off + step-up auth (loa2) for prescriptions · verify: sign→commit; step-up enforced
+- [x] **Safety-gated sign-off** — prescriptions RE-SCREENED at commit via the deterministic engine, server-side (not trusting the UI): verified amoxicillin→409 block (unwriteable), cephalexin→422 without override / committed with an audited override_reason→MedicationRequest/1015. Step-up (acr=loa2) gate present, enforced when step_up_enforced=true (off in dev). (Agent-initiated interrupt proposals + UI proposal card still to build.)
 - [ ] Write-back proposal card + verdict banner (pass/warn/block) · verify: UI reflects engine verdict
 - [ ] UAT scripts · verify: clinician walkthrough passes
 

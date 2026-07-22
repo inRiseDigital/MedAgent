@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from app.auth import JWKSCache
 from app.config import Settings
 from app.logging_config import configure_logging
-from app.routers import authz, face_events, patients, queue
+from app.routers import authz, face_events, patients, proposals, queue
 from app.telemetry import configure_telemetry
 
 API_V1_PREFIX = "/api/v1"
@@ -56,6 +56,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(patients.router, prefix=API_V1_PREFIX)
     app.include_router(queue.router, prefix=API_V1_PREFIX)
     app.include_router(face_events.router, prefix=API_V1_PREFIX)
+    app.include_router(proposals.router, prefix=API_V1_PREFIX)
     # SSE ticket issuance lives in notify-service (02 §11) — it owns the full
     # ticket lifecycle (issue + redeem) since it holds the Redis pub/sub and the
     # channel routing. core-api does not issue SSE tickets.

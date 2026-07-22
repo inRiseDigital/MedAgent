@@ -23,6 +23,12 @@ class Settings(BaseSettings):
     )
     redis_url: str = "redis://localhost:6379/0"
     fhir_base_url: str = "http://localhost:8080/fhir"
+    # agent-service hosts the deterministic Rx-safety engine (04); the write-back
+    # commit path re-screens prescriptions there before committing.
+    agent_service_url: str = "http://agent-service:8000"
+    # When true, prescription commits require a step-up (acr=loa2) token (02 §5.2).
+    # Off in dev so the flow is testable without the browser step-up ceremony.
+    step_up_enforced: bool = False
 
     # AuthN (02). Split-horizon: `keycloak_issuer` is the PUBLIC issuer that
     # tokens carry in their `iss` claim (what browsers hit, via the gateway) and

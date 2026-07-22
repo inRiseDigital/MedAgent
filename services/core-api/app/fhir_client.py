@@ -46,6 +46,17 @@ class FHIRClient:
         resp.raise_for_status()
         return dict(resp.json())
 
+    async def search(
+        self, resource_type: str, params: dict[str, str], token: str | None = None
+    ) -> list[dict[str, Any]]:
+        """GET a search bundle and return its resources."""
+        resp = await self._client.get(
+            f"/{resource_type}", params={**params, "_count": "50"}, headers=_auth_header(token)
+        )
+        resp.raise_for_status()
+        bundle = resp.json()
+        return [e["resource"] for e in bundle.get("entry", []) if "resource" in e]
+
     async def create(
         self, resource_type: str, resource: dict[str, Any], token: str | None = None
     ) -> dict[str, Any]:
