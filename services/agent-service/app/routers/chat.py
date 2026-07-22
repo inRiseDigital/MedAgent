@@ -102,7 +102,8 @@ async def chat(
             return
 
         sources: list[dict[str, Any]] = []
-        agent = build_agent(settings, fhir_id, sources)
+        proposals: list[dict[str, Any]] = []
+        agent = build_agent(settings, fhir_id, sources, proposals)
         try:
             async for event in agent.astream_events(
                 {"messages": [{"role": "user", "content": question}]}, version="v2"
@@ -120,6 +121,8 @@ async def chat(
         yield _sse({"type": "text-end", "id": text_id})
         if sources:  # citation chips (FR-3.4): resources the tools read
             yield _sse({"type": "data-citations", "data": sources})
+        if proposals:  # write-intent drafts → sign-off cards (04 §2.2)
+            yield _sse({"type": "data-proposals", "data": proposals})
         yield _sse({"type": "finish"})
         yield "data: [DONE]\n\n"
 

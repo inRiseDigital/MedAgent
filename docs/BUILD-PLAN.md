@@ -61,12 +61,13 @@ Each task: **Build** → **Verify** (insert data / call it / assert) → commit.
 - [ ] Patient summary card (FR-2.2) from FHIR query set · verify: p95 < 2s on Synthea data
 - [ ] Patient search UI (name/PHN/phone) · verify: results render, open requires grant
 - [x] **Comprehensive clinical agent with citations (real Claude over FHIR)** · 15 tools covering the full record — summary, record-overview, conditions, medications, allergies, vitals, labs+diagnostic reports, immunizations, encounters, notes/documents, procedures, appointments, family history, social history, and a medication-safety screen. Verified: "full picture + is amoxicillin safe?" → pulled 13 cited resources across all domains AND returned "AVOID amoxicillin — penicillin anaphylaxis, hard stop" with beta-lactam cross-reactivity reasoning, flagged missing vitals/renal function, suggested alternatives + work-up, all [general knowledge]-marked, ending "requires your sign-off". LangGraph ReAct (claude-sonnet-5). (Orchestrator write-intent routing + ≥150-case eval gate still to build.)
-- [ ] **Conversational agentic interface** (primary UX): multi-turn chat over the patient
-  record, context-aware (clinician/patient/encounter/consent stamped), streaming, with
-  visible tool-calls and citation chips linking to source FHIR resources. Natural-language
-  intents route through the orchestrator to specialist agents; write intents surface as
-  structured proposals (never free-text commits).
-  · verify: ask "what are the active meds?" → cited answer; "prescribe X" → safety-screened proposal card
+- [x] **Conversational agentic interface with write-intent routing** (primary UX): multi-turn
+  cited chat that also DRAFTS actions. A "prescribe/start/give X" instruction triggers
+  draft_prescription → deterministic screen → a staged sign-off card (data-proposals frame),
+  never a free-text commit. Verified: "prescribe amoxicillin" → staged proposal verdict BLOCK
+  (ALLERGY_CLASS), agent refuses to claim it prescribed; "start paracetamol" → staged proposal
+  verdict PASS. Chat UI renders proposals as inline sign-off cards (verdict badge; Sign & commit
+  for pass, disabled on block, routed to the panel on warn) posting to /api/proposals/commit.
 - [x] **Chat UI in the doctor workspace** · verified end-to-end via the gateway: login (dr_demo) → BFF `/api/chat` (attaches session token) → agent-service (auth enforced) → cited streamed answer; patient page renders the ChatPanel (streaming text + citation chips + quick prompts). Custom lightweight SSE reader (no ai-sdk dep). BFF proxy streams the agent's AI SDK frames through untouched.
 - [ ] Conversational memory within an encounter (checkpointer) + resume · verify: close/reopen tab, thread resumes
 - [ ] English STT v1 (server-relayed provider) · verify: dictation → text in note field

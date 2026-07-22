@@ -91,11 +91,17 @@ def _qty(o: dict[str, Any]) -> str:
 
 
 def build_patient_tools(
-    fhir_base_url: str, patient_fhir_id: str, sources: list[dict[str, Any]]
+    fhir_base_url: str,
+    patient_fhir_id: str,
+    sources: list[dict[str, Any]],
+    proposals: list[dict[str, Any]] | None = None,
 ) -> list[BaseTool]:
-    """Build the full read + screening tool belt for one patient."""
+    """Build the full read + screening tool belt for one patient. `proposals`, if
+    given, accumulates write-intent drafts (e.g. draft_prescription) that the chat
+    layer surfaces as sign-off cards."""
     fhir = FhirClient(fhir_base_url, patient_fhir_id, sources)
     pid = patient_fhir_id
+    drafts = proposals if proposals is not None else []
 
     @tool
     async def get_patient_summary() -> str:
@@ -338,6 +344,35 @@ def build_patient_tools(
         )
         return "\n".join(lines)
 
+    @tool
+    async def draft_prescription(drug: str, dose_text: str = "") -> str:
+        """Draft a prescription for the clinician to REVIEW AND SIGN. Use when the clinician
+        asks to prescribe/start/give a medication. Runs the deterministic Rx-safety engine and
+        stages the draft as a sign-off proposal — it does NOT commit anything. Report the verdict
+        faithfully; if it is a block, tell the clinician it cannot be prescribed and suggest
+        alternatives. Never say the drug has been prescribed."""
+        meds = await fhir.search("MedicationRequest", {"patient": pid, "status": "active"})
+        allergies = await fhir.search("AllergyIntolerance", {"patient": pid})
+        v = rx_screen(
+            drug,
+            [_cc(m.get("medicationCodeableConcept")) for m in meds],
+            [{"substance": _cc(a.get("code")), "criticality": a.get("criticality", "unknown")} for a in allergies],
+        )
+        drafts.append({
+            "kind": "prescription",
+            "drug": drug,
+            "dose_text": dose_text,
+            "verdict": v.verdict,
+            "codes": v.codes,
+            "findings": v.findings,
+        })
+        return (
+            f"Drafted prescription: {drug} {dose_text}. Deterministic safety verdict: "
+            f"{v.verdict.upper()} ({', '.join(v.codes) or 'no issues'}). A sign-off card has been "
+            f"staged for the clinician. Present the verdict; if BLOCK, state it cannot be prescribed "
+            f"and offer alternatives. Do NOT claim it is prescribed — the clinician must review and sign."
+        )
+
     return [
         get_patient_summary,
         get_record_overview,
@@ -354,4 +389,5 @@ def build_patient_tools(
         get_family_history,
         get_social_history,
         screen_medication,
+        draft_prescription,
     ]

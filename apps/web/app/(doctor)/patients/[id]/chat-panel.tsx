@@ -15,12 +15,26 @@ interface Citation {
   resource_type?: string;
   id?: string;
 }
+interface Proposal {
+  kind: string;
+  drug?: string;
+  dose_text?: string;
+  verdict: "pass" | "warn" | "block";
+  codes: string[];
+}
 interface Turn {
   role: "user" | "assistant";
   text: string;
   citations?: Citation[];
+  proposals?: Proposal[];
   streaming?: boolean;
 }
+
+const VERDICT_VARIANT: Record<string, BadgeProps["variant"]> = {
+  pass: "pass",
+  warn: "warn",
+  block: "block",
+};
 
 const QUICK_PROMPTS = [
   "Summarise this patient's active problems and medications.",
@@ -33,7 +47,33 @@ export function ChatPanel({ patientId }: { patientId: string }) {
   const [turns, setTurns] = useState<Turn[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
+  const [signState, setSignState] = useState<Record<string, string>>({});
   const logRef = useRef<HTMLDivElement>(null);
+
+  async function signProposal(key: string, p: Proposal) {
+    setSignState((s) => ({ ...s, [key]: "signing" }));
+    try {
+      const res = await fetch("/api/proposals/commit", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          kind: "prescription",
+          patient: patientId,
+          payload: { drug: p.drug, dose_text: p.dose_text },
+        }),
+      });
+      const data = (await res.json()) as { committed?: string };
+      if (res.status === 201 && data.committed) {
+        setSignState((s) => ({ ...s, [key]: `committed:${data.committed}` }));
+      } else if (res.status === 422) {
+        setSignState((s) => ({ ...s, [key]: "override" }));
+      } else {
+        setSignState((s) => ({ ...s, [key]: "error" }));
+      }
+    } catch {
+      setSignState((s) => ({ ...s, [key]: "error" }));
+    }
+  }
 
   const send = useCallback(
     async (question: string) => {
@@ -90,6 +130,8 @@ export function ChatPanel({ patientId }: { patientId: string }) {
               logRef.current?.scrollTo({ top: logRef.current.scrollHeight });
             } else if (evt.type === "data-citations" && Array.isArray(evt.data)) {
               patch((a) => ({ ...a, citations: evt.data as Citation[] }));
+            } else if (evt.type === "data-proposals" && Array.isArray(evt.data)) {
+              patch((a) => ({ ...a, proposals: evt.data as Proposal[] }));
             }
           }
         }
@@ -150,6 +192,49 @@ export function ChatPanel({ patientId }: { patientId: string }) {
                   </div>
                 ) : null}
               </div>
+              {turn.proposals && turn.proposals.length > 0 ? (
+                <div className="mt-2 space-y-2">
+                  {turn.proposals.map((p, pi) => {
+                    const key = `${i}:${pi}`;
+                    const state = signState[key];
+                    const committed = state?.startsWith("committed:");
+                    return (
+                      <div key={key} className="rounded-md border border-border bg-card p-3 text-sm">
+                        <div className="flex items-center gap-2">
+                          <Badge variant={VERDICT_VARIANT[p.verdict]}>{p.verdict}</Badge>
+                          <span className="font-medium">Rx: {p.drug} {p.dose_text}</span>
+                        </div>
+                        {p.codes.length > 0 ? (
+                          <p className="mt-1 text-2xs text-muted-foreground">{p.codes.join(", ")}</p>
+                        ) : null}
+                        <div className="mt-2 flex items-center gap-2">
+                          <Button
+                            size="sm"
+                            onClick={() => void signProposal(key, p)}
+                            disabled={p.verdict === "block" || state === "signing" || committed}
+                          >
+                            {t("proposalSign")}
+                          </Button>
+                          {committed ? (
+                            <span className="text-2xs text-success">
+                              {t("proposalSigned", { ref: state!.slice("committed:".length) })}
+                            </span>
+                          ) : null}
+                          {p.verdict === "block" ? (
+                            <span className="text-2xs text-destructive">{t("proposalBlocked")}</span>
+                          ) : null}
+                          {state === "override" ? (
+                            <span className="text-2xs text-warning">{t("proposalOverride")}</span>
+                          ) : null}
+                          {state === "error" ? (
+                            <span className="text-2xs text-destructive">{t("proposalSignError")}</span>
+                          ) : null}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : null}
             </div>
           ))
         )}

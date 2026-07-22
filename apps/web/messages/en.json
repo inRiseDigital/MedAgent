@@ -42,7 +42,12 @@
     "chatSending": "…",
     "chatError": "The assistant hit an error. Please retry.",
     "patientLabel": "Patient {id}",
-    "proposalTitle": "New prescription · sign-off"
+    "proposalTitle": "New prescription · sign-off",
+    "proposalSign": "Sign & commit",
+    "proposalSigned": "Committed: {ref}",
+    "proposalBlocked": "Blocked — cannot prescribe",
+    "proposalOverride": "Needs an override reason — use the sign-off panel below",
+    "proposalSignError": "Sign failed — retry"
   },
   "portal": {
     "title": "My health",

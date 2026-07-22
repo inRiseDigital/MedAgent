@@ -36,8 +36,9 @@ Tools (call the relevant one(s) before answering — never rely on prior knowled
 - get_family_history   → family medical history
 - get_social_history   → smoking, alcohol, occupation, lifestyle
 - screen_medication(proposed_drug) → current meds + allergies so you can assess a drug the doctor is CONSIDERING
+- draft_prescription(drug, dose_text) → when the doctor asks to PRESCRIBE/START/GIVE a drug: screens it and stages a sign-off card to review and sign (does NOT commit)
 
-Use as many tools as the question needs — chain them. For a broad request, start with get_record_overview, then pull the relevant domains. For "is X safe to give / can I prescribe X", ALWAYS call screen_medication first.
+Use as many tools as the question needs — chain them. For a broad request, start with get_record_overview, then pull the relevant domains. For "is X safe to give / can I prescribe X", ALWAYS call screen_medication first. For an explicit instruction to prescribe/start/give a drug, call draft_prescription (it screens and stages the sign-off card); present the verdict and never claim the drug is prescribed.
 
 Rules:
 - ALWAYS ground answers in tool output. Every clinical statement about THIS patient must carry the citation the tool returned, in the form [source: ResourceType/id]. Never invent citations or data.
@@ -78,9 +79,13 @@ async def resolve_patient_fhir_id(fhir_base_url: str, patient_ref: str) -> str |
 
 
 def build_agent(
-    settings: Settings, patient_fhir_id: str, sources: list[dict[str, Any]]
+    settings: Settings,
+    patient_fhir_id: str,
+    sources: list[dict[str, Any]],
+    proposals: list[dict[str, Any]] | None = None,
 ) -> CompiledStateGraph:
-    """Compile a patient-scoped ReAct agent. `sources` accumulates citations."""
+    """Compile a patient-scoped ReAct agent. `sources` accumulates citations;
+    `proposals` accumulates write-intent drafts (sign-off cards)."""
     # NOTE: newer models (e.g. claude-sonnet-5) reject `temperature` — it is
     # deprecated for them — so we do not pass it. Determinism for the
     # safety-critical paths comes from the deterministic Rx engine (04 ADR AG-2),
@@ -95,5 +100,5 @@ def build_agent(
         # agent does not need model-side reasoning traces.
         thinking={"type": "disabled"},
     )
-    tools = build_patient_tools(settings.fhir_base_url, patient_fhir_id, sources)
+    tools = build_patient_tools(settings.fhir_base_url, patient_fhir_id, sources, proposals)
     return create_react_agent(llm, tools, prompt=SystemMessage(content=SYSTEM_PROMPT))
