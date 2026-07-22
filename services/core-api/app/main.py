@@ -6,6 +6,9 @@ for app_db (`alembic upgrade head` runs as a deploy step before rollout).
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -15,11 +18,15 @@ from redis.asyncio import Redis
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
+from app.audit import dispatch_once
 from app.auth import JWKSCache
 from app.config import Settings
 from app.logging_config import configure_logging
+from app.routers import audit as audit_router
 from app.routers import authz, face_events, patients, proposals, queue
 from app.telemetry import configure_telemetry
+
+logger = logging.getLogger(__name__)
 
 API_V1_PREFIX = "/api/v1"
 
@@ -40,9 +47,25 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             settings.keycloak_internal_url or settings.keycloak_issuer,
             settings.jwks_cache_ttl_seconds,
         )
+
+        async def _audit_loop() -> None:
+            # Drain the audit outbox into FHIR AuditEvents on an interval (03 §5.3).
+            while True:
+                try:
+                    n = await dispatch_once(app.state.sessionmaker, settings.fhir_base_url)
+                    if n:
+                        logger.info("audit outbox dispatched", extra={"count": n})
+                except Exception:  # noqa: BLE001 — never let the loop die
+                    logger.exception("audit dispatch loop error")
+                await asyncio.sleep(settings.audit_dispatch_interval_seconds)
+
+        audit_task = asyncio.create_task(_audit_loop())
         try:
             yield
         finally:
+            audit_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await audit_task
             await app.state.redis.aclose()
             await app.state.engine.dispose()
 
@@ -57,6 +80,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(queue.router, prefix=API_V1_PREFIX)
     app.include_router(face_events.router, prefix=API_V1_PREFIX)
     app.include_router(proposals.router, prefix=API_V1_PREFIX)
+    app.include_router(audit_router.public_router, prefix=API_V1_PREFIX)
+    app.include_router(audit_router.internal_router)
     # SSE ticket issuance lives in notify-service (02 §11) — it owns the full
     # ticket lifecycle (issue + redeem) since it holds the Redis pub/sub and the
     # channel routing. core-api does not issue SSE tickets.

@@ -29,6 +29,8 @@ class Settings(BaseSettings):
     # When true, prescription commits require a step-up (acr=loa2) token (02 §5.2).
     # Off in dev so the flow is testable without the browser step-up ceremony.
     step_up_enforced: bool = False
+    # Audit outbox -> FHIR AuditEvent dispatch cadence (03 §5.3).
+    audit_dispatch_interval_seconds: int = 10
 
     # AuthN (02). Split-horizon: `keycloak_issuer` is the PUBLIC issuer that
     # tokens carry in their `iss` claim (what browsers hit, via the gateway) and
