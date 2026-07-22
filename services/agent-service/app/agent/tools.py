@@ -1,10 +1,15 @@
 """Patient-scoped clinical tools that read the FHIR record (04 §2.3).
 
+A comprehensive read surface so a clinician can ask the chat for anything in the
+record — demographics, problems, medications, allergies, vitals, labs, imaging,
+immunisations, encounters, notes, procedures, appointments, family/social
+history — plus a medication-safety screen for a drug under consideration.
+
 Every read tool returns human-readable content AND records the FHIR resources it
 touched into a shared `sources` list, so the chat layer can surface citation
-chips that link back to the source resources (FR-3.4). In S1/S3 dev the tools
-hit HAPI directly; in the target design they route through core-api's
-decision-checked path so consent/authz apply (04 §1) — same tool surface.
+chips linking back to the source resources (FR-3.4). In dev the tools hit HAPI
+directly; in the target design they route through core-api's decision-checked
+path so consent/authz apply (04 §1) — same tool surface.
 """
 
 from __future__ import annotations
@@ -14,19 +19,18 @@ from typing import Any
 import httpx
 from langchain_core.tools import BaseTool, tool
 
-# System URI for the PHN identifier (03 §3).
 PHN_SYSTEM = "https://fhir.medagent.health.lk/id/phn"
 
 
 class FhirClient:
-    """Thin async FHIR reader scoped to one patient."""
+    """Thin async FHIR reader scoped to one patient, accumulating citations."""
 
     def __init__(self, base_url: str, patient_fhir_id: str, sources: list[dict[str, Any]]):
         self._base = base_url.rstrip("/")
         self._pid = patient_fhir_id
         self._sources = sources
 
-    async def _search(self, resource_type: str, params: dict[str, str]) -> list[dict[str, Any]]:
+    async def search(self, resource_type: str, params: dict[str, str]) -> list[dict[str, Any]]:
         async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.get(
                 f"{self._base}/{resource_type}",
@@ -37,10 +41,10 @@ class FhirClient:
             bundle = resp.json()
         entries = [e["resource"] for e in bundle.get("entry", []) if "resource" in e]
         for r in entries:
-            self._cite(r)
+            self.cite(r)
         return entries
 
-    async def _read(self, resource_type: str, rid: str) -> dict[str, Any] | None:
+    async def read(self, resource_type: str, rid: str) -> dict[str, Any] | None:
         async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.get(
                 f"{self._base}/{resource_type}/{rid}",
@@ -50,22 +54,18 @@ class FhirClient:
                 return None
             resp.raise_for_status()
             r = resp.json()
-        self._cite(r)
+        self.cite(r)
         return r
 
-    def _cite(self, resource: dict[str, Any]) -> None:
+    def cite(self, resource: dict[str, Any]) -> None:
         ref = f"{resource.get('resourceType')}/{resource.get('id')}"
         if not any(s["ref"] == ref for s in self._sources):
             self._sources.append(
-                {
-                    "ref": ref,
-                    "resource_type": resource.get("resourceType"),
-                    "id": resource.get("id"),
-                }
+                {"ref": ref, "resource_type": resource.get("resourceType"), "id": resource.get("id")}
             )
 
 
-def _codeable(cc: dict[str, Any] | None) -> str:
+def _cc(cc: dict[str, Any] | None) -> str:
     if not cc:
         return "?"
     if cc.get("text"):
@@ -73,100 +73,270 @@ def _codeable(cc: dict[str, Any] | None) -> str:
     codings = cc.get("coding", [])
     if codings:
         c = codings[0]
-        return c.get("display") or f"{c.get('system','')}|{c.get('code','')}"
+        return c.get("display") or f"{c.get('system', '')}|{c.get('code', '')}"
+    return "?"
+
+
+def _qty(o: dict[str, Any]) -> str:
+    vq = o.get("valueQuantity")
+    if vq:
+        return f"{vq.get('value', '?')} {vq.get('unit', '')}".strip()
+    if "valueString" in o:
+        return str(o["valueString"])
+    if "valueCodeableConcept" in o:
+        return _cc(o["valueCodeableConcept"])
     return "?"
 
 
 def build_patient_tools(
     fhir_base_url: str, patient_fhir_id: str, sources: list[dict[str, Any]]
 ) -> list[BaseTool]:
-    """Build the read tools for one patient. `sources` is appended to as tools run."""
+    """Build the full read + screening tool belt for one patient."""
     fhir = FhirClient(fhir_base_url, patient_fhir_id, sources)
     pid = patient_fhir_id
 
     @tool
     async def get_patient_summary() -> str:
-        """Personal details: name, date of birth, gender, and identifiers for the current patient."""
-        p = await fhir._read("Patient", pid)
+        """Personal details and identifiers: name, date of birth, gender, PHN, contact, blood group."""
+        p = await fhir.read("Patient", pid)
         if not p:
             return "Patient not found."
         name = p.get("name", [{}])[0]
         full = " ".join(name.get("given", []) + [name.get("family", "")]).strip()
-        phn = next(
-            (i["value"] for i in p.get("identifier", []) if i.get("system") == PHN_SYSTEM),
-            "n/a",
-        )
+        phn = next((i["value"] for i in p.get("identifier", []) if i.get("system") == PHN_SYSTEM), "n/a")
+        phone = next((t.get("value") for t in p.get("telecom", []) if t.get("system") == "phone"), "n/a")
+        bg = await fhir.search("Observation", {"patient": pid, "code": "http://loinc.org|883-9"})
+        blood = _qty(bg[0]) if bg else "not recorded"
         return (
             f"Name: {full or 'Unknown'} [source: Patient/{pid}]\n"
             f"PHN: {phn}\nDate of Birth: {p.get('birthDate', 'Not recorded')}\n"
-            f"Gender: {p.get('gender', 'Not recorded')}"
+            f"Gender: {p.get('gender', 'Not recorded')}\nPhone: {phone}\nBlood group: {blood}"
         )
 
     @tool
     async def get_conditions() -> str:
-        """Active and past diagnoses / conditions (ICD-10 coded) for the patient."""
-        rows = await fhir._search("Condition", {"patient": pid})
+        """Active and past diagnoses / problems (ICD-10 coded)."""
+        rows = await fhir.search("Condition", {"patient": pid})
         if not rows:
             return "No conditions recorded."
-        lines = []
-        for c in rows:
-            status = _codeable(c.get("clinicalStatus"))
-            lines.append(f"- {_codeable(c.get('code'))} (status: {status}) [source: Condition/{c.get('id')}]")
-        return "Conditions:\n" + "\n".join(lines)
+        return "Conditions:\n" + "\n".join(
+            f"- {_cc(c.get('code'))} (clinical status: {_cc(c.get('clinicalStatus'))}, "
+            f"verification: {_cc(c.get('verificationStatus'))}) [source: Condition/{c.get('id')}]"
+            for c in rows
+        )
 
     @tool
     async def get_medications() -> str:
-        """Current and past medication requests (prescriptions) for the patient."""
-        rows = await fhir._search("MedicationRequest", {"patient": pid})
+        """Current and past medication requests (prescriptions), with dosage."""
+        rows = await fhir.search("MedicationRequest", {"patient": pid})
         if not rows:
             return "No medications recorded."
         lines = []
         for m in rows:
-            dose = ""
             di = m.get("dosageInstruction", [])
-            if di and di[0].get("text"):
-                dose = f" — {di[0]['text']}"
+            dose = f" — {di[0]['text']}" if di and di[0].get("text") else ""
             lines.append(
-                f"- {_codeable(m.get('medicationCodeableConcept'))} "
-                f"(status: {m.get('status', '?')}){dose} [source: MedicationRequest/{m.get('id')}]"
+                f"- {_cc(m.get('medicationCodeableConcept'))} (status: {m.get('status', '?')})"
+                f"{dose} [source: MedicationRequest/{m.get('id')}]"
             )
         return "Medications:\n" + "\n".join(lines)
 
     @tool
     async def get_allergies() -> str:
-        """Known allergies and intolerances (with criticality) for the patient."""
-        rows = await fhir._search("AllergyIntolerance", {"patient": pid})
+        """Known allergies and intolerances with criticality and reactions."""
+        rows = await fhir.search("AllergyIntolerance", {"patient": pid})
         if not rows:
-            return "No allergies recorded."
+            return "No allergies recorded (NKDA not necessarily confirmed)."
         lines = []
         for a in rows:
-            crit = a.get("criticality", "unknown")
-            react = ""
             r = a.get("reaction", [])
-            if r and r[0].get("manifestation"):
-                react = f", reaction: {_codeable(r[0]['manifestation'][0])}"
+            react = f", reaction: {_cc(r[0]['manifestation'][0])}" if r and r[0].get("manifestation") else ""
             lines.append(
-                f"- {_codeable(a.get('code'))} (criticality: {crit}{react}) "
+                f"- {_cc(a.get('code'))} (criticality: {a.get('criticality', 'unknown')}{react}) "
                 f"[source: AllergyIntolerance/{a.get('id')}]"
             )
         return "Allergies:\n" + "\n".join(lines)
 
     @tool
     async def get_vitals() -> str:
-        """Recent vital-sign observations (heart rate, blood pressure, etc.) for the patient."""
-        rows = await fhir._search(
-            "Observation", {"patient": pid, "category": "vital-signs", "_sort": "-date"}
-        )
+        """Recent vital-sign observations (HR, BP, temperature, weight, height, glucose)."""
+        rows = await fhir.search("Observation", {"patient": pid, "category": "vital-signs", "_sort": "-date"})
         if not rows:
             return "No vital signs recorded."
-        lines = []
-        for o in rows:
-            vq = o.get("valueQuantity", {})
-            val = f"{vq.get('value', '?')} {vq.get('unit', '')}".strip()
-            when = o.get("effectiveDateTime", "")
-            lines.append(
-                f"- {_codeable(o.get('code'))}: {val} ({when}) [source: Observation/{o.get('id')}]"
-            )
-        return "Vital signs:\n" + "\n".join(lines)
+        return "Vital signs:\n" + "\n".join(
+            f"- {_cc(o.get('code'))}: {_qty(o)} ({o.get('effectiveDateTime', '')}) [source: Observation/{o.get('id')}]"
+            for o in rows
+        )
 
-    return [get_patient_summary, get_conditions, get_medications, get_allergies, get_vitals]
+    @tool
+    async def get_lab_results() -> str:
+        """Laboratory results — lab observations and diagnostic reports with interpretations."""
+        obs = await fhir.search("Observation", {"patient": pid, "category": "laboratory", "_sort": "-date"})
+        reports = await fhir.search("DiagnosticReport", {"patient": pid, "_sort": "-date"})
+        if not obs and not reports:
+            return "No laboratory results recorded."
+        out = []
+        if obs:
+            out.append("Lab observations:\n" + "\n".join(
+                f"- {_cc(o.get('code'))}: {_qty(o)} "
+                f"({'ABNORMAL' if o.get('interpretation') else 'normal/na'}) "
+                f"[source: Observation/{o.get('id')}]"
+                for o in obs
+            ))
+        if reports:
+            out.append("Diagnostic reports:\n" + "\n".join(
+                f"- {_cc(r.get('code'))} (status: {r.get('status', '?')}, issued {r.get('issued', '')}) "
+                f"[source: DiagnosticReport/{r.get('id')}]"
+                for r in reports
+            ))
+        return "\n\n".join(out)
+
+    @tool
+    async def get_immunizations() -> str:
+        """Vaccination history."""
+        rows = await fhir.search("Immunization", {"patient": pid, "_sort": "-date"})
+        if not rows:
+            return "No immunisations recorded."
+        return "Immunisations:\n" + "\n".join(
+            f"- {_cc(i.get('vaccineCode'))} (status: {i.get('status', '?')}, "
+            f"{i.get('occurrenceDateTime', '')}) [source: Immunization/{i.get('id')}]"
+            for i in rows
+        )
+
+    @tool
+    async def get_encounters() -> str:
+        """Visit / encounter history (consultations, admissions)."""
+        rows = await fhir.search("Encounter", {"patient": pid, "_sort": "-date"})
+        if not rows:
+            return "No encounters recorded."
+        return "Encounters:\n" + "\n".join(
+            f"- {_cc(e.get('class')) if isinstance(e.get('class'), dict) else e.get('class', {}).get('code', '?')} "
+            f"(status: {e.get('status', '?')}, {e.get('period', {}).get('start', '')}) [source: Encounter/{e.get('id')}]"
+            for e in rows
+        )
+
+    @tool
+    async def get_clinical_notes() -> str:
+        """Clinical notes, letters and documents (visit summaries, referral letters)."""
+        rows = await fhir.search("DocumentReference", {"patient": pid, "_sort": "-date"})
+        if not rows:
+            return "No clinical documents recorded."
+        return "Documents:\n" + "\n".join(
+            f"- {_cc(d.get('type'))} ({d.get('date', '')}, status: {d.get('status', '?')}) "
+            f"[source: DocumentReference/{d.get('id')}]"
+            for d in rows
+        )
+
+    @tool
+    async def get_procedures() -> str:
+        """Procedures performed (surgical and non-surgical)."""
+        rows = await fhir.search("Procedure", {"patient": pid, "_sort": "-date"})
+        if not rows:
+            return "No procedures recorded."
+        return "Procedures:\n" + "\n".join(
+            f"- {_cc(p.get('code'))} (status: {p.get('status', '?')}, "
+            f"{p.get('performedDateTime', '')}) [source: Procedure/{p.get('id')}]"
+            for p in rows
+        )
+
+    @tool
+    async def get_appointments() -> str:
+        """Scheduled and past appointments / follow-ups."""
+        rows = await fhir.search("Appointment", {"patient": pid, "_sort": "date"})
+        if not rows:
+            return "No appointments recorded."
+        return "Appointments:\n" + "\n".join(
+            f"- {a.get('start', '?')} (status: {a.get('status', '?')}, {_cc(a.get('appointmentType'))}) "
+            f"[source: Appointment/{a.get('id')}]"
+            for a in rows
+        )
+
+    @tool
+    async def get_family_history() -> str:
+        """Family medical history."""
+        rows = await fhir.search("FamilyMemberHistory", {"patient": pid})
+        if not rows:
+            return "No family history recorded."
+        lines = []
+        for f in rows:
+            conds = ", ".join(_cc(c.get("code")) for c in f.get("condition", [])) or "unspecified"
+            lines.append(
+                f"- {_cc(f.get('relationship'))}: {conds} [source: FamilyMemberHistory/{f.get('id')}]"
+            )
+        return "Family history:\n" + "\n".join(lines)
+
+    @tool
+    async def get_social_history() -> str:
+        """Social history: smoking, alcohol, occupation and lifestyle observations."""
+        rows = await fhir.search("Observation", {"patient": pid, "category": "social-history", "_sort": "-date"})
+        if not rows:
+            return "No social history recorded."
+        return "Social history:\n" + "\n".join(
+            f"- {_cc(o.get('code'))}: {_qty(o)} [source: Observation/{o.get('id')}]" for o in rows
+        )
+
+    @tool
+    async def get_record_overview() -> str:
+        """A one-shot overview counting what exists in the record across all domains —
+        use this first when asked for a general picture, then drill in with the specific tools."""
+        counts: list[str] = []
+        for label, rt, params in [
+            ("Problems", "Condition", {}),
+            ("Medications", "MedicationRequest", {}),
+            ("Allergies", "AllergyIntolerance", {}),
+            ("Vitals", "Observation", {"category": "vital-signs"}),
+            ("Labs", "Observation", {"category": "laboratory"}),
+            ("Immunisations", "Immunization", {}),
+            ("Encounters", "Encounter", {}),
+            ("Documents", "DocumentReference", {}),
+            ("Procedures", "Procedure", {}),
+            ("Appointments", "Appointment", {}),
+        ]:
+            rows = await fhir.search(rt, {"patient": pid, **params})
+            counts.append(f"- {label}: {len(rows)}")
+        return "Record overview (counts by domain):\n" + "\n".join(counts)
+
+    @tool
+    async def screen_medication(proposed_drug: str) -> str:
+        """Safety context for a medication the clinician is CONSIDERING (not prescribing): returns
+        the patient's current medications and allergies so drug-drug interactions and drug-allergy
+        cross-reactivity can be assessed for `proposed_drug`. Use whenever the clinician asks whether
+        a drug is safe to give. Formal deterministic screening runs again at e-sign-off (04)."""
+        meds = await fhir.search("MedicationRequest", {"patient": pid, "status": "active"})
+        allergies = await fhir.search("AllergyIntolerance", {"patient": pid})
+        med_lines = [
+            f"- {_cc(m.get('medicationCodeableConcept'))} [source: MedicationRequest/{m.get('id')}]"
+            for m in meds
+        ] or ["- none on record"]
+        alg_lines = [
+            f"- {_cc(a.get('code'))} (criticality: {a.get('criticality', 'unknown')}) "
+            f"[source: AllergyIntolerance/{a.get('id')}]"
+            for a in allergies
+        ] or ["- none on record"]
+        return (
+            f"Safety context for proposed drug: {proposed_drug}\n\n"
+            f"Active medications:\n" + "\n".join(med_lines) + "\n\n"
+            f"Allergies:\n" + "\n".join(alg_lines) + "\n\n"
+            "Assess: (1) drug-drug interactions vs the active medications, (2) drug-allergy and "
+            "class cross-reactivity vs the allergies, (3) any duplicate-therapy. State a clear "
+            "verdict (safe / caution / avoid) with reasoning. Note that binding deterministic "
+            "screening and the mandatory clinician e-sign-off happen at prescribe time."
+        )
+
+    return [
+        get_patient_summary,
+        get_record_overview,
+        get_conditions,
+        get_medications,
+        get_allergies,
+        get_vitals,
+        get_lab_results,
+        get_immunizations,
+        get_encounters,
+        get_clinical_notes,
+        get_procedures,
+        get_appointments,
+        get_family_history,
+        get_social_history,
+        screen_medication,
+    ]
