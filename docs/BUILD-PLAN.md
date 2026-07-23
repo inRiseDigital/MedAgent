@@ -53,8 +53,18 @@ Each task: **Build** → **Verify** (insert data / call it / assert) → commit.
 - [ ] Consent gate live: revoked consent → silent drop + AuditEvent · verify: assert nothing surfaces, audit row present
 - [ ] Manual fallback UI (receptionist search → confirm → enqueue) · verify: click-path creates queue entry
 - [ ] Kiosk route real states (recognised / not-recognised) · verify: face-sim drives kiosk view
+- [~] **Custom FHIR interceptor image — build de-risked** (2026-07-23): `platform/fhir/interceptors`
+  compiles + packages against HAPI 8.10.0 (`mvn -B package` → BUILD SUCCESS, JAR emitted). Blocking
+  version bug fixed (pom hapi.version 8.10.4→8.10.0). NOT yet swapped into the stack — see note below.
 - [ ] **Authz interceptor calls `/internal/authz/decision`** (Java) — care-relationship enforced at FHIR boundary
   - verify: doctor with active grant reads patient → 200; without grant → 403; core-api down → deny (fail-closed)
+  - NOTE: interceptors are still S1 skeletons (AuthzInterceptor fail-closed with no decision call;
+    AuditInterceptor logs-only, writes-only, no persistence). Swapping the custom image in now would be
+    net-negative: no real enforcement gain yet + high risk (fail-closed authz breaks the agent/portal/summary
+    reads). The security functions run at the APP layer today (core-api /internal/authz/decision decision
+    service, Redis consent cache, outbox→AuditEvent dispatcher — all verified). Promoting enforcement INTO
+    HAPI = defense-in-depth for prod; needs real interceptor logic (HTTP→core-api from Java, JWT extract,
+    compartment enforce, AuditEvent persistence + hash-chain) done test-first, on a side port, before swap.
 - [ ] SSE ticket auth end-to-end (browser EventSource → notify stream) · verify: check-in event reaches doctor UI live
 
 ## Phase A · S3 — Doctor workspace & conversational agent
