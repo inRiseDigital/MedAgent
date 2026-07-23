@@ -82,14 +82,14 @@ the current commit; staging-only items are flagged.
 | ID | Risk | Exposure | Disposition |
 |----|------|----------|-------------|
 | R-1 | FHIR-boundary enforcement (authz/consent/read-audit interceptors) not live | A compromised or buggy service with a valid token could over-read at HAPI; app layer still gates the real call paths | **Accepted for pilot** — app-layer controls verified; interceptor is test-first S2 work (JAR builds). Prioritise before multi-facility. |
-| R-2 | Dependency audit not automated in CI | A future dep bump could introduce a CVE unnoticed | **Mostly closed** — full stack audited clean this pass (pnpm + pip-audit, 0 vulns). Remaining: add the audits as a CI merge gate. |
+| R-2 | Dependency audit not automated in CI | A future dep bump could introduce a CVE unnoticed | **CLOSED 2026-07-23** — full stack audited clean (pnpm + pip-audit, 0 vulns) and both are now gating CI steps (`pnpm audit --prod --audit-level high`; `pip-audit --strict`), with pnpm-lock.yaml committed for reproducible installs. |
 | R-3 | Chat-concurrency + soak load scenarios not run | LLM-path behaviour under sustained concurrency unquantified | **Open** — needs a recorded-LLM harness (avoids token burn + nondeterminism) before the gate is meaningful. |
 | R-4 | Dev self-signed TLS + dev throwaway Keycloak accounts | None in prod (dev-only, path-excluded from staging apply) | **Accepted** — documented, not applied beyond local. |
 
 ## 7. Next actions
 
-1. Add the pnpm + pip-audit runs as a CI merge gate (closes R-2; the audits
-   themselves pass clean today).
+1. ~~Add the pnpm + pip-audit runs as a CI merge gate~~ **Done 2026-07-23**
+   (R-2 closed).
 2. Interceptor enforcement, test-first on a side port before swap (closes R-1).
 3. Recorded-LLM harness → chat-concurrency + soak k6 (closes R-3).
 4. Restore drill (both DBs to scratch, audit chain verifies) + runbooks.
