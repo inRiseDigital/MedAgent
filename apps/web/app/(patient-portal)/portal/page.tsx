@@ -15,6 +15,7 @@ import {
   type PatientSummary,
 } from "@/lib/api";
 import { getSession } from "@/lib/session-store";
+import { ConsentToggle } from "./consent-toggle";
 
 export const dynamic = "force-dynamic";
 
@@ -125,6 +126,15 @@ export default async function PortalHomePage() {
               ) : (
                 <p className="text-sm text-muted-foreground">{t("none")}</p>
               )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>{t("consentTitle")}</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ConsentToggle />
             </CardContent>
           </Card>
 

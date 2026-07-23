@@ -70,7 +70,8 @@
     "accessLogIntro": "Every time a clinician records or changes something in your record, it is logged here.",
     "accessLogEmpty": "No access recorded yet.",
     "none": "Nothing recorded.",
-    "noAllergies": "No known allergies recorded."
+    "noAllergies": "No known allergies recorded.",
+    "consentTitle": "Face check-in consent"
   },
   "kiosk": {
     "title": "Welcome",
@@ -124,5 +125,15 @@
     "screenError": "Safety screening failed. Please retry.",
     "commitError": "Commit failed. Please retry.",
     "footnote": "The deterministic Rx-safety engine is the authority; the record is re-screened on commit. Every sign-off is audited."
+  },
+  "consent": {
+    "faceExplain": "Face check-in lets you check in at the clinic camera instead of the desk. You can turn it off any time.",
+    "on": "On",
+    "off": "Off",
+    "loading": "…",
+    "turnOn": "Turn on",
+    "turnOff": "Turn off",
+    "error": "Could not update consent. Please try again.",
+    "effect": "Changes take effect immediately. Turning off also asks the face service to delete your face data."
   }
 }
