@@ -99,7 +99,9 @@ jobs:
       - name: pip-audit (dependency vulnerabilities, 10 §3.5)
         if: needs.changes.outputs[matrix.service] == 'true'
         working-directory: services/${{ matrix.service }}
-        run: uv run --with pip-audit pip-audit --strict || true # advisory in S1; hard-fail once baselines exist
+        # Gating: baseline verified clean 2026-07-23 (SECURITY-REVIEW.md §2).
+        # A newly-disclosed CVE fails the build — triage + pin/override to fix.
+        run: uv run --with pip-audit pip-audit --strict
 
   # ---------------------------------------------------------------------------
   # web + ui: eslint, tsc --noEmit, vitest (10 §3.2)
@@ -117,6 +119,11 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: pnpm audit (dependency vulnerabilities)
+        # Gating on high+ : baseline verified clean 2026-07-23 (SECURITY-REVIEW.md
+        # §2, after patching 5 high Next.js CVEs). Transitive fixes go through
+        # pnpm.overrides in the root package.json.
+        run: pnpm audit --prod --audit-level high
       - name: eslint
         run: pnpm -r --filter ./apps/web --filter ./packages/ui lint
       - name: typecheck
