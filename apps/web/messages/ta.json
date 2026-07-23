@@ -47,7 +47,13 @@
     "proposalSigned": "Committed: {ref}",
     "proposalBlocked": "Blocked — cannot prescribe",
     "proposalOverride": "Needs an override reason — use the sign-off panel below",
-    "proposalSignError": "Sign failed — retry"
+    "proposalSignError": "Sign failed — retry",
+    "summaryUnavailable": "Record summary unavailable.",
+    "allergiesLabel": "Allergies",
+    "noAllergiesLabel": "No known allergies",
+    "problemsLabel": "Active problems",
+    "medsLabel": "Active medications",
+    "none": "None recorded"
   },
   "portal": {
     "title": "My health",

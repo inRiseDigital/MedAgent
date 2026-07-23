@@ -13,9 +13,20 @@
  * URL state, 06 §5); S1 scaffolds it as [id] until the MPI lands in S2.
  */
 import { getTranslations } from "next-intl/server";
-import { Card, CardContent, CardHeader, CardTitle } from "@medagent/ui";
+import { Badge, Card, CardContent, CardHeader, CardTitle } from "@medagent/ui";
+import { fetchPatientSummary, type PatientSummary } from "@/lib/api";
 import { ChatPanel } from "./chat-panel";
 import { ProposalPanel } from "./proposal-panel";
+
+function age(birthDate?: string): string {
+  if (!birthDate) return "?";
+  const b = new Date(birthDate);
+  const now = new Date("2026-07-22T00:00:00Z");
+  let a = now.getUTCFullYear() - b.getUTCFullYear();
+  const m = now.getUTCMonth() - b.getUTCMonth();
+  if (m < 0 || (m === 0 && now.getUTCDate() < b.getUTCDate())) a--;
+  return String(a);
+}
 
 export default async function PatientSessionPage({
   params,
@@ -25,11 +36,20 @@ export default async function PatientSessionPage({
   const { id } = await params;
   const t = await getTranslations("patient");
 
+  let summary: PatientSummary | null = null;
+  try {
+    summary = await fetchPatientSummary(id);
+  } catch {
+    summary = null;
+  }
+
   return (
     <div className="space-y-4">
       <div>
         <h1 className="text-xl font-semibold">{t("title")}</h1>
-        <p className="text-muted-foreground tabular-nums">{t("patientLabel", { id })}</p>
+        <p className="text-muted-foreground tabular-nums">
+          {summary ? `${summary.patient.name} · ${t("patientLabel", { id })}` : t("patientLabel", { id })}
+        </p>
       </div>
 
       {/* Two-pane session layout (06 §3 FR-2.6). */}
@@ -38,8 +58,45 @@ export default async function PatientSessionPage({
           <CardHeader>
             <CardTitle>{t("summaryTitle")}</CardTitle>
           </CardHeader>
-          <CardContent>
-            <p className="text-muted-foreground">{t("summaryPlaceholder")}</p>
+          <CardContent className="space-y-3">
+            {!summary ? (
+              <p className="text-muted-foreground">{t("summaryUnavailable")}</p>
+            ) : (
+              <>
+                <p className="text-sm">
+                  <span className="font-medium">{summary.patient.name}</span>
+                  <span className="text-muted-foreground">
+                    {" "}· {age(summary.patient.birthDate)}y · {summary.patient.gender ?? "—"}
+                  </span>
+                </p>
+                {summary.allergies.length > 0 ? (
+                  <div>
+                    <p className="text-2xs uppercase tracking-wide text-muted-foreground">{t("allergiesLabel")}</p>
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      {summary.allergies.map((a) => (
+                        <Badge key={a.ref} variant={a.criticality === "high" ? "block" : "warn"}>{a.text}</Badge>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-2xs text-muted-foreground">{t("noAllergiesLabel")}</p>
+                )}
+                <div>
+                  <p className="text-2xs uppercase tracking-wide text-muted-foreground">{t("problemsLabel")}</p>
+                  <ul className="mt-1 space-y-0.5 text-sm">
+                    {summary.problems.length ? summary.problems.map((p) => <li key={p.ref}>{p.text}</li>)
+                      : <li className="text-muted-foreground">{t("none")}</li>}
+                  </ul>
+                </div>
+                <div>
+                  <p className="text-2xs uppercase tracking-wide text-muted-foreground">{t("medsLabel")}</p>
+                  <ul className="mt-1 space-y-0.5 text-sm">
+                    {summary.medications.length ? summary.medications.map((m) => <li key={m.ref}>{m.text}</li>)
+                      : <li className="text-muted-foreground">{t("none")}</li>}
+                  </ul>
+                </div>
+              </>
+            )}
           </CardContent>
         </Card>
 

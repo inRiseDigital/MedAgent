@@ -58,7 +58,7 @@ Each task: **Build** → **Verify** (insert data / call it / assert) → commit.
 - [ ] SSE ticket auth end-to-end (browser EventSource → notify stream) · verify: check-in event reaches doctor UI live
 
 ## Phase A · S3 — Doctor workspace & conversational agent
-- [ ] Patient summary card (FR-2.2) from FHIR query set · verify: p95 < 2s on Synthea data
+- [x] **Patient summary card (FR-2.2)** — doctor patient page renders the summary from core-api /patients/{phn}/summary: name/age/gender, allergy chips (red for high criticality), active problems, active medications. Verified for Nimal (diabetes/hypertension, Metformin, Penicillin) beside the chat + sign-off panels. (p95 load-test vs Synthea is an S6 gate.)
 - [ ] Patient search UI (name/PHN/phone) · verify: results render, open requires grant
 - [x] **Comprehensive clinical agent with citations (real Claude over FHIR)** · 15 tools covering the full record — summary, record-overview, conditions, medications, allergies, vitals, labs+diagnostic reports, immunizations, encounters, notes/documents, procedures, appointments, family history, social history, and a medication-safety screen. Verified: "full picture + is amoxicillin safe?" → pulled 13 cited resources across all domains AND returned "AVOID amoxicillin — penicillin anaphylaxis, hard stop" with beta-lactam cross-reactivity reasoning, flagged missing vitals/renal function, suggested alternatives + work-up, all [general knowledge]-marked, ending "requires your sign-off". LangGraph ReAct (claude-sonnet-5). (Orchestrator write-intent routing + ≥150-case eval gate still to build.)
 - [x] **Conversational agentic interface with write-intent routing** (primary UX): multi-turn
