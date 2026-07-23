@@ -101,7 +101,9 @@ Each task: **Build** → **Verify** (insert data / call it / assert) → commit.
 
 ## Phase A · S6 — Hardening & go-live
 - [ ] Security pass: OWASP, dep audit, RBAC review, rate limits · verify: gitleaks/Trivy clean, RBAC matrix tested
-- [ ] Perf vs NFRs (k6): check-in burst, chat concurrency, record load · verify: thresholds met
+- [~] Perf vs NFRs (k6): check-in burst, chat concurrency, record load · verify: thresholds met
+  - [x] **`record-load.js` built + run** (N VUs open summary + search via the real gateway path). Caught a real connection-pooling bug: core-api created a new httpx client per request → stale-keepalive `RemoteProtocolError` → intermittent 500s under load. FIXED: shared bounded FHIR pool + retry-once (app/fhir_client.py); single-flight JWKS refresh so a cold-cache burst can't stampede Keycloak into 401s (app/auth.py). Evidence run 30 VUs/15s via gateway: **0% errors, summary p95 1.72s (<2s NFR-2), search p95 ~100ms (<500ms staging target), 100% checks**. Full 3×-pilot gate runs on staging (03 §157); dev-box + Windows-host long runs add false client-side connection failures (documented in infra/perf).
+  - [ ] chat-concurrency.js (first-token p95 < 2s) + soak.js — remaining k6 scenarios
 - [ ] Degradation paths + runbooks + restore drill · verify: restore both DBs to scratch, audit chain verifies
 - [ ] Compliance pack: DPIA-lite, threat model, consent export, audit report · verify: pack assembled
 - [ ] Observability dashboards + alerts · verify: golden-signals + agent dashboards live

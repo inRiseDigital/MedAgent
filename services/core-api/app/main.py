@@ -19,6 +19,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.audit import dispatch_once
+from app.fhir_client import close_shared_clients
 from app.auth import JWKSCache
 from app.config import Settings
 from app.logging_config import configure_logging
@@ -68,6 +69,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 await audit_task
             await app.state.redis.aclose()
             await app.state.engine.dispose()
+            await close_shared_clients()
 
     app = FastAPI(
         title="MedAgent core-api",

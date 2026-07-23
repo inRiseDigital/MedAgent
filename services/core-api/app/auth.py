@@ -13,6 +13,7 @@ S1 skeleton notes:
 
 from __future__ import annotations
 
+import asyncio
 import time
 from typing import Annotated, Any
 
@@ -49,21 +50,33 @@ class JWKSCache:
         self._ttl = ttl_seconds
         self._keys: dict[str, Any] = {}
         self._expires_at: float = 0.0
+        # Single-flight: without this, a burst arriving on a cold/expired cache
+        # all call _refresh() at once (thundering herd), opening dozens of
+        # simultaneous connections to Keycloak — some drop and surface as 401s
+        # (found by the record-load k6 gate). The lock collapses that to one
+        # fetch; everyone else awaits it.
+        self._lock = asyncio.Lock()
 
-    async def _refresh(self) -> None:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            jwks_resp = await client.get(self._certs_url)
-            jwks_resp.raise_for_status()
-            jwk_set = jwt.PyJWKSet.from_dict(jwks_resp.json())
-        self._keys = {k.key_id: k.key for k in jwk_set.keys if k.key_id}
-        self._expires_at = time.monotonic() + self._ttl
+    async def _refresh(self, *, only_if_stale: bool = True) -> None:
+        async with self._lock:
+            # Another coroutine may have refreshed while we waited for the lock.
+            if only_if_stale and time.monotonic() < self._expires_at and self._keys:
+                return
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                jwks_resp = await client.get(self._certs_url)
+                jwks_resp.raise_for_status()
+                jwk_set = jwt.PyJWKSet.from_dict(jwks_resp.json())
+            self._keys = {k.key_id: k.key for k in jwk_set.keys if k.key_id}
+            self._expires_at = time.monotonic() + self._ttl
 
     async def get_key(self, kid: str) -> Any:
         if time.monotonic() >= self._expires_at:
             await self._refresh()
         if kid not in self._keys:
-            # Key rotation may have happened since the last fetch — refresh once.
-            await self._refresh()
+            # Key rotation may have happened since the last fetch — force one
+            # refresh (bypassing the freshness short-circuit) in case the cache
+            # is fresh but predates the rotation.
+            await self._refresh(only_if_stale=False)
         key = self._keys.get(kid)
         if key is None:
             raise KeyError(f"unknown signing key id: {kid}")
