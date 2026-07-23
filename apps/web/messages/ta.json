@@ -84,6 +84,10 @@
     "accessLogEmpty": "No access recorded yet.",
     "none": "Nothing recorded.",
     "noAllergies": "No known allergies recorded.",
+    "exportTitle": "எனது பதிவைப் பதிவிறக்கு",
+    "exportIntro": "உங்கள் சுகாதாரப் பதிவின் நகலைப் பெறுங்கள். ஒவ்வொரு பதிவிறக்கமும் உங்கள் அணுகல் பதிவேட்டில் பதிவாகும்.",
+    "exportPrint": "அச்சிடக்கூடிய சுருக்கம் (PDF)",
+    "exportData": "தரவை ஏற்றுமதி செய் (FHIR)",
     "consentTitle": "Face check-in consent"
   },
   "kiosk": {

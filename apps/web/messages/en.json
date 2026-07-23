@@ -84,6 +84,10 @@
     "accessLogEmpty": "No access recorded yet.",
     "none": "Nothing recorded.",
     "noAllergies": "No known allergies recorded.",
+    "exportTitle": "Download my record",
+    "exportIntro": "Get a copy of your health record. Each download is recorded in your access log.",
+    "exportPrint": "Printable summary (PDF)",
+    "exportData": "Export data (FHIR)",
     "consentTitle": "Face check-in consent"
   },
   "kiosk": {

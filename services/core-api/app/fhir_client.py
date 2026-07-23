@@ -57,6 +57,19 @@ class FHIRClient:
         bundle = resp.json()
         return [e["resource"] for e in bundle.get("entry", []) if "resource" in e]
 
+    async def everything(
+        self, resource_type: str, resource_id: str, token: str | None = None
+    ) -> dict[str, Any]:
+        """Run the instance-level `$everything` operation and return the raw Bundle
+        (FR-5.6 / FR-6.4 data-portability export). Returns the full FHIR JSON as-is."""
+        resp = await self._client.get(
+            f"/{resource_type}/{resource_id}/$everything",
+            params={"_count": "500"},
+            headers=_auth_header(token),
+        )
+        resp.raise_for_status()
+        return dict(resp.json())
+
     async def create(
         self, resource_type: str, resource: dict[str, Any], token: str | None = None
     ) -> dict[str, Any]:

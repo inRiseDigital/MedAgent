@@ -131,6 +131,31 @@ export default async function PortalHomePage() {
 
           <Card>
             <CardHeader>
+              <CardTitle>{t("exportTitle")}</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="mb-3 text-sm text-muted-foreground">{t("exportIntro")}</p>
+              <div className="flex flex-wrap gap-2">
+                <a
+                  href="/api/portal/export?format=html"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="rounded-md border border-border px-3 py-2 text-sm hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  {t("exportPrint")}
+                </a>
+                <a
+                  href="/api/portal/export?format=fhir"
+                  className="rounded-md border border-border px-3 py-2 text-sm hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  {t("exportData")}
+                </a>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
               <CardTitle>{t("consentTitle")}</CardTitle>
             </CardHeader>
             <CardContent>

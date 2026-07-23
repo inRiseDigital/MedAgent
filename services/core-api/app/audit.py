@@ -35,6 +35,8 @@ _ACTION = {
     "proposal_committed": "C",
     "queue_state_change": "U",
     "consent_denied": "R",
+    "consent_change": "U",
+    "record_exported": "E",
 }
 
 
