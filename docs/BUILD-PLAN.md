@@ -100,7 +100,11 @@ Each task: **Build** → **Verify** (insert data / call it / assert) → commit.
 - [x] **Reminder scan (scheduled job)** — scans FHIR for upcoming booked appointments within a lookahead window and sends a reminder per patient, deduped via a Redis set, respecting 20:00–08:00 quiet hours; lifespan loop + POST /internal/notify/reminders/run. Verified: scan → mailpit "Appointment reminder" to Nimal; re-run deduped (sent 0). (Channel-preference/consent enforcement + Si/Ta templating are Phase B.)
 
 ## Phase A · S6 — Hardening & go-live
-- [ ] Security pass: OWASP, dep audit, RBAC review, rate limits · verify: gitleaks/Trivy clean, RBAC matrix tested
+- [~] Security pass: secret hygiene, dep audit, authz/rate-limit review · see [SECURITY-REVIEW.md](SECURITY-REVIEW.md)
+  - [x] **Secret hygiene verified** — real secrets gitignored (.gitignore:50); full git-history scan found only the sk-ant-dummy placeholder (no real leak).
+  - [x] **Dependency audit — full stack clean.** Caught + fixed 5 high Next.js CVEs (App-Router middleware/proxy bypass, SSRF ×2, DoS) via next ^16.2.11 + pnpm overrides (sharp/postcss); `pnpm audit --prod` → 0. Python services (core-api/agent/notify) via `pip-audit` on installed packages → 0.
+  - [x] **AuthN/Z + rate-limit + audit + PHI review** recorded (app-layer authz verified; FHIR-boundary interceptor deferred as accepted risk R-1).
+  - [ ] Automate both audits as a CI merge gate (R-2); Python-service `pip-audit` in CI.
 - [~] Perf vs NFRs (k6): check-in burst, chat concurrency, record load · verify: thresholds met
   - [x] **`record-load.js` built + run** (N VUs open summary + search via the real gateway path). Caught a real connection-pooling bug: core-api created a new httpx client per request → stale-keepalive `RemoteProtocolError` → intermittent 500s under load. FIXED: shared bounded FHIR pool + retry-once (app/fhir_client.py); single-flight JWKS refresh so a cold-cache burst can't stampede Keycloak into 401s (app/auth.py). Evidence run 30 VUs/15s via gateway: **0% errors, summary p95 1.72s (<2s NFR-2), search p95 ~100ms (<500ms staging target), 100% checks**. Full 3×-pilot gate runs on staging (03 §157); dev-box + Windows-host long runs add false client-side connection failures (documented in infra/perf).
   - [ ] chat-concurrency.js (first-token p95 < 2s) + soak.js — remaining k6 scenarios
