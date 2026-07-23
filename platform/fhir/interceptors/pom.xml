@@ -22,8 +22,8 @@
   <description>Authorisation, consent and audit interceptors for the MedAgent HAPI FHIR server (docs/solution/03 §5)</description>
 
   <properties>
-    <!-- Must match the pinned server image tag in ../Dockerfile (hapiproject/hapi:v8.10.4). -->
-    <hapi.version>8.10.4</hapi.version>
+    <!-- Must match the pinned server image tag in ../Dockerfile (hapiproject/hapi:v8.10.0-3). -->
+    <hapi.version>8.10.0</hapi.version>
     <junit.version>5.10.2</junit.version>
     <mockito.version>5.11.0</mockito.version>
     <maven.compiler.release>17</maven.compiler.release>

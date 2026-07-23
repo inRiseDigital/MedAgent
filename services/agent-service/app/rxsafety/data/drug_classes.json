@@ -39,6 +39,20 @@
     "amiodarone": { "ingredient": "amiodarone", "classes": ["antiarrhythmic", "cyp3a4-inhibitor"] },
     "paracetamol": { "ingredient": "paracetamol", "classes": ["analgesic"] },
     "acetaminophen": { "ingredient": "paracetamol", "classes": ["analgesic"] },
-    "doxycycline": { "ingredient": "doxycycline", "classes": ["tetracycline"] }
+    "doxycycline": { "ingredient": "doxycycline", "classes": ["tetracycline"] },
+    "fluconazole": { "ingredient": "fluconazole", "classes": ["azole", "cyp-inhibitor"] },
+    "gemfibrozil": { "ingredient": "gemfibrozil", "classes": ["fibrate"] },
+    "diazepam": { "ingredient": "diazepam", "classes": ["benzodiazepine", "cns-depressant"] },
+    "lorazepam": { "ingredient": "lorazepam", "classes": ["benzodiazepine", "cns-depressant"] },
+    "morphine": { "ingredient": "morphine", "classes": ["opioid", "cns-depressant"] },
+    "codeine": { "ingredient": "codeine", "classes": ["opioid", "cns-depressant"] },
+    "losartan": { "ingredient": "losartan", "classes": ["arb"] },
+    "valsartan": { "ingredient": "valsartan", "classes": ["arb"] },
+    "allopurinol": { "ingredient": "allopurinol", "classes": ["xanthine-oxidase-inhibitor"] },
+    "azathioprine": { "ingredient": "azathioprine", "classes": ["thiopurine"] },
+    "ciprofloxacin": { "ingredient": "ciprofloxacin", "classes": ["fluoroquinolone", "qt-prolonger"] },
+    "levofloxacin": { "ingredient": "levofloxacin", "classes": ["fluoroquinolone", "qt-prolonger"] },
+    "potassium": { "ingredient": "potassium", "classes": ["potassium-supplement"] },
+    "spironolactone-hctz": { "ingredient": "spironolactone", "classes": ["potassium-sparing-diuretic"] }
   }
 }

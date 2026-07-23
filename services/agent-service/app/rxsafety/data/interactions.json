@@ -13,6 +13,14 @@
     { "a": "methotrexate", "b": "nsaid", "severity": "major", "code": "DDI_MAJOR", "rationale": "NSAIDs reduce methotrexate clearance — toxicity risk (esp. high-dose MTX)." },
     { "a": "digoxin", "b": "amiodarone", "severity": "major", "code": "DDI_MAJOR", "rationale": "Amiodarone raises digoxin levels — toxicity; reduce digoxin dose and monitor." },
     { "a": "clopidogrel", "b": "omeprazole", "severity": "moderate", "code": "DDI_MODERATE", "rationale": "Omeprazole may reduce clopidogrel activation (CYP2C19) — prefer pantoprazole." },
-    { "a": "ssri", "b": "nsaid", "severity": "moderate", "code": "DDI_MODERATE", "rationale": "Increased GI bleeding risk — consider gastroprotection." }
+    { "a": "ssri", "b": "nsaid", "severity": "moderate", "code": "DDI_MODERATE", "rationale": "Increased GI bleeding risk — consider gastroprotection." },
+    { "a": "opioid", "b": "benzodiazepine", "severity": "major", "code": "DDI_MAJOR", "rationale": "Additive CNS/respiratory depression — avoid co-prescribing; if unavoidable, lowest doses and monitor." },
+    { "a": "warfarin", "b": "azole", "severity": "major", "code": "DDI_MAJOR", "rationale": "Azole antifungals inhibit warfarin metabolism — INR rises, bleeding risk." },
+    { "a": "ace-inhibitor", "b": "arb", "severity": "major", "code": "DDI_MAJOR", "rationale": "Dual RAAS blockade — hyperkalaemia, hypotension, renal impairment; not recommended." },
+    { "a": "statin", "b": "fibrate", "severity": "major", "code": "DDI_MAJOR", "rationale": "Increased myopathy/rhabdomyolysis risk (esp. gemfibrozil)." },
+    { "a": "xanthine-oxidase-inhibitor", "b": "thiopurine", "severity": "contraindicated", "code": "DDI_CONTRAINDICATED", "rationale": "Allopurinol blocks thiopurine metabolism — life-threatening myelosuppression; contraindicated without major dose reduction + specialist oversight." },
+    { "a": "fluoroquinolone", "b": "antiarrhythmic", "severity": "major", "code": "DDI_MAJOR", "rationale": "Additive QT prolongation — torsades risk." },
+    { "a": "potassium-supplement", "b": "ace-inhibitor", "severity": "major", "code": "DDI_MAJOR", "rationale": "Additive hyperkalaemia risk — monitor potassium." },
+    { "a": "potassium-supplement", "b": "potassium-sparing-diuretic", "severity": "major", "code": "DDI_MAJOR", "rationale": "Additive hyperkalaemia risk." }
   ]
 }

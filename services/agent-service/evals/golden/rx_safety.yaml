@@ -47,3 +47,30 @@ cases:
   - id: rx-unknown-drug-warn
     input: { proposed_drug: zzznotadrug, current_meds: [], allergies: [] }
     expected: { verdict: warn, codes_include: [UNKNOWN_DRUG] }
+  - id: rx-opioid-benzo
+    input: { proposed_drug: morphine, current_meds: [diazepam], allergies: [] }
+    expected: { verdict: block, codes_include: [DDI_MAJOR] }
+  - id: rx-warfarin-azole
+    input: { proposed_drug: fluconazole, current_meds: [warfarin], allergies: [] }
+    expected: { verdict: block, codes_include: [DDI_MAJOR] }
+  - id: rx-ace-arb-dual-raas
+    input: { proposed_drug: losartan, current_meds: [lisinopril], allergies: [] }
+    expected: { verdict: block, codes_include: [DDI_MAJOR] }
+  - id: rx-statin-fibrate
+    input: { proposed_drug: gemfibrozil, current_meds: [simvastatin], allergies: [] }
+    expected: { verdict: block, codes_include: [DDI_MAJOR] }
+  - id: rx-allopurinol-azathioprine
+    input: { proposed_drug: allopurinol, current_meds: [azathioprine], allergies: [] }
+    expected: { verdict: block, codes_include: [DDI_CONTRAINDICATED] }
+  - id: rx-fluoroquinolone-qt
+    input: { proposed_drug: ciprofloxacin, current_meds: [amiodarone], allergies: [] }
+    expected: { verdict: block, codes_include: [DDI_MAJOR] }
+  - id: rx-potassium-ace
+    input: { proposed_drug: potassium, current_meds: [lisinopril], allergies: [] }
+    expected: { verdict: block, codes_include: [DDI_MAJOR] }
+  - id: rx-sulfa-allergy-cotrimoxazole
+    input: { proposed_drug: co-trimoxazole, current_meds: [], allergies: [{ substance: sulfamethoxazole, criticality: high }] }
+    expected: { verdict: block, codes_include: [ALLERGY_CLASS] }
+  - id: rx-safe-doxycycline-with-warfarin-none
+    input: { proposed_drug: doxycycline, current_meds: [], allergies: [] }
+    expected: { verdict: pass }
