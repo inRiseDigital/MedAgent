@@ -30,6 +30,19 @@
       "arrivedAt": "Arrived {time}"
     }
   },
+  "search": {
+    "title": "Find a patient",
+    "description": "Search by name, PHN or phone. Opening a record requires an active care relationship.",
+    "placeholder": "Name, PHN or phone…",
+    "submit": "Search",
+    "hint": "Type at least two characters to search.",
+    "empty": "No patients match \"{query}\".",
+    "error": "Search is unavailable right now. Please retry.",
+    "resultsTitle": "{count, plural, one {# match} other {# matches}}",
+    "unnamed": "Unnamed patient",
+    "faceOn": "Face on",
+    "faceOff": "Face off"
+  },
   "patient": {
     "title": "Patient session",
     "summaryTitle": "Patient summary",

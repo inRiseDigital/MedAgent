@@ -34,8 +34,14 @@ export default async function DoctorLayout({ children }: { children: ReactNode }
         >
           {t("queue")}
         </Link>
-        {/* /day, /patients (search), /proposals join here as their routes
-            land — S3/S4 per docs/solution/11. */}
+        <Link
+          href="/patients"
+          className="rounded-md px-2 py-2 text-sm hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          {t("patients")}
+        </Link>
+        {/* /day, /proposals join here as their routes land — S3/S4 per
+            docs/solution/11. */}
       </nav>
 
       <main id="main" className="min-w-0 flex-1 p-6">

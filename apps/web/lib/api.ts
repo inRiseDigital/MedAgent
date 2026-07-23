@@ -64,6 +64,33 @@ export async function fetchQueue(facilityId: string): Promise<QueueRow[]> {
   return coreApiGet<QueueRow[]>(`/api/v1/queue?${params.toString()}`);
 }
 
+export interface PatientSearchResult {
+  id: string;
+  phn: string;
+  phn_display: string;
+  nic: string | null;
+  demographics: Record<string, unknown> & { name?: string; phone?: string; sex?: string; dob?: string };
+  face_consent: boolean;
+}
+
+/**
+ * Demographic search over the MPI (FR-2.4). Returns demographics only —
+ * opening a record still requires a care-relationship grant, enforced when the
+ * clinician navigates into /patients/{phn}. At least one of name/phn/phone must
+ * be provided; the caller guarantees that before invoking.
+ */
+export async function searchPatients(params: {
+  name?: string;
+  phn?: string;
+  phone?: string;
+}): Promise<PatientSearchResult[]> {
+  const q = new URLSearchParams();
+  if (params.name) q.set("name", params.name);
+  if (params.phn) q.set("phn", params.phn);
+  if (params.phone) q.set("phone", params.phone);
+  return coreApiGet<PatientSearchResult[]>(`/api/v1/patients?${q.toString()}`);
+}
+
 export interface PatientSummary {
   patient: { phn: string; name: string; gender?: string; birthDate?: string };
   problems: { text: string; ref: string }[];

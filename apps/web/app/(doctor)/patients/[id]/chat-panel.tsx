@@ -8,7 +8,7 @@
  */
 import { useCallback, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
-import { Badge, Button } from "@medagent/ui";
+import { Badge, Button, type BadgeProps } from "@medagent/ui";
 
 interface Citation {
   ref: string;

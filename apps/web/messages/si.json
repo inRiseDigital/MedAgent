@@ -30,6 +30,19 @@
       "arrivedAt": "Arrived {time}"
     }
   },
+  "search": {
+    "title": "රෝගියෙකු සොයන්න",
+    "description": "නම, PHN හෝ දුරකථන අංකයෙන් සොයන්න. වාර්තාවක් විවෘත කිරීමට සක්‍රීය සත්කාර සම්බන්ධතාවයක් අවශ්‍යයි.",
+    "placeholder": "නම, PHN හෝ දුරකථන අංකය…",
+    "submit": "සොයන්න",
+    "hint": "සෙවීමට අවම වශයෙන් අකුරු දෙකක් ටයිප් කරන්න.",
+    "empty": "\"{query}\" සඳහා රෝගීන් නොමැත.",
+    "error": "දැනට සෙවීම ලබා ගත නොහැක. කරුණාකර නැවත උත්සාහ කරන්න.",
+    "resultsTitle": "{count, plural, one {ගැලපීම් #ක්} other {ගැලපීම් #ක්}}",
+    "unnamed": "නම නොදන්නා රෝගියා",
+    "faceOn": "මුහුණ සක්‍රීයයි",
+    "faceOff": "මුහුණ අක්‍රීයයි"
+  },
   "patient": {
     "title": "Patient session",
     "summaryTitle": "Patient summary",
