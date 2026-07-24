@@ -34,6 +34,17 @@ api:
   dashboard: false             # no admin surfaces on a health-data gateway
   insecure: false
 
+# Prometheus metrics on a dedicated internal entry point (:8082, never
+# host-published). Scraped by the observability profile's prometheus
+# (infra/observability/prometheus/prometheus.yml job `gateway`). Feeds the
+# gateway RPS/error/latency view alongside the per-service golden signals.
+metrics:
+  prometheus:
+    entryPoint: metrics
+    addEntryPointsLabels: true
+    addRoutersLabels: true
+    addServicesLabels: true
+
 providers:
   file:
     directory: /etc/traefik/dynamic   # dynamic/routes.yaml, dynamic/tls.yaml
@@ -70,6 +81,11 @@ entryPoints:
     address: ":8443"
     http:
       tls: {}
+
+  # Metrics entry point — Prometheus exposition only (:8082). Never
+  # host-published; reachable from prometheus on the internal network.
+  metrics:
+    address: ":8082"
     forwardedHeaders:
       trustedIPs:
         - "127.0.0.1/32"
