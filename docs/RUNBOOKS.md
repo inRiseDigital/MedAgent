@@ -82,7 +82,33 @@ audit-chain hash verification once the hash-chaining interceptor lands (03 §5.4
 | **Redis down** | Sessions/consent-cache/SSE-tickets unavailable → logins + live events degrade; DB truth intact | Restart Redis; re-apply ACL users if the instance was recreated |
 | **Anthropic API unreachable** | Chat answers fail; the **deterministic Rx-safety engine is unaffected** (no LLM in the safety path) — prescribing safety still holds | Inform clinicians chat is degraded; record review continues via the summary card + FHIR |
 
-## 6. Everyday checks
+## 6. Observability
+
+The observability stack is a compose **profile** (off by default). Start it:
+
+```sh
+docker compose -f infra/compose/docker-compose.yml --profile observability up -d
+```
+
+- **Grafana** — http://localhost:3001 (dev creds `admin` / `$GRAFANA_ADMIN_PASSWORD`).
+  Dashboard **"Golden Signals — per service"** (Traffic RPS / 5xx error rate /
+  latency p50-p95-p99 / CPU+memory), provisioned as code.
+- **Prometheus** — http://localhost:9090. Targets: `core-api`, `agent-service`,
+  `notify-service`, `gateway` should all be **UP** (Status → Targets).
+- Each service exposes `/metrics` (prometheus format) on its app port; the
+  gateway exposes Traefik metrics on internal `:8082`.
+- Golden-signals metric sources: `http_requests_total`,
+  `http_request_duration_seconds_bucket`, `process_cpu_seconds_total`,
+  `process_resident_memory_bytes` (all carry a `service` label from the scrape
+  config).
+- **Not yet wired:** OTLP trace/log export to Tempo/Loki (the `otel-collector`
+  target stays down until `configure_telemetry` adds the trace exporter). Metrics
+  are fully live.
+
+Stop it (frees resources) without touching the app stack:
+`docker compose -f infra/compose/docker-compose.yml --profile observability down`.
+
+## 7. Everyday checks
 
 - Stack health: `docker compose ps` (all `healthy`; gateway/keycloak may report
   `unhealthy` on their container healthcheck while serving fine — verify via a
