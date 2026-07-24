@@ -279,10 +279,20 @@ services:
     # enforce authz/consent/audit in-process).
     networks: [internal]
     environment:
+      # Use the base image's own (known-good) config for JPA/provider/search
+      # routing, and override ONLY the essentials via env (targeted keys, no
+      # whole-section replacement — our full application.yaml broke search
+      # routing). The Postgres dialect is REQUIRED: without it Hibernate emits
+      # H2 sequence SQL ("select next value for seq_search") that Postgres
+      # rejects with a 500. See platform/fhir/application.yaml for the full
+      # intended config (applied via overlay once the routing regression is
+      # understood; tracked in BUILD-PLAN).
+      SPRING_CONFIG_LOCATION: "optional:classpath:/application.yaml"
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/hapi_db
       SPRING_DATASOURCE_USERNAME: hapi
       SPRING_DATASOURCE_PASSWORD: ${HAPI_DB_PASSWORD:-dev-hapi-pw}
       SPRING_DATASOURCE_DRIVERCLASSNAME: org.postgresql.Driver
+      SPRING_JPA_PROPERTIES_HIBERNATE_DIALECT: ca.uhn.fhir.jpa.model.dialect.HapiFhirPostgresDialect
       HAPI_FHIR_FHIR_VERSION: R4
     healthcheck:
       # requires curl in the platform/fhir image (added by our extension layer;
