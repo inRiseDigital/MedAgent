@@ -2,13 +2,17 @@
 
 /*
  * Conversational agent panel (06 §6, FR-2.6/3.x). Streams a cited answer from
- * the agent (via the BFF /api/chat) and renders text + citation chips. Custom
- * lightweight streaming reader over the AI SDK data-protocol frames the
- * agent-service emits (text-delta / data-citations / finish).
+ * the agent (via the BFF /api/chat), rendering the reply as markdown with
+ * citation chips and staged prescription sign-off cards. Custom lightweight
+ * reader over the AI SDK data-protocol frames (text-delta / data-citations /
+ * data-proposals / finish).
  */
 import { useCallback, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
-import { Badge, Button, type BadgeProps } from "@medagent/ui";
+import { Sparkles, User } from "lucide-react";
+import { Badge, Button, Spinner, type BadgeProps } from "@medagent/ui";
+
+import { AssistantMarkdown } from "@/components/markdown";
 
 interface Citation {
   ref: string;
@@ -146,22 +150,20 @@ export function ChatPanel({ patientId }: { patientId: string }) {
   );
 
   return (
-    <div className="flex h-[32rem] flex-col gap-3">
-      <div
-        ref={logRef}
-        role="log"
-        aria-live="polite"
-        className="flex-1 space-y-3 overflow-y-auto rounded-md border border-border bg-background p-3"
-      >
+    <div className="flex h-[34rem] flex-col gap-3">
+      <div ref={logRef} role="log" aria-live="polite" className="flex-1 space-y-4 overflow-y-auto pr-1">
         {turns.length === 0 ? (
-          <div className="space-y-3">
-            <p className="text-sm text-muted-foreground">{t("chatIntro")}</p>
-            <div className="flex flex-wrap gap-2">
+          <div className="flex h-full flex-col items-center justify-center gap-4 text-center">
+            <span className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-primary">
+              <Sparkles className="h-5 w-5" />
+            </span>
+            <p className="max-w-sm text-sm text-muted-foreground">{t("chatIntro")}</p>
+            <div className="flex flex-wrap justify-center gap-2">
               {QUICK_PROMPTS.map((p) => (
                 <button
                   key={p}
                   onClick={() => void send(p)}
-                  className="rounded-full border border-border bg-card px-3 py-1 text-2xs text-foreground hover:border-primary focus-visible:outline-2 focus-visible:outline-ring"
+                  className="rounded-full border border-border bg-card px-3 py-1.5 text-xs text-foreground transition-colors hover:border-primary hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
                   {p}
                 </button>
@@ -169,74 +171,103 @@ export function ChatPanel({ patientId }: { patientId: string }) {
             </div>
           </div>
         ) : (
-          turns.map((turn, i) => (
-            <div key={i} className={turn.role === "user" ? "text-right" : ""}>
-              <div
-                className={
-                  turn.role === "user"
-                    ? "inline-block rounded-lg bg-primary px-3 py-2 text-sm text-primary-foreground"
-                    : "inline-block max-w-full rounded-lg bg-muted px-3 py-2 text-sm text-foreground"
-                }
-              >
-                <p className="whitespace-pre-wrap">
+          turns.map((turn, i) =>
+            turn.role === "user" ? (
+              <div key={i} className="flex justify-end gap-2">
+                <div className="max-w-[85%] rounded-2xl rounded-br-sm bg-primary px-3.5 py-2 text-sm text-primary-foreground">
                   {turn.text}
-                  {turn.streaming ? <span className="animate-pulse"> ▌</span> : null}
-                </p>
-                {turn.citations && turn.citations.length > 0 ? (
-                  <div className="mt-2 flex flex-wrap gap-1 border-t border-border pt-2">
-                    {turn.citations.map((c) => (
-                      <Badge key={c.ref} variant="neutral">
-                        {c.ref}
-                      </Badge>
-                    ))}
-                  </div>
-                ) : null}
-              </div>
-              {turn.proposals && turn.proposals.length > 0 ? (
-                <div className="mt-2 space-y-2">
-                  {turn.proposals.map((p, pi) => {
-                    const key = `${i}:${pi}`;
-                    const state = signState[key];
-                    const committed = state?.startsWith("committed:");
-                    return (
-                      <div key={key} className="rounded-md border border-border bg-card p-3 text-sm">
-                        <div className="flex items-center gap-2">
-                          <Badge variant={VERDICT_VARIANT[p.verdict]}>{p.verdict}</Badge>
-                          <span className="font-medium">Rx: {p.drug} {p.dose_text}</span>
-                        </div>
-                        {p.codes.length > 0 ? (
-                          <p className="mt-1 text-2xs text-muted-foreground">{p.codes.join(", ")}</p>
-                        ) : null}
-                        <div className="mt-2 flex items-center gap-2">
-                          <Button
-                            size="sm"
-                            onClick={() => void signProposal(key, p)}
-                            disabled={p.verdict === "block" || state === "signing" || committed}
-                          >
-                            {t("proposalSign")}
-                          </Button>
-                          {committed ? (
-                            <span className="text-2xs text-success">
-                              {t("proposalSigned", { ref: state!.slice("committed:".length) })}
-                            </span>
-                          ) : null}
-                          {p.verdict === "block" ? (
-                            <span className="text-2xs text-destructive">{t("proposalBlocked")}</span>
-                          ) : null}
-                          {state === "override" ? (
-                            <span className="text-2xs text-warning">{t("proposalOverride")}</span>
-                          ) : null}
-                          {state === "error" ? (
-                            <span className="text-2xs text-destructive">{t("proposalSignError")}</span>
-                          ) : null}
-                        </div>
-                      </div>
-                    );
-                  })}
                 </div>
-              ) : null}
-            </div>
-          ))
+                <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">
+                  <User className="h-4 w-4" />
+                </span>
+              </div>
+            ) : (
+              <div key={i} className="flex gap-2">
+                <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
+                  <Sparkles className="h-4 w-4" />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="rounded-2xl rounded-tl-sm border border-border bg-card px-3.5 py-2.5">
+                    {turn.text ? (
+                      <AssistantMarkdown text={turn.text} />
+                    ) : turn.streaming ? (
+                      <span className="inline-flex items-center gap-2 text-sm text-muted-foreground">
+                        <Spinner label={t("chatSending")} size="sm" /> {t("chatSending")}
+                      </span>
+                    ) : null}
+                    {turn.streaming && turn.text ? (
+                      <span className="ml-0.5 inline-block h-4 w-1.5 animate-pulse bg-primary align-text-bottom" />
+                    ) : null}
+                    {turn.citations && turn.citations.length > 0 ? (
+                      <div className="mt-2.5 flex flex-wrap items-center gap-1 border-t border-border pt-2">
+                        <span className="mr-0.5 text-[0.7rem] font-medium text-muted-foreground">Sources</span>
+                        {turn.citations.map((c) => (
+                          <span
+                            key={c.ref}
+                            className="rounded border border-border bg-muted px-1.5 py-0.5 text-[0.7rem] font-medium text-muted-foreground"
+                          >
+                            {c.ref}
+                          </span>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+
+                  {turn.proposals && turn.proposals.length > 0 ? (
+                    <div className="mt-2 space-y-2">
+                      {turn.proposals.map((p, pi) => {
+                        const key = `${i}:${pi}`;
+                        const state = signState[key];
+                        const committed = state?.startsWith("committed:");
+                        const blocked = p.verdict === "block";
+                        return (
+                          <div
+                            key={key}
+                            className={`rounded-lg border p-3 text-sm ${
+                              blocked ? "border-destructive/40 bg-destructive-surface" : "border-border bg-card"
+                            }`}
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="font-medium">
+                                {t("proposalTitle")}: {p.drug} {p.dose_text}
+                              </span>
+                              <Badge variant={VERDICT_VARIANT[p.verdict]}>{p.verdict}</Badge>
+                            </div>
+                            {p.codes.length > 0 ? (
+                              <p className="mt-1 text-xs text-muted-foreground">{p.codes.join(" · ")}</p>
+                            ) : null}
+                            <div className="mt-2.5 flex flex-wrap items-center gap-2">
+                              <Button
+                                size="sm"
+                                onClick={() => void signProposal(key, p)}
+                                disabled={blocked || state === "signing" || committed}
+                              >
+                                {state === "signing" ? t("chatSending") : t("proposalSign")}
+                              </Button>
+                              {committed ? (
+                                <span className="text-xs font-medium text-success">
+                                  {t("proposalSigned", { ref: state!.slice("committed:".length) })}
+                                </span>
+                              ) : null}
+                              {blocked ? (
+                                <span className="text-xs font-medium text-destructive">{t("proposalBlocked")}</span>
+                              ) : null}
+                              {state === "override" ? (
+                                <span className="text-xs text-warning">{t("proposalOverride")}</span>
+                              ) : null}
+                              {state === "error" ? (
+                                <span className="text-xs text-destructive">{t("proposalSignError")}</span>
+                              ) : null}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            ),
+          )
         )}
       </div>
 
@@ -245,14 +276,14 @@ export function ChatPanel({ patientId }: { patientId: string }) {
           e.preventDefault();
           void send(input);
         }}
-        className="flex gap-2"
+        className="flex gap-2 border-t border-border pt-3"
       >
         <input
           value={input}
           onChange={(e) => setInput(e.target.value)}
           placeholder={t("chatPrompt")}
           aria-label={t("chatPrompt")}
-          className="flex-1 rounded-md border border-border bg-background px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-ring"
+          className="flex-1 rounded-lg border border-border bg-background px-3.5 py-2.5 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         />
         <Button type="submit" disabled={busy || !input.trim()}>
           {busy ? t("chatSending") : t("chatSend")}

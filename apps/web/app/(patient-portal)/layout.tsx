@@ -1,12 +1,31 @@
 /*
- * (patient-portal) route-group shell — S1 scaffold; docs/solution/07
- * governs. Mobile-first, 16 px+ body, one primary action per screen,
- * bottom navigation (Home · Records · Appointments · Consent · Profile)
- * and the permanent En/Si/Ta header switcher land in S5 (07 §2).
- * PWA manifest + portal-scoped service worker (07 §12.1) also S5.
+ * (patient-portal) route-group shell — docs/solution/07 governs. Mobile-first,
+ * 16 px+ body, calm and low-literacy-first. A light top bar carries the brand
+ * and the light/dark toggle; the permanent En/Si/Ta switcher + bottom nav +
+ * PWA manifest land with the fuller portal build (07 §2).
  */
 import type { ReactNode } from "react";
+import { getTranslations } from "next-intl/server";
+import { HeartPulse } from "lucide-react";
 
-export default function PortalLayout({ children }: { children: ReactNode }) {
-  return <div className="mx-auto min-h-screen max-w-lg p-4 text-base">{children}</div>;
+import { ThemeToggle } from "@/components/theme-toggle";
+
+export default async function PortalLayout({ children }: { children: ReactNode }) {
+  const tc = await getTranslations("common");
+  return (
+    <div className="min-h-screen bg-background">
+      <header className="border-b border-border bg-card">
+        <div className="mx-auto flex max-w-lg items-center justify-between px-4 py-3">
+          <span className="flex items-center gap-2">
+            <span className="flex h-7 w-7 items-center justify-center rounded-md bg-primary text-primary-foreground">
+              <HeartPulse className="h-4 w-4" />
+            </span>
+            <span className="text-base font-semibold tracking-tight">{tc("appName")}</span>
+          </span>
+          <ThemeToggle />
+        </div>
+      </header>
+      <div className="mx-auto max-w-lg p-4 text-base">{children}</div>
+    </div>
+  );
 }
