@@ -20,9 +20,12 @@
       "connecting": "Connecting",
       "open": "Live",
       "reconnecting": "Reconnecting",
-      "closed": "Updates paused"
+      "closed": "Updates paused",
+      "unauthorized": "வெளியேறியது"
     },
     "degradedBanner": "Live updates are unavailable. Showing the last known queue; retrying in the background.",
+    "sessionExpired": "உங்கள் அமர்வு காலாவதியாகிவிட்டது. நேரலை புதுப்பிப்புகளைத் தொடர மீண்டும் உள்நுழையவும்.",
+    "signIn": "உள்நுழை",
     "row": {
       "face": "Face check-in",
       "manual": "Desk check-in",

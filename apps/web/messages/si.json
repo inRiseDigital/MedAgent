@@ -20,9 +20,12 @@
       "connecting": "Connecting",
       "open": "Live",
       "reconnecting": "Reconnecting",
-      "closed": "Updates paused"
+      "closed": "Updates paused",
+      "unauthorized": "පිටවී ඇත"
     },
     "degradedBanner": "Live updates are unavailable. Showing the last known queue; retrying in the background.",
+    "sessionExpired": "ඔබේ සැසිය කල් ඉකුත් වී ඇත. සජීවී යාවත්කාලීන කිරීම් නැවත ලබා ගැනීමට නැවත පිවිසෙන්න.",
+    "signIn": "පිවිසෙන්න",
     "row": {
       "face": "Face check-in",
       "manual": "Desk check-in",

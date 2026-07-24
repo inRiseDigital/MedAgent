@@ -20,9 +20,12 @@
       "connecting": "Connecting",
       "open": "Live",
       "reconnecting": "Reconnecting",
-      "closed": "Updates paused"
+      "closed": "Updates paused",
+      "unauthorized": "Signed out"
     },
     "degradedBanner": "Live updates are unavailable. Showing the last known queue; retrying in the background.",
+    "sessionExpired": "Your session has expired. Sign in again to resume live updates.",
+    "signIn": "Sign in",
     "row": {
       "face": "Face check-in",
       "manual": "Desk check-in",

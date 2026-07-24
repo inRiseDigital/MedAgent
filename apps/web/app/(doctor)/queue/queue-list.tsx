@@ -21,6 +21,7 @@ const CONNECTION_BADGE: Record<ConnectionState, BadgeProps["variant"]> = {
   open: "pass",
   reconnecting: "warn",
   closed: "block",
+  unauthorized: "block",
 };
 
 const POLL_INTERVAL_MS = 15_000;
@@ -65,7 +66,8 @@ export function QueueList({ facilityId, initialRows, initialError }: QueueListPr
   // Degraded-mode poll: only while the stream is not open.
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   useEffect(() => {
-    if (connectionState === "open") {
+    // No point polling once the session is gone — the poll would 401 too.
+    if (connectionState === "open" || connectionState === "unauthorized") {
       if (pollRef.current) clearInterval(pollRef.current);
       pollRef.current = null;
       return;
@@ -77,7 +79,9 @@ export function QueueList({ facilityId, initialRows, initialError }: QueueListPr
     };
   }, [connectionState, refetch]);
 
-  const showDegraded = stale || (connectionState !== "open" && connectionState !== "connecting");
+  const sessionExpired = connectionState === "unauthorized";
+  const showDegraded =
+    !sessionExpired && (stale || (connectionState !== "open" && connectionState !== "connecting"));
 
   return (
     <div className="mx-auto max-w-3xl space-y-4">
@@ -91,7 +95,20 @@ export function QueueList({ facilityId, initialRows, initialError }: QueueListPr
         </Badge>
       </div>
 
-      {showDegraded ? (
+      {sessionExpired ? (
+        <div
+          role="alert"
+          className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-destructive/40 bg-destructive-surface px-3 py-2 text-sm text-destructive"
+        >
+          <span>{t("sessionExpired")}</span>
+          <a
+            href="/api/auth/login"
+            className="rounded-md bg-destructive px-3 py-1.5 text-xs font-medium text-destructive-foreground hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            {t("signIn")}
+          </a>
+        </div>
+      ) : showDegraded ? (
         <p role="status" className="rounded-md border border-warning bg-warning-surface px-3 py-2 text-sm text-warning">
           {t("degradedBanner")}
         </p>

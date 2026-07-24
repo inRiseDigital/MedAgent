@@ -21,7 +21,7 @@
  * against. Live end-to-end wiring to the queue UI lands in S3 (06 §3).
  */
 
-export type ConnectionState = "connecting" | "open" | "reconnecting" | "closed";
+export type ConnectionState = "connecting" | "open" | "reconnecting" | "closed" | "unauthorized";
 
 export interface SseEvent {
   /** SSE `event:` name ("message" when unnamed). */
@@ -80,6 +80,14 @@ export function createEventStream(options: EventStreamOptions): EventStreamHandl
     try {
       // Same-origin, session-cookie-authenticated; never a bearer token.
       const res = await fetch(ticketUrl, { method: "POST" });
+      // 401 = the session is gone (expired/idle-timeout). Retrying is futile and
+      // just spams the console — stop and surface a terminal state so the UI can
+      // prompt re-login (02 §4: 30-min idle timeout is a deliberate control).
+      if (res.status === 401) {
+        closed = true;
+        options.onStateChange?.("unauthorized");
+        return;
+      }
       if (!res.ok) throw new Error(`ticket endpoint returned ${res.status}`);
       ({ ticket } = (await res.json()) as { ticket: string });
     } catch {
