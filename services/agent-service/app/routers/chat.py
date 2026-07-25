@@ -112,11 +112,21 @@ async def chat(
                     delta = _delta_text(event["data"]["chunk"])
                     if delta:
                         yield _sse({"type": "text-delta", "id": text_id, "delta": delta})
-        except Exception:  # noqa: BLE001 — never leak a stack trace to the UI
+        except Exception as exc:  # noqa: BLE001 — never leak a stack trace to the UI
             logger.exception("agent run failed")
-            yield _sse(
-                {"type": "text-delta", "id": text_id, "delta": "\n\n[The assistant hit an error. Please retry.]"}
-            )
+            m = str(exc).lower()
+            if any(s in m for s in ("usage limit", "regain access", "rate limit", "429",
+                                    "credit balance", "insufficient", "quota")):
+                # Not a code fault — the LLM provider is capped. Retrying won't help,
+                # so say so honestly instead of "please retry".
+                note = (
+                    "\n\n[The AI assistant is temporarily unavailable — the language-model "
+                    "service usage limit has been reached. Record viewing, search and "
+                    "prescription safety are unaffected. Please try the assistant again later.]"
+                )
+            else:
+                note = "\n\n[The assistant hit an error. Please retry.]"
+            yield _sse({"type": "text-delta", "id": text_id, "delta": note})
 
         yield _sse({"type": "text-end", "id": text_id})
         if sources:  # citation chips (FR-3.4): resources the tools read
