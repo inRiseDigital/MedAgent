@@ -38,6 +38,9 @@ type AuthAction = (typeof KNOWN_ACTIONS)[number];
 // for a 10-min single-use value on an httpOnly Secure cookie.
 const TX_COOKIE = "__Host-oidc-tx";
 const TX_MAX_AGE = 600;
+// One-shot guard so a genuinely broken callback (e.g. cookies blocked) can't
+// bounce forever between /callback and /login.
+const RETRY_COOKIE = "__Host-oidc-retry";
 
 interface OidcTransaction {
   state: string;
@@ -90,24 +93,49 @@ async function handleLogin(request: NextRequest): Promise<NextResponse> {
   return res;
 }
 
+/**
+ * Recover from a callback that can't complete because the OIDC transaction is
+ * stale — the tx cookie expired (login page sat > 10 min / wrong-password
+ * fumbling), was never sent, or Keycloak bounced an already-active SSO session
+ * without a code. Instead of a dead-end JSON error, restart /login: a fresh
+ * transaction is minted and, if an SSO session exists, it completes silently.
+ * A one-shot retry cookie stops this looping if cookies are genuinely broken.
+ */
+function restartLogin(request: NextRequest): NextResponse {
+  if (request.cookies.get(RETRY_COOKIE)?.value) {
+    const res = NextResponse.json(
+      { error: "login_failed", hint: "Please close this tab and open the app again." },
+      { status: 400 },
+    );
+    res.cookies.delete(RETRY_COOKIE);
+    res.cookies.delete(TX_COOKIE);
+    return res;
+  }
+  const res = NextResponse.redirect(new URL("/api/auth/login", publicBase(request)));
+  res.cookies.set(RETRY_COOKIE, "1", { ...baseCookieOptions(), maxAge: 120 });
+  res.cookies.delete(TX_COOKIE);
+  return res;
+}
+
 async function handleCallback(request: NextRequest): Promise<NextResponse> {
   const params = request.nextUrl.searchParams;
   const code = params.get("code");
   const state = params.get("state");
-
   const txRaw = request.cookies.get(TX_COOKIE)?.value;
-  if (!code || !state || !txRaw) {
-    return NextResponse.json({ error: "invalid_callback" }, { status: 400 });
+
+  // Recoverable staleness (or an OIDC error redirect) — restart cleanly.
+  if (params.get("error") || !code || !state || !txRaw) {
+    return restartLogin(request);
   }
 
   let tx: OidcTransaction;
   try {
     tx = JSON.parse(txRaw) as OidcTransaction;
   } catch {
-    return NextResponse.json({ error: "invalid_transaction" }, { status: 400 });
+    return restartLogin(request);
   }
   if (tx.state !== state) {
-    return NextResponse.json({ error: "state_mismatch" }, { status: 400 });
+    return restartLogin(request);
   }
 
   let sessionId: string;
@@ -115,7 +143,9 @@ async function handleCallback(request: NextRequest): Promise<NextResponse> {
     const tokens = await exchangeCode(code, tx.verifier);
     sessionId = await createSession(tokens);
   } catch {
-    return NextResponse.json({ error: "token_exchange_failed" }, { status: 502 });
+    // A one-time auth-code is single-use and short-lived; a failed exchange is
+    // usually a replayed/expired code, so restart rather than dead-end.
+    return restartLogin(request);
   }
 
   // Redirect against the PUBLIC origin (from forwarded headers) — request.url is
@@ -123,6 +153,7 @@ async function handleCallback(request: NextRequest): Promise<NextResponse> {
   const res = NextResponse.redirect(new URL(safeReturnTo(tx.returnTo), publicBase(request)));
   res.cookies.set(SESSION_COOKIE, sessionId, baseCookieOptions());
   res.cookies.delete(TX_COOKIE);
+  res.cookies.delete(RETRY_COOKIE);
   return res;
 }
 
