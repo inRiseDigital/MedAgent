@@ -8,11 +8,18 @@
  * data-proposals / finish).
  */
 import { useCallback, useRef, useState } from "react";
+import dynamic from "next/dynamic";
 import { useTranslations } from "next-intl";
 import { Sparkles, User } from "lucide-react";
 import { Badge, Button, Spinner, type BadgeProps } from "@medagent/ui";
 
-import { AssistantMarkdown } from "@/components/markdown";
+// Markdown rendering is loaded as a separate client-only chunk: it must NEVER
+// be able to break the chat's core interactivity (send / input) if the markdown
+// library fails to load. Falls back to plain text while loading / on failure.
+const AssistantMarkdown = dynamic(
+  () => import("@/components/markdown").then((m) => m.AssistantMarkdown),
+  { ssr: false, loading: () => null },
+);
 
 interface Citation {
   ref: string;
