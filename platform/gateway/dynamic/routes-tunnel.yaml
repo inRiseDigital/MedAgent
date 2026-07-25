@@ -1,0 +1,43 @@
+# =============================================================================
+# Traefik dynamic config — TUNNEL / DEV-DEMO routes (loaded alongside
+# routes.yaml). Same service map as the public `websecure` routers, but:
+#   - bound to the `tunnel` entry point (:8090, plain HTTP, no TLS redirect);
+#   - HOST-AGNOSTIC (no `Host(...)` matcher) so they match a tunnel's random
+#     *.trycloudflare.com / *.ngrok-free.app hostname.
+# Services + middlewares are reused from routes.yaml (Traefik merges all files).
+# Reachable only when the tunnel overlay publishes :8090 — never in the default
+# or staging stack (01 §1: one public entry point per real environment).
+# =============================================================================
+
+http:
+  routers:
+    tunnel-core-api:
+      entryPoints: [tunnel]
+      rule: "PathPrefix(`/api/core`)"
+      middlewares: [security-headers, rate-limit-default, strip-api-core]
+      service: core-api
+
+    tunnel-agent-service:
+      entryPoints: [tunnel]
+      rule: "PathPrefix(`/api/agent`)"
+      middlewares: [security-headers, rate-limit-default, strip-api-agent]
+      service: agent-service
+
+    tunnel-notify-service:
+      entryPoints: [tunnel]
+      rule: "PathPrefix(`/notify`)"
+      middlewares: [security-headers, rate-limit-default]
+      service: notify-service
+
+    tunnel-keycloak:
+      entryPoints: [tunnel]
+      rule: "PathPrefix(`/auth`)"
+      middlewares: [security-headers, rate-limit-auth]
+      service: keycloak
+
+    tunnel-web:
+      entryPoints: [tunnel]
+      rule: "PathPrefix(`/`)"
+      priority: 1
+      middlewares: [security-headers, rate-limit-default]
+      service: web

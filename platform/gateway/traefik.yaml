@@ -86,6 +86,15 @@ entryPoints:
   # host-published; reachable from prometheus on the internal network.
   metrics:
     address: ":8082"
+
+  # Tunnel entry point (:8090) — DEV DEMO ONLY. A public tunnel (cloudflared /
+  # ngrok) terminates TLS at its edge and forwards plain HTTP here, so this
+  # entry point serves content WITHOUT the http->https redirect that `web` (:80)
+  # applies. Routes attached to it (dynamic/routes-tunnel.yaml) are host-agnostic
+  # so they match the tunnel's random hostname. Published to the host only by the
+  # tunnel compose overlay; never in the default/staging stack.
+  tunnel:
+    address: ":8090"
     forwardedHeaders:
       trustedIPs:
         - "127.0.0.1/32"

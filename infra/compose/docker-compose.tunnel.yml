@@ -1,0 +1,55 @@
+# =============================================================================
+# Tunnel / dev-demo overlay — rewires the localhost-bound pieces to a public
+# tunnel URL so the running stack is reachable from anywhere (e.g. to show a
+# stakeholder). Layer it ON TOP of the base compose:
+#
+#   PUBLIC_URL=https://<your-tunnel-host> \
+#     docker compose -f docker-compose.yml -f docker-compose.tunnel.yml up -d
+#
+# Then point a tunnel at the gateway's :8090 (plain-HTTP, no-redirect) entry
+# point:  cloudflared tunnel --url http://localhost:8090
+# (scripts/share-demo.sh automates all of this.)
+#
+# DEV DEMO ONLY. Do not use for staging/pilot — that uses a real domain + certs
+# and the per-environment route overlay (10 §4), not a tunnel.
+#
+# `${PUBLIC_URL}` is substituted from the shell environment at `up` time. It must
+# be the scheme+host with NO trailing slash, e.g. https://foo.trycloudflare.com
+# =============================================================================
+
+services:
+  gateway:
+    # Publish the tunnel entry point so cloudflared/ngrok can reach it. The
+    # `tunnel` entry point + host-agnostic routes are defined in
+    # platform/gateway/{traefik.yaml,dynamic/routes-tunnel.yaml}.
+    ports:
+      - "8090:8090"
+
+  keycloak:
+    environment:
+      # Browser-facing base (authorize endpoint, `iss`) must be the public URL,
+      # or the login redirect would send the visitor to https://localhost.
+      KC_HOSTNAME: ${PUBLIC_URL}/auth
+
+  core-api:
+    environment:
+      # Services validate the token `iss` against the PUBLIC issuer, which is now
+      # the tunnel URL (JWKS is still fetched over the internal URL — unchanged).
+      KEYCLOAK_ISSUER: ${PUBLIC_URL}/auth/realms/medagent
+
+  agent-service:
+    environment:
+      KEYCLOAK_ISSUER: ${PUBLIC_URL}/auth/realms/medagent
+
+  notify-service:
+    environment:
+      KEYCLOAK_ISSUER: ${PUBLIC_URL}/auth/realms/medagent
+
+  web:
+    environment:
+      # Browser-facing URLs + the issuer the BFF builds redirect/callback against.
+      NEXT_PUBLIC_APP_URL: ${PUBLIC_URL}
+      NEXT_PUBLIC_API_BASE_URL: ${PUBLIC_URL}/api
+      NEXT_PUBLIC_KEYCLOAK_URL: ${PUBLIC_URL}/auth
+      NEXT_PUBLIC_NOTIFY_STREAM_URL: ${PUBLIC_URL}/notify/stream
+      KEYCLOAK_ISSUER: ${PUBLIC_URL}/auth/realms/medagent
