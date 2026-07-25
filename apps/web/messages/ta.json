@@ -1,4 +1,9 @@
 {
+  "session": {
+    "expiredTitle": "அமர்வு காலாவதியானது",
+    "expiredBody": "உங்கள் பாதுகாப்பிற்காக நீங்கள் வெளியேற்றப்பட்டீர்கள். தொடர மீண்டும் உள்நுழையவும்.",
+    "signIn": "உள்நுழை"
+  },
   "common": {
     "appName": "MedAgent",
     "scaffold": "S1 scaffold — this screen is implemented in S2/S3 per the sprint plan.",

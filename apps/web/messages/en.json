@@ -1,4 +1,9 @@
 {
+  "session": {
+    "expiredTitle": "Session expired",
+    "expiredBody": "For your security you've been signed out. Please sign in again to continue.",
+    "signIn": "Sign in"
+  },
   "common": {
     "appName": "MedAgent",
     "scaffold": "S1 scaffold — this screen is implemented in S2/S3 per the sprint plan.",

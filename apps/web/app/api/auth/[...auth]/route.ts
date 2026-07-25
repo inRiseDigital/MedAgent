@@ -25,7 +25,7 @@ import {
   randomToken,
 } from "@/lib/oidc";
 import { SESSION_COOKIE } from "@/lib/session";
-import { createSession, destroySession, getSession } from "@/lib/session-store";
+import { createSession, destroySession, getAccessToken, getSession } from "@/lib/session-store";
 
 // These handlers use node:crypto/redis transitively — force the Node runtime.
 export const runtime = "nodejs";
@@ -166,7 +166,11 @@ async function handleLogout(_request: NextRequest): Promise<NextResponse> {
 }
 
 async function handleSession(): Promise<NextResponse> {
-  const session = await getSession();
+  // Liveness check, not just "cookie present": getAccessToken attempts a silent
+  // refresh and returns null (clearing the dead session) if the tokens are truly
+  // expired. The client SessionGuard polls this to force a clean re-login.
+  const token = await getAccessToken();
+  const session = token ? await getSession() : null;
   if (!session) return NextResponse.json({ authenticated: false }, { status: 401 });
   return NextResponse.json({
     authenticated: true,

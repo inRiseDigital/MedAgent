@@ -9,6 +9,7 @@ import type { ReactNode } from "react";
 import { getTranslations } from "next-intl/server";
 import { Activity, LayoutList, Users } from "lucide-react";
 
+import { SessionGuard } from "@/components/session-guard";
 import { ThemeToggle } from "@/components/theme-toggle";
 
 export default async function DoctorLayout({ children }: { children: ReactNode }) {
@@ -22,6 +23,7 @@ export default async function DoctorLayout({ children }: { children: ReactNode }
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
+      <SessionGuard />
       <a
         href="#main"
         className="sr-only focus:not-sr-only focus:absolute focus:left-2 focus:top-2 focus:z-50 focus:rounded-md focus:bg-card focus:px-3 focus:py-2 focus:ring-2 focus:ring-ring"

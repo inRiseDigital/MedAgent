@@ -8,12 +8,14 @@ import type { ReactNode } from "react";
 import { getTranslations } from "next-intl/server";
 import { HeartPulse } from "lucide-react";
 
+import { SessionGuard } from "@/components/session-guard";
 import { ThemeToggle } from "@/components/theme-toggle";
 
 export default async function PortalLayout({ children }: { children: ReactNode }) {
   const tc = await getTranslations("common");
   return (
     <div className="min-h-screen bg-background">
+      <SessionGuard />
       <header className="border-b border-border bg-card">
         <div className="mx-auto flex max-w-lg items-center justify-between px-4 py-3">
           <span className="flex items-center gap-2">

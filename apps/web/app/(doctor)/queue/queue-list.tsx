@@ -80,6 +80,12 @@ export function QueueList({ facilityId, initialRows, initialError }: QueueListPr
   }, [connectionState, refetch]);
 
   const sessionExpired = connectionState === "unauthorized";
+
+  // A dead SSE session means the login is gone — tell the app-wide SessionGuard
+  // to show its blocking re-login dialog immediately (not just this banner).
+  useEffect(() => {
+    if (sessionExpired) window.dispatchEvent(new Event("medagent:session-expired"));
+  }, [sessionExpired]);
   const showDegraded =
     !sessionExpired && (stale || (connectionState !== "open" && connectionState !== "connecting"));
 
