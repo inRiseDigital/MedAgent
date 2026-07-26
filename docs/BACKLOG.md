@@ -20,13 +20,13 @@ Status: `[ ]` to-do · `[~]` in progress · `[x]` done.
 - [x] **1.3 Vitals capture** (→ `Observation`, LOINC + vital-signs category). Verified: commit → `Observation/1102`, audited; UI.
 - [x] **1.4 Lab / imaging orders** (→ `ServiceRequest`). Verified: lab → `ServiceRequest/1107`, imaging → `ServiceRequest/1108`, audited; UI. (Agent-invoked ordering arrives with the Lab agent 2.6, in live LLM mode.)
 
-## Track 2 — Lab network (first national module)
+## Track 2 — Lab network (first national module) ✅
 - [x] **2.1 LIS hub + specimen state machine** (ordered→collected→…→released). Verified: advanced through every state; invalid skip + past-released both 409; each transition audited (`lab_state_change`). core-api `lab` router; state on the ServiceRequest.
 - [x] **2.2 Accession + barcode** (Code 128). Verified: collection assigns accession `MA…`, creates a FHIR `Specimen`, and `GET /lab/{id}/label` serves a printable Code128 SVG (44 bars + accession text); label 409 before collection. `python-barcode`.
 - [x] **2.3 Analyzer interface** (pull/result keyed by barcode; ASTM/HL7 adapter wraps in prod). Verified: PULL finds order by accession → in-progress; RESULT push → preliminary `Observation` → resulted; wrong-state 409; unknown accession 404.
 - [x] **2.4 Result release + critical alert**. Verified: normal potassium 4.2 auto-releases → `DiagnosticReport` (final, Observation→final); critical 6.4 detected `critical`, blocked pending `validated_by`, emits `lab_critical_value` alert, releases after pathologist validation. Reference ranges keyed by LOINC.
 - [x] **2.5 Pending results + portal + multi-lab routing.** Verified: released reports appear via `GET /lab/reports` (doctor pending list) and in `summary.results` → a **Lab results card in the patient portal** (critical flagged); orders carry a `target_lab` (own / regional gov / private) — two orders routed to two labs. (Real SMS/push channel reuses notify-service — follow-up.)
-- [ ] **2.6 Lab agent `summarise_report`** (voice "give summary" → cited summary). *Done when:* cited, abnormal-highlighted summary (needs live LLM or 0.3 stub).
+- [x] **2.6 `summarise_report`** — DETERMINISTIC cited summary (`GET /lab/reports/{id}/summary`): each analyte with value/reference-range/flag + Observation citation, and a headline (critical/abnormal/normal). Verified: critical potassium → "1 CRITICAL", cited; normal → "within normal limits"; 404 unknown. The Lab agent narrates this in live mode — numbers are never invented (safe by design).
 
 ## Track 3 — Ambient AI + voice (adoption)
 - [ ] **3.1 Auto-summary on patient open** (no typing). *Done when:* opening a patient shows an instant cited summary + safety flags.

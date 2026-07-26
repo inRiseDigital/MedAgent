@@ -416,6 +416,77 @@ async def reports(
         await fhir.close()
 
 
+class ResultLine(BaseModel):
+    test: str
+    value: float | None = None
+    unit: str | None = None
+    reference: str | None = None
+    flag: str = "unverifiable"       # normal | abnormal | critical | unverifiable
+    critical: bool = False
+    cite: str                        # source Observation ref (FR-3.4 traceability)
+
+
+class ReportSummary(BaseModel):
+    report: str
+    test: str
+    headline: str
+    lines: list[ResultLine]
+    conclusion: str | None = None
+
+
+@router.get("/reports/{report_id}/summary", response_model=ReportSummary)
+async def report_summary(
+    report_id: str,
+    principal: Annotated[Principal, Depends(require_user)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> ReportSummary:
+    """Deterministic, cited, abnormal-highlighted summary of a lab report
+    (backlog 2.6). This is the safe core the Lab agent's `summarise_report`
+    narrates in live mode — values, ranges and flags come from the record + the
+    reference table, never invented, so there is nothing for the LLM to
+    hallucinate about the numbers."""
+    fhir = FHIRClient(settings.fhir_base_url)
+    try:
+        try:
+            rep = await fhir.read("DiagnosticReport", report_id)
+        except Exception:  # noqa: BLE001
+            raise HTTPException(status_code=404, detail="report not found")
+        lines: list[ResultLine] = []
+        n_crit = n_abn = 0
+        for r in rep.get("result", []):
+            oid = str(r.get("reference", "")).split("/")[-1]
+            if not oid:
+                continue
+            try:
+                obs = await fhir.read("Observation", oid)
+            except Exception:  # noqa: BLE001
+                continue
+            vq = obs.get("valueQuantity") or {}
+            value, unit, loinc = vq.get("value"), vq.get("unit"), _loinc_of(obs)
+            flag = _classify(loinc, float(value)) if value is not None else "unverifiable"
+            if flag == "critical":
+                n_crit += 1
+            elif flag == "abnormal":
+                n_abn += 1
+            ref = REFERENCE.get(loinc or "")
+            lines.append(ResultLine(
+                test=_cc_text(obs.get("code")) or _cc_text(rep.get("code")),
+                value=value, unit=unit,
+                reference=f"{ref['low']}–{ref['high']}" if ref else None,
+                flag=flag, critical=flag == "critical", cite=f"Observation/{oid}",
+            ))
+        if n_crit:
+            headline = f"{n_crit} CRITICAL result(s) — urgent review needed"
+        elif n_abn:
+            headline = f"{n_abn} result(s) outside the reference range"
+        else:
+            headline = "All results within normal limits"
+        return ReportSummary(report=f"DiagnosticReport/{report_id}", test=_cc_text(rep.get("code")),
+                             headline=headline, lines=lines, conclusion=rep.get("conclusion"))
+    finally:
+        await fhir.close()
+
+
 class ReleaseRequest(BaseModel):
     validated_by: str | None = None  # pathologist id — required to release abnormals
 
