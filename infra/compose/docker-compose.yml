@@ -218,6 +218,9 @@ services:
       KEYCLOAK_URL: http://keycloak:8080
       KEYCLOAK_REALM: medagent
       AUTH_DISABLED: ${AUTH_DISABLED:-false}
+      # LLM mode: "live" (real Claude) or "stub" (deterministic offline model, no
+      # API calls — for CI load tests + demos when the provider is quota-capped).
+      AGENT_LLM_MODE: ${AGENT_LLM_MODE:-live}
       # ANTHROPIC_API_KEY: never here — SOPS env file only; dev uses the scoped
       # low-limit key from the vault (10 §2.4). Held ONLY by agent-service (10 §5).
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317

@@ -86,19 +86,26 @@ def build_agent(
 ) -> CompiledStateGraph:
     """Compile a patient-scoped ReAct agent. `sources` accumulates citations;
     `proposals` accumulates write-intent drafts (sign-off cards)."""
-    # NOTE: newer models (e.g. claude-sonnet-5) reject `temperature` — it is
-    # deprecated for them — so we do not pass it. Determinism for the
-    # safety-critical paths comes from the deterministic Rx engine (04 ADR AG-2),
-    # not model temperature.
-    llm = ChatAnthropic(
-        model=settings.anthropic_model,
-        api_key=settings.anthropic_api_key,
-        max_tokens=2048,
-        # Extended thinking is disabled: with tool-calling round-trips the
-        # thinking blocks must be echoed back intact, which the LangChain
-        # adapter mishandles ("thinking.thinking: Field required"). The clinical
-        # agent does not need model-side reasoning traces.
-        thinking={"type": "disabled"},
-    )
+    # Offline/stub mode (backlog 0.3): deterministic model, no API calls — for CI
+    # load tests and demos when the provider is unavailable / quota-capped.
+    if settings.agent_llm_mode == "stub":
+        from app.agent.stub import StubChatModel
+
+        llm: Any = StubChatModel()
+    else:
+        # NOTE: newer models (e.g. claude-sonnet-5) reject `temperature` — it is
+        # deprecated for them — so we do not pass it. Determinism for the
+        # safety-critical paths comes from the deterministic Rx engine (04 ADR AG-2),
+        # not model temperature.
+        llm = ChatAnthropic(
+            model=settings.anthropic_model,
+            api_key=settings.anthropic_api_key,
+            max_tokens=2048,
+            # Extended thinking is disabled: with tool-calling round-trips the
+            # thinking blocks must be echoed back intact, which the LangChain
+            # adapter mishandles ("thinking.thinking: Field required"). The clinical
+            # agent does not need model-side reasoning traces.
+            thinking={"type": "disabled"},
+        )
     tools = build_patient_tools(settings.fhir_base_url, patient_fhir_id, sources, proposals)
     return create_react_agent(llm, tools, prompt=SystemMessage(content=SYSTEM_PROMPT))

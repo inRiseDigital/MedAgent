@@ -41,3 +41,8 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
     anthropic_model: str = "claude-sonnet-5"
     anthropic_temperature: float = 0.2
+
+    # LLM mode: "live" (real Claude) or "stub" (deterministic offline model — no
+    # API calls). Stub mode lets the chat be load-tested in CI and demoed when the
+    # provider is unavailable / quota-capped, without touching the real API.
+    agent_llm_mode: str = "live"
