@@ -81,12 +81,13 @@ services→Anthropic API (cross-border, PHI-minimised).
    compromise in a token-holding service could over-read at HAPI. App-layer
    controls gate the real paths today; promote enforcement into HAPI
    (test-first) before multi-facility rollout.
-2. **Audit tamper-evidence (hash-chaining) pending** — lands with the same
-   interceptor work; until then the audit trail is complete but not
-   cryptographically tamper-evident.
-3. **R-3 — LLM path unquantified under sustained concurrency** — needs a
-   recorded-LLM harness before the chat load gate is meaningful.
+2. **R-3 — LLM path unquantified under sustained concurrency** — needs a
+   recorded-LLM harness before the chat load gate is meaningful. (The offline
+   stub mode now exists, so this can be built without burning quota.)
 
-All three are tracked; none block a single-facility supervised pilot given the
-verified app-layer controls, but R-1 + hash-chaining should close before the
+~~Audit tamper-evidence~~ — **resolved**: the audit trail is now hash-chained
+(`/internal/audit/verify`).
+
+Both remaining risks are tracked; neither blocks a single-facility supervised
+pilot given the verified app-layer controls, but R-1 should close before the
 system holds records across facilities.
