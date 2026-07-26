@@ -6,10 +6,10 @@
  * Theme-aware; PHN addresses the patient in URL state (06 §5).
  */
 import { getTranslations } from "next-intl/server";
-import { AlertTriangle, ClipboardList, HeartPulse, Pill, ShieldAlert } from "lucide-react";
+import { AlertTriangle, ClipboardList, HeartPulse, Pill, ShieldAlert, Siren } from "lucide-react";
 import { Badge, Card, CardContent } from "@medagent/ui";
 
-import { fetchPatientSummary, type PatientSummary } from "@/lib/api";
+import { fetchPatientBrief, fetchPatientSummary, type PatientBrief, type PatientSummary } from "@/lib/api";
 import { ChatPanel } from "./chat-panel";
 import { ClinicalEntry } from "./clinical-entry";
 import { ProposalPanel } from "./proposal-panel";
@@ -42,10 +42,16 @@ export default async function PatientSessionPage({ params }: { params: Promise<{
   const t = await getTranslations("patient");
 
   let summary: PatientSummary | null = null;
+  let brief: PatientBrief | null = null;
   try {
     summary = await fetchPatientSummary(id);
   } catch {
     summary = null;
+  }
+  try {
+    brief = await fetchPatientBrief(id); // ambient safety flags — best-effort
+  } catch {
+    brief = null;
   }
 
   const highAllergies = summary?.allergies.filter((a) => a.criticality === "high") ?? [];
@@ -90,6 +96,31 @@ export default async function PatientSessionPage({ params }: { params: Promise<{
               <p className="text-muted-foreground">{t("summaryUnavailable")}</p>
             ) : (
               <>
+                {brief && brief.flags.length > 0 ? (
+                  <div className="rounded-lg border border-border bg-muted/40 p-3">
+                    <SectionLabel>
+                      <span className="inline-flex items-center gap-1.5">
+                        <Siren className="h-3.5 w-3.5" /> Safety flags
+                      </span>
+                    </SectionLabel>
+                    <ul className="space-y-1.5">
+                      {brief.flags.map((f, i) => (
+                        <li key={i} className="flex items-start gap-2 text-xs">
+                          <span
+                            aria-hidden
+                            className={`mt-1 h-1.5 w-1.5 shrink-0 rounded-full ${
+                              f.severity === "block" ? "bg-destructive" : f.severity === "warn" ? "bg-warning" : "bg-muted-foreground"
+                            }`}
+                          />
+                          <span className={f.severity === "block" ? "text-destructive" : f.severity === "warn" ? "text-warning" : "text-foreground"}>
+                            {f.text}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+
                 <div>
                   <SectionLabel>
                     <span className="inline-flex items-center gap-1.5">

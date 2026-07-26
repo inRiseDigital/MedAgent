@@ -42,3 +42,35 @@ async def screen_endpoint(
         body.dose_mg_per_day,
     )
     return v.to_dict()
+
+
+class ReviewRequest(BaseModel):
+    meds: list[str] = Field(default_factory=list)
+    allergies: list[AllergyIn] = Field(default_factory=list)
+
+
+@router.post("/review")
+async def review_endpoint(
+    body: ReviewRequest,
+    principal: Annotated[Principal, Depends(require_user)],
+) -> dict:
+    """Screen an EXISTING medication list + allergies for interactions and
+    allergy conflicts already present in the record (ambient safety, backlog 3.1).
+    Each med is screened against the others + the allergies; findings are deduped.
+    Same deterministic engine as prescribing — this just points it at the record."""
+    allergies = [a.model_dump() for a in body.allergies]
+    seen: set[tuple[str, str]] = set()
+    flags: list[dict] = []
+    worst = "pass"
+    for i, med in enumerate(body.meds):
+        others = [m for j, m in enumerate(body.meds) if j != i]
+        v = screen(med, others, allergies, None)
+        if v.verdict == "block" or (v.verdict == "warn" and worst == "pass"):
+            worst = v.verdict
+        for f in v.findings:
+            key = (f.get("code", ""), f.get("rationale", ""))
+            if key in seen:
+                continue
+            seen.add(key)
+            flags.append({**f, "drug": med})
+    return {"verdict": worst, "flags": flags, "count": len(flags)}

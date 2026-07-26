@@ -113,6 +113,23 @@ export async function fetchPatientSummary(phn: string): Promise<PatientSummary> 
   return coreApiGet<PatientSummary>(`/api/v1/patients/${encodeURIComponent(phn)}/summary`);
 }
 
+export interface SafetyFlag {
+  severity: "block" | "warn" | string;
+  kind: "allergy" | "medication" | "lab" | string;
+  text: string;
+  code?: string;
+  cite?: string;
+}
+export interface PatientBrief {
+  headline: string;
+  problems: string[];
+  flags: SafetyFlag[];
+}
+
+export async function fetchPatientBrief(phn: string): Promise<PatientBrief> {
+  return coreApiGet<PatientBrief>(`/api/v1/patients/${encodeURIComponent(phn)}/brief`);
+}
+
 export async function fetchAccessLog(phn: string): Promise<AccessLogEntry[]> {
   return coreApiGet<AccessLogEntry[]>(
     `/api/v1/audit/access-log?patient=${encodeURIComponent(phn)}`,

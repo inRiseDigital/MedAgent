@@ -29,7 +29,7 @@ Status: `[ ]` to-do · `[~]` in progress · `[x]` done.
 - [x] **2.6 `summarise_report`** — DETERMINISTIC cited summary (`GET /lab/reports/{id}/summary`): each analyte with value/reference-range/flag + Observation citation, and a headline (critical/abnormal/normal). Verified: critical potassium → "1 CRITICAL", cited; normal → "within normal limits"; 404 unknown. The Lab agent narrates this in live mode — numbers are never invented (safe by design).
 
 ## Track 3 — Ambient AI + voice (adoption)
-- [ ] **3.1 Auto-summary on patient open** (no typing). *Done when:* opening a patient shows an instant cited summary + safety flags.
+- [x] **3.1 Auto-summary + safety flags on patient open** (ambient, deterministic-first). `GET /patients/{phn}/brief` + `/rx-safety/review` compute proactive flags — high-risk allergies, drug interactions / allergy cross-reactivity among ACTIVE meds, critical labs — shown as a "Safety flags" card on patient open, no typing/LLM. Verified for Nimal: penicillin allergy + cephalexin↔penicillin cross-reactivity + critical potassium, cited. LLM narrates in live mode.
 - [ ] **3.2 Voice dictation (English first)** (speech→note). *Done when:* a spoken note is transcribed into the field.
 - [ ] **3.3 Voice command "give summary"** (STT→agent→text/TTS). *Done when:* saying it returns the summary.
 

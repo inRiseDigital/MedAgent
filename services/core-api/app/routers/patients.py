@@ -13,7 +13,8 @@ from datetime import datetime, timezone
 from typing import Annotated, Any
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+import httpx
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import or_, select
@@ -228,6 +229,67 @@ async def patient_summary(
         return summary
     finally:
         await fhir.close()
+
+
+@router.get("/{phn}/brief")
+async def patient_brief(
+    phn: str,
+    request: Request,
+    principal: Annotated[Principal, Depends(require_user)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> dict[str, Any]:
+    """Ambient clinical brief for patient-open (FR-2.2, backlog 3.1): a headline
+    plus PROACTIVE safety flags computed deterministically from the record —
+    high-risk allergies, drug interactions / allergy conflicts among the ACTIVE
+    medications (via the Rx-safety engine), and critical lab results. No typing,
+    no LLM required; the assistant only narrates this in live mode."""
+    fhir = FHIRClient(settings.fhir_base_url)
+    try:
+        summary, _pid = await _load_summary(fhir, phn)
+    finally:
+        await fhir.close()
+
+    flags: list[dict[str, Any]] = []
+    for a in summary["allergies"]:
+        if a.get("criticality") == "high":
+            flags.append({"severity": "block", "kind": "allergy",
+                          "text": f"High-risk allergy: {a['text']}", "cite": a["ref"]})
+
+    med_names = [m["text"] for m in summary["medications"] if m["text"]]
+    allergies = [{"substance": a["text"], "criticality": a.get("criticality", "unknown")}
+                 for a in summary["allergies"]]
+    auth = request.headers.get("authorization", "")
+    token = auth[7:] if auth.lower().startswith("bearer ") else None
+    if med_names:
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.post(
+                    f"{settings.agent_service_url.rstrip('/')}/api/v1/rx-safety/review",
+                    json={"meds": med_names, "allergies": allergies},
+                    headers={"Authorization": f"Bearer {token}"} if token else {},
+                )
+            if resp.status_code == 200:
+                for f in resp.json().get("flags", []):
+                    flags.append({
+                        "severity": f.get("severity", "warn"), "kind": "medication",
+                        "text": f"{f.get('drug', '')}: {f.get('rationale', '')}".strip(": "),
+                        "code": f.get("code"),
+                    })
+        except Exception:  # noqa: BLE001 — brief is best-effort; never block the page
+            logger.exception("rx-safety review unavailable for brief")
+
+    for res in summary.get("results", []):
+        if res.get("critical"):
+            flags.append({"severity": "block", "kind": "lab",
+                          "text": f"Critical result: {res['text']}", "cite": res["ref"]})
+
+    n_problems, n_meds = len(summary["problems"]), len(med_names)
+    p = summary["patient"]
+    return {
+        "headline": f"{p['name']} · {n_problems} active problem(s) · {n_meds} medication(s)",
+        "problems": [x["text"] for x in summary["problems"]],
+        "flags": flags,
+    }
 
 
 def _li(items: list[str]) -> str:
