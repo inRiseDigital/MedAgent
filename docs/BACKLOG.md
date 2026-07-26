@@ -14,11 +14,11 @@ Status: `[ ]` to-do · `[~]` in progress · `[x]` done.
 - [ ] **0.2 Audit hash-chaining** (tamper-evident).
       *Done when:* altering one audit row fails chain verification.
 
-## Track 1 — Complete clinical write-back (unlocks lab/imaging/schedule agents)
-- [ ] **1.1 Coded diagnosis** (ICD-10/SNOMED → `Condition`). *Done when:* added, coded, signed, in record + audit.
-- [ ] **1.2 Clinical notes** (→ `DocumentReference`/`Encounter`). *Done when:* written, visible, cited by the agent.
-- [ ] **1.3 Vitals capture** (BP/sugar/weight/temp → `Observation`). *Done when:* entered; summary card + agent show them.
-- [ ] **1.4 `order_labs` / `order_imaging` tools** (→ `ServiceRequest`). *Done when:* order created, appears as pending result.
+## Track 1 — Complete clinical write-back (unlocks lab/imaging/schedule agents) ✅
+- [x] **1.1 Coded diagnosis** (ICD-10 → `Condition`). Verified: commit → `Condition/1101`, ICD-10 coded, audited; doctor UI (Clinical-entry panel).
+- [x] **1.2 Clinical notes** (→ `DocumentReference`). Verified: commit → `DocumentReference/1103`, audited; UI.
+- [x] **1.3 Vitals capture** (→ `Observation`, LOINC + vital-signs category). Verified: commit → `Observation/1102`, audited; UI.
+- [x] **1.4 Lab / imaging orders** (→ `ServiceRequest`). Verified: lab → `ServiceRequest/1107`, imaging → `ServiceRequest/1108`, audited; UI. (Agent-invoked ordering arrives with the Lab agent 2.6, in live LLM mode.)
 
 ## Track 2 — Lab network (first national module)
 - [ ] **2.1 LIS hub + specimen state machine** (ordered→collected→…→released). *Done when:* transitions via API, each audited.

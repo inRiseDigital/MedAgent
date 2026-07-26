@@ -6,11 +6,12 @@
  * Theme-aware; PHN addresses the patient in URL state (06 §5).
  */
 import { getTranslations } from "next-intl/server";
-import { AlertTriangle, HeartPulse, Pill, ShieldAlert } from "lucide-react";
+import { AlertTriangle, ClipboardList, HeartPulse, Pill, ShieldAlert } from "lucide-react";
 import { Badge, Card, CardContent } from "@medagent/ui";
 
 import { fetchPatientSummary, type PatientSummary } from "@/lib/api";
 import { ChatPanel } from "./chat-panel";
+import { ClinicalEntry } from "./clinical-entry";
 import { ProposalPanel } from "./proposal-panel";
 
 function age(birthDate?: string): string {
@@ -165,6 +166,19 @@ export default async function PatientSessionPage({ params }: { params: Promise<{
           </div>
         </Card>
       </div>
+
+      {/* Clinical entry — diagnosis / vital / note / order */}
+      <Card aria-label="Clinical entry">
+        <div className="flex items-center gap-2 border-b border-border px-4 py-3">
+          <span className="flex h-6 w-6 items-center justify-center rounded-md bg-primary/10 text-primary">
+            <ClipboardList className="h-3.5 w-3.5" />
+          </span>
+          <h2 className="text-sm font-semibold">Clinical entry</h2>
+        </div>
+        <CardContent className="p-4">
+          <ClinicalEntry patientId={id} />
+        </CardContent>
+      </Card>
 
       {/* Prescription sign-off */}
       <Card aria-label={t("proposalTitle")}>

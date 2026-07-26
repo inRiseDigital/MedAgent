@@ -33,7 +33,7 @@ RX_VERDICT_EXT = "https://fhir.medagent.health.lk/ext/rx-safety-verdict"
 
 
 class CommitRequest(BaseModel):
-    kind: Literal["prescription", "diagnosis", "note", "vitals"]
+    kind: Literal["prescription", "diagnosis", "note", "vitals", "lab_order", "imaging_order"]
     patient: str = Field(min_length=1, description="PHN or FHIR Patient id")
     encounter_id: str | None = None
     payload: dict[str, Any]
@@ -154,6 +154,31 @@ def _build_resource(kind: str, pid: str, payload: dict[str, Any], principal: Pri
         if enc:
             res["encounter"] = enc
         return "Observation", res
+    if kind in ("lab_order", "imaging_order"):
+        # FR-4.6 / FR-8.1 / FR-9.1: a lab or imaging order as a ServiceRequest.
+        # The lab/imaging modules (Phase 2/5) pick these up; here we create the
+        # order + audit so the write-back loop is complete now.
+        is_lab = kind == "lab_order"
+        code = {"text": payload["text"]}
+        if payload.get("loinc"):
+            code["coding"] = [{"system": "http://loinc.org", "code": payload["loinc"]}]
+        res = {
+            "resourceType": "ServiceRequest",
+            "status": "active",
+            "intent": "order",
+            "category": [{"coding": [{
+                "system": "http://snomed.info/sct",
+                "code": "108252007" if is_lab else "363679005",
+                "display": "Laboratory procedure" if is_lab else "Imaging",
+            }]}],
+            "code": code,
+            "subject": subject,
+            "requester": {"display": principal.subject},
+            "priority": payload.get("priority", "routine"),
+        }
+        if enc:
+            res["encounter"] = enc
+        return "ServiceRequest", res
     # note
     res = {
         "resourceType": "DocumentReference",
