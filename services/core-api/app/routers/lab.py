@@ -14,9 +14,12 @@ analyzer interface (2.3) and result release (2.4) build on this state machine.
 from __future__ import annotations
 
 import logging
+import uuid
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+import barcode
+from barcode.writer import SVGWriter
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -32,6 +35,24 @@ router = APIRouter(prefix="/lab", tags=["lab"])
 PHN_SYSTEM = "https://fhir.medagent.health.lk/id/phn"
 LAB_CATEGORY_CODE = "108252007"  # SNOMED "Laboratory procedure" (set by write-back)
 LAB_STATE_EXT = "https://fhir.medagent.health.lk/ext/lab-state"
+ACCESSION_SYSTEM = "https://fhir.medagent.health.lk/id/lab-accession"
+
+
+def _new_accession() -> str:
+    """Human-scannable, unique accession id (FR-8.2). Barcode-friendly (A–Z0–9)."""
+    return "MA" + uuid.uuid4().hex[:10].upper()
+
+
+def _accession_of(sr: dict[str, Any]) -> str | None:
+    for ident in sr.get("identifier", []):
+        if ident.get("system") == ACCESSION_SYSTEM:
+            return ident.get("value")
+    return None
+
+
+def _barcode_svg(value: str) -> bytes:
+    """Render a Code 128 barcode as SVG for printing (FR-8.2)."""
+    return barcode.get("code128", value, writer=SVGWriter()).render()
 
 # The specimen lifecycle. Linear: an order advances one step at a time.
 STATES = ["ordered", "collected", "in-transit", "received", "in-progress", "resulted", "released"]
@@ -89,6 +110,7 @@ class LabOrderState(BaseModel):
     test: str
     state: str
     priority: str | None = None
+    accession: str | None = None
 
 
 @router.get("/worklist", response_model=list[LabOrderState])
@@ -106,7 +128,8 @@ async def worklist(
         srs = await fhir.search("ServiceRequest", {"patient": pid})
         return [
             LabOrderState(id=str(sr["id"]), test=_cc_text(sr.get("code")),
-                          state=_state_of(sr), priority=sr.get("priority"))
+                          state=_state_of(sr), priority=sr.get("priority"),
+                          accession=_accession_of(sr))
             for sr in srs if _is_lab(sr)
         ]
     finally:
@@ -153,10 +176,26 @@ async def advance(
                 raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"order already {current}")
             nxt = STATES[cur_idx + 1]
 
-        # Mark the order completed on the FHIR resource once released.
         updated = _with_state(sr, nxt)
         if nxt == "released":
             updated["status"] = "completed"
+
+        # On collection: assign an accession (FR-8.2) + create the Specimen, so a
+        # barcode label can be printed and analyzers can reference it (2.3).
+        accession = _accession_of(sr)
+        if nxt == "collected" and not accession:
+            accession = _new_accession()
+            updated.setdefault("identifier", []).append(
+                {"system": ACCESSION_SYSTEM, "value": accession}
+            )
+            await fhir.create("Specimen", {
+                "resourceType": "Specimen",
+                "status": "available",
+                "accessionIdentifier": {"system": ACCESSION_SYSTEM, "value": accession},
+                "subject": {"reference": f"Patient/{pid}"},
+                "request": [{"reference": f"ServiceRequest/{service_request_id}"}],
+            }, token)
+
         await fhir.update("ServiceRequest", service_request_id, updated, token)
 
         session.add(AuditOutbox(event={
@@ -169,6 +208,28 @@ async def advance(
         }))
         logger.info("lab state change", extra={"order": service_request_id, "to": nxt})
         return LabOrderState(id=service_request_id, test=_cc_text(sr.get("code")),
-                             state=nxt, priority=sr.get("priority"))
+                             state=nxt, priority=sr.get("priority"), accession=accession)
+    finally:
+        await fhir.close()
+
+
+@router.get("/{service_request_id}/label")
+async def label(
+    service_request_id: str,
+    principal: Annotated[Principal, Depends(require_user)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> Response:
+    """Printable specimen barcode label (Code 128 of the accession, FR-8.2).
+    Returns SVG so it prints crisply at any size."""
+    fhir = FHIRClient(settings.fhir_base_url)
+    try:
+        try:
+            sr = await fhir.read("ServiceRequest", service_request_id)
+        except Exception:  # noqa: BLE001
+            raise HTTPException(status_code=404, detail="lab order not found")
+        accession = _accession_of(sr)
+        if not accession:
+            raise HTTPException(status_code=409, detail="no accession yet — collect the specimen first")
+        return Response(content=_barcode_svg(accession), media_type="image/svg+xml")
     finally:
         await fhir.close()

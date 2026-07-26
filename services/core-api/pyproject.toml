@@ -20,6 +20,9 @@ dependencies = [
     "opentelemetry-instrumentation-fastapi>=0.46b0",
     # Prometheus /metrics for the golden-signals dashboard (10 §6, infra/observability).
     "prometheus-fastapi-instrumentator>=7.0",
+    # Specimen barcode labels (Code 39/128) for the lab network (FR-8.2). Pure
+    # Python, no system deps; renders SVG server-side for printing.
+    "python-barcode>=0.15",
 ]
 
 [dependency-groups]
