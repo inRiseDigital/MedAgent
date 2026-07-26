@@ -74,6 +74,7 @@ async def _chain_head(fhir: FHIRClient) -> tuple[int, str]:
 # Map outbox event types to FHIR AuditEvent.action (C/R/U/D/E).
 _ACTION = {
     "patient_registered": "C",
+    "birth_enrolment": "C",
     "checkin": "C",
     "proposal_committed": "C",
     "queue_state_change": "U",

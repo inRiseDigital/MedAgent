@@ -126,6 +126,107 @@ async def register_patient(
     return _to_out(row)
 
 
+BIRTH_REG_SYSTEM = "https://fhir.medagent.health.lk/id/birth-registration"
+GUARDIAN_EXT = "https://fhir.medagent.health.lk/ext/guardian"
+
+
+class BirthEnrolRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    sex: str = "unknown"                 # male | female | other | unknown
+    birth_date: str                      # YYYY-MM-DD
+    mother_phn: str = Field(min_length=1)
+    birth_registration_no: str | None = None
+
+
+@router.post("/newborn", status_code=status.HTTP_201_CREATED)
+async def enrol_newborn(
+    body: BirthEnrolRequest,
+    request: Request,
+    principal: Annotated[Principal, Depends(require_user)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> dict[str, Any]:
+    """Create a lifetime profile at birth (FR-7.1/7.2, backlog 4.1): issue a PHN,
+    create the FHIR Patient, link to the mother, and grant a time-bound guardian
+    proxy (expires at majority). SLUDI links later via the reserved adapter."""
+    auth = request.headers.get("authorization", "")
+    token = auth[7:] if auth.lower().startswith("bearer ") else None
+    fhir = FHIRClient(settings.fhir_base_url)
+    try:
+        mothers = await fhir.search("Patient", {"identifier": f"{PHN_SYSTEM}|{body.mother_phn}"})
+        if not mothers:
+            raise HTTPException(status_code=404, detail=f"mother not found for PHN {body.mother_phn}")
+        mn = (mothers[0].get("name") or [{}])[0]
+        mother_name = mn.get("text") or " ".join(mn.get("given", []) + [mn.get("family", "")]).strip() or "Mother"
+
+        # Issue the newborn's PHN via the MPI (same path as registration).
+        row: PatientMPI | None = None
+        for _ in range(_PHN_ISSUE_RETRIES):
+            candidate = PatientMPI(
+                phn=phn_mod.generate_phn(),
+                demographics={"name": body.name, "sex": body.sex, "dob": body.birth_date,
+                              "mother_phn": body.mother_phn},
+            )
+            session.add(candidate)
+            try:
+                await session.flush()
+            except IntegrityError:
+                await session.rollback()
+                continue
+            row = candidate
+            break
+        if row is None:
+            raise HTTPException(status_code=500, detail="could not issue a unique PHN")
+        newborn_phn = row.phn
+
+        identifiers = [{"system": PHN_SYSTEM, "value": newborn_phn}]
+        if body.birth_registration_no:
+            identifiers.append({"system": BIRTH_REG_SYSTEM, "value": body.birth_registration_no})
+        created = await fhir.create("Patient", {
+            "resourceType": "Patient",
+            "identifier": identifiers,
+            "name": [{"text": body.name}],
+            "gender": body.sex,
+            "birthDate": body.birth_date,
+        }, token)
+        newborn_fid = str(created["id"])
+
+        # Guardian proxy (the mother), time-bound to majority (birth year + 18).
+        try:
+            majority = f"{int(body.birth_date[:4]) + 18}{body.birth_date[4:]}"
+        except ValueError:
+            majority = None
+        rp = await fhir.create("RelatedPerson", {
+            "resourceType": "RelatedPerson",
+            "patient": {"reference": f"Patient/{newborn_fid}"},
+            "relationship": [{"coding": [{"system": "http://terminology.hl7.org/CodeSystem/v3-RoleCode",
+                                          "code": "MTH", "display": "mother"}]}],
+            "name": [{"text": mother_name}],
+            "identifier": [{"system": PHN_SYSTEM, "value": body.mother_phn}],
+            "extension": [{"url": GUARDIAN_EXT, "extension": (
+                [{"url": "rights", "valueString": "proxy-full"}]
+                + ([{"url": "expiresAt", "valueDate": majority}] if majority else [])
+            )}],
+        }, token)
+
+        session.add(AuditOutbox(event={
+            "type": "birth_enrolment", "actor": principal.subject,
+            "patient_fhir_id": newborn_fid, "committed": f"Patient/{newborn_fid}",
+            "mother_phn_last4": body.mother_phn[-4:],
+        }))
+        logger.info("newborn enrolled", extra={"patient_id": str(row.id)})
+        return {
+            "newborn_phn": newborn_phn,
+            "newborn_phn_display": phn_mod.format_phn(newborn_phn),
+            "newborn_fhir_id": newborn_fid,
+            "guardian": f"RelatedPerson/{rp.get('id')}",
+            "guardian_of": mother_name,
+            "guardian_expires": majority,
+        }
+    finally:
+        await fhir.close()
+
+
 @router.get("", response_model=list[PatientOut])
 async def search_patients(
     principal: Annotated[Principal, Depends(require_user)],
@@ -181,7 +282,7 @@ async def _load_summary(fhir: FHIRClient, phn: str) -> tuple[dict[str, Any], str
     patient = matches[0]
     pid = str(patient["id"])
     name = (patient.get("name") or [{}])[0]
-    full = " ".join(name.get("given", []) + [name.get("family", "")]).strip()
+    full = name.get("text") or " ".join(name.get("given", []) + [name.get("family", "")]).strip()
 
     conditions = await fhir.search("Condition", {"patient": pid, "clinical-status": "active"})
     meds = await fhir.search("MedicationRequest", {"patient": pid, "status": "active"})
