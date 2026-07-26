@@ -38,6 +38,8 @@ _ACTION = {
     "consent_change": "U",
     "record_exported": "E",
     "lab_state_change": "U",
+    "lab_result_released": "C",
+    "lab_critical_value": "R",
 }
 
 

@@ -57,6 +57,30 @@ def _barcode_svg(value: str) -> bytes:
 # The specimen lifecycle. Linear: an order advances one step at a time.
 STATES = ["ordered", "collected", "in-transit", "received", "in-progress", "resulted", "released"]
 
+# DEV reference ranges keyed by LOINC (FR-8.4/8.5). Clinician-curated in prod;
+# a curated pilot subset here. normal = within [low, high]; critical = at/beyond
+# crit_low / crit_high (None = no critical bound on that side).
+REFERENCE: dict[str, dict[str, Any]] = {
+    "2823-3": {"low": 3.5, "high": 5.1, "crit_low": 2.8, "crit_high": 6.0},   # Potassium mmol/L
+    "1558-6": {"low": 70, "high": 100, "crit_low": 40, "crit_high": 500},     # Fasting glucose mg/dL
+    "2160-0": {"low": 60, "high": 110, "crit_low": None, "crit_high": 400},   # Creatinine umol/L
+    "4548-4": {"low": 4.0, "high": 5.6, "crit_low": None, "crit_high": 15},   # HbA1c %
+    "718-7":  {"low": 12, "high": 17, "crit_low": 7, "crit_high": None},      # Haemoglobin g/dL
+}
+
+
+def _classify(loinc: str | None, value: float) -> str:
+    """normal | abnormal | critical | unverifiable (no reference range)."""
+    r = REFERENCE.get(loinc or "")
+    if not r:
+        return "unverifiable"
+    cl, ch = r.get("crit_low"), r.get("crit_high")
+    if (cl is not None and value <= cl) or (ch is not None and value >= ch):
+        return "critical"
+    if value < r["low"] or value > r["high"]:
+        return "abnormal"
+    return "normal"
+
 
 def _bearer(request: Request) -> str | None:
     h = request.headers.get("authorization", "")
@@ -332,5 +356,93 @@ async def analyzer_result(
         await _audit_lab(session, principal.subject, pid, sr_id, current, "resulted")
         return {"accession": body.accession, "order_id": sr_id,
                 "result": f"Observation/{obs.get('id')}", "state": "resulted"}
+    finally:
+        await fhir.close()
+
+
+# --- Result release + critical-value alert (FR-8.4/8.5, backlog 2.4) ---------
+
+class ReleaseRequest(BaseModel):
+    validated_by: str | None = None  # pathologist id — required to release abnormals
+
+
+def _loinc_of(res: dict[str, Any]) -> str | None:
+    return next((c.get("code") for c in (res.get("code") or {}).get("coding", [])
+                 if c.get("system") == "http://loinc.org"), None)
+
+
+@router.post("/{service_request_id}/release")
+async def release(
+    service_request_id: str,
+    body: ReleaseRequest,
+    request: Request,
+    principal: Annotated[Principal, Depends(require_user)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> dict[str, Any]:
+    """Release a resulted order. Normal results auto-release as a final
+    DiagnosticReport; abnormal/critical need a pathologist (`validated_by`);
+    critical values raise an immediate alert to the ordering doctor (FR-8.5)."""
+    token = _bearer(request)
+    fhir = FHIRClient(settings.fhir_base_url)
+    try:
+        try:
+            sr = await fhir.read("ServiceRequest", service_request_id)
+        except Exception:  # noqa: BLE001
+            raise HTTPException(status_code=404, detail="lab order not found")
+        if not _is_lab(sr):
+            raise HTTPException(status_code=422, detail="not a laboratory order")
+        sr_id = str(sr["id"])
+        pid = str(sr.get("subject", {}).get("reference", "")).split("/")[-1]
+        if _state_of(sr) != "resulted":
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT,
+                                detail=f"order is '{_state_of(sr)}', must be 'resulted' to release")
+
+        obs_list = await fhir.search("Observation", {"based-on": f"ServiceRequest/{sr_id}"})
+        if not obs_list:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="no result to release")
+        obs = obs_list[-1]
+        value = (obs.get("valueQuantity") or {}).get("value")
+        loinc = _loinc_of(obs)
+        cls = _classify(loinc, float(value)) if value is not None else "unverifiable"
+        critical = cls == "critical"
+
+        # Critical → alert the ordering doctor immediately, even before release.
+        if critical:
+            session.add(AuditOutbox(event={
+                "type": "lab_critical_value", "actor": principal.subject, "patient_fhir_id": pid,
+                "committed": f"ServiceRequest/{sr_id}", "loinc": loinc, "value": value,
+            }))
+
+        # Auto-verify normals; abnormal/critical/unverifiable need a pathologist.
+        if cls != "normal" and not body.validated_by:
+            return {"released": False, "requires_validation": True,
+                    "classification": cls, "critical": critical, "value": value}
+
+        interp = {"normal": "N", "abnormal": "A", "critical": "AA"}.get(cls, "N")
+        obs["status"] = "final"
+        obs["interpretation"] = [{"coding": [{
+            "system": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation", "code": interp}]}]
+        await fhir.update("Observation", str(obs["id"]), obs, token)
+        report = await fhir.create("DiagnosticReport", {
+            "resourceType": "DiagnosticReport",
+            "status": "final",
+            "category": [{"coding": [{"system": "http://terminology.hl7.org/CodeSystem/v2-0074", "code": "LAB"}]}],
+            "code": sr.get("code") or {"text": "Laboratory report"},
+            "subject": {"reference": f"Patient/{pid}"},
+            "basedOn": [{"reference": f"ServiceRequest/{sr_id}"}],
+            "result": [{"reference": f"Observation/{obs['id']}"}],
+            "conclusion": f"{cls} result" + (" — CRITICAL" if critical else ""),
+        }, token)
+        await fhir.update("ServiceRequest", sr_id, {**_with_state(sr, "released"), "status": "completed"}, token)
+        await _audit_lab(session, principal.subject, pid, sr_id, "resulted", "released")
+        session.add(AuditOutbox(event={
+            "type": "lab_result_released", "actor": principal.subject, "patient_fhir_id": pid,
+            "committed": f"DiagnosticReport/{report.get('id')}", "classification": cls,
+            "validated_by": body.validated_by,
+        }))
+        return {"released": True, "state": "released",
+                "report": f"DiagnosticReport/{report.get('id')}",
+                "classification": cls, "critical": critical, "validated_by": body.validated_by}
     finally:
         await fhir.close()
