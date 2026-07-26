@@ -130,6 +130,23 @@ export async function fetchPatientBrief(phn: string): Promise<PatientBrief> {
   return coreApiGet<PatientBrief>(`/api/v1/patients/${encodeURIComponent(phn)}/brief`);
 }
 
+export interface ChildHealthRecord {
+  child: { phn: string; name: string; sex?: string; birth_date?: string; age_months?: number };
+  immunizations: {
+    overdue: number;
+    schedule: { key: string; name: string; due?: string; status: string; given_on?: string | null }[];
+  };
+  growth: {
+    latest_flags: string[];
+    points: { date: string; age_months?: number; kind: "weight" | "height"; value: number; flags: string[] }[];
+  };
+  alerts: { severity: "block" | "warn" | string; text: string }[];
+}
+
+export async function fetchChildHealth(phn: string): Promise<ChildHealthRecord> {
+  return coreApiGet<ChildHealthRecord>(`/api/v1/patients/${encodeURIComponent(phn)}/chdr`);
+}
+
 export async function fetchAccessLog(phn: string): Promise<AccessLogEntry[]> {
   return coreApiGet<AccessLogEntry[]>(
     `/api/v1/audit/access-log?patient=${encodeURIComponent(phn)}`,

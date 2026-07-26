@@ -9,8 +9,16 @@ import { getTranslations } from "next-intl/server";
 import { AlertTriangle, ClipboardList, HeartPulse, Pill, ShieldAlert, Siren } from "lucide-react";
 import { Badge, Card, CardContent } from "@medagent/ui";
 
-import { fetchPatientBrief, fetchPatientSummary, type PatientBrief, type PatientSummary } from "@/lib/api";
+import {
+  fetchChildHealth,
+  fetchPatientBrief,
+  fetchPatientSummary,
+  type ChildHealthRecord,
+  type PatientBrief,
+  type PatientSummary,
+} from "@/lib/api";
 import { ChatPanel } from "./chat-panel";
+import { ChildHealthCard } from "./child-health";
 import { ClinicalEntry } from "./clinical-entry";
 import { ProposalPanel } from "./proposal-panel";
 
@@ -52,6 +60,17 @@ export default async function PatientSessionPage({ params }: { params: Promise<{
     brief = await fetchPatientBrief(id); // ambient safety flags — best-effort
   } catch {
     brief = null;
+  }
+
+  // Child Health Development Record — only for children (under 5). Best-effort.
+  const isChild = summary?.patient.birthDate ? Number(age(summary.patient.birthDate)) < 5 : false;
+  let chdr: ChildHealthRecord | null = null;
+  if (isChild) {
+    try {
+      chdr = await fetchChildHealth(id);
+    } catch {
+      chdr = null;
+    }
   }
 
   const highAllergies = summary?.allergies.filter((a) => a.criticality === "high") ?? [];
@@ -197,6 +216,9 @@ export default async function PatientSessionPage({ params }: { params: Promise<{
           </div>
         </Card>
       </div>
+
+      {/* Child Health Development Record — children only */}
+      {chdr ? <ChildHealthCard chdr={chdr} /> : null}
 
       {/* Clinical entry — diagnosis / vital / note / order */}
       <Card aria-label="Clinical entry">

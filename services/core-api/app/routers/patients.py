@@ -423,6 +423,37 @@ async def _resolve_pid(fhir: FHIRClient, phn: str) -> dict[str, Any] | None:
     return rows[0] if rows else None
 
 
+async def _compute_immunizations(fhir: FHIRClient, patient: dict[str, Any]) -> dict[str, Any]:
+    """Immunization schedule + status for a resolved patient (shared by the
+    immunizations endpoint and the CHDR aggregate)."""
+    pid = str(patient["id"])
+    bd = date.fromisoformat(patient["birthDate"]) if patient.get("birthDate") else None
+    given = await fhir.search("Immunization", {"patient": pid})
+    given_on: dict[str, str] = {}
+    for im in given:
+        for ident in im.get("identifier", []):
+            if ident.get("system") == IMMUNIZATION_KEY_SYSTEM:
+                given_on[ident["value"]] = im.get("occurrenceDateTime", "")
+    today = datetime.now(timezone.utc).date()
+    rows, overdue = [], 0
+    for v in EPI_SCHEDULE:
+        due = _add_months(bd, v["months"]) if bd else None
+        if v["key"] in given_on:
+            st = "given"
+        elif due is None:
+            st = "unknown"
+        elif due < today:
+            st, overdue = "overdue", overdue + 1
+        elif due <= today + timedelta(days=30):
+            st = "due-soon"
+        else:
+            st = "upcoming"
+        rows.append({"key": v["key"], "name": v["name"],
+                     "due": due.isoformat() if due else None,
+                     "status": st, "given_on": given_on.get(v["key"])})
+    return {"schedule": rows, "overdue": overdue}
+
+
 @router.get("/{phn}/immunizations")
 async def immunizations(
     phn: str,
@@ -436,32 +467,7 @@ async def immunizations(
         patient = await _resolve_pid(fhir, phn)
         if not patient:
             raise HTTPException(status_code=404, detail=f"no FHIR patient for {phn}")
-        pid = str(patient["id"])
-        bd = date.fromisoformat(patient["birthDate"]) if patient.get("birthDate") else None
-        given = await fhir.search("Immunization", {"patient": pid})
-        given_on: dict[str, str] = {}
-        for im in given:
-            for ident in im.get("identifier", []):
-                if ident.get("system") == IMMUNIZATION_KEY_SYSTEM:
-                    given_on[ident["value"]] = im.get("occurrenceDateTime", "")
-        today = datetime.now(timezone.utc).date()
-        rows, overdue = [], 0
-        for v in EPI_SCHEDULE:
-            due = _add_months(bd, v["months"]) if bd else None
-            if v["key"] in given_on:
-                st = "given"
-            elif due is None:
-                st = "unknown"
-            elif due < today:
-                st, overdue = "overdue", overdue + 1
-            elif due <= today + timedelta(days=30):
-                st = "due-soon"
-            else:
-                st = "upcoming"
-            rows.append({"key": v["key"], "name": v["name"],
-                         "due": due.isoformat() if due else None,
-                         "status": st, "given_on": given_on.get(v["key"])})
-        return {"schedule": rows, "overdue": overdue}
+        return await _compute_immunizations(fhir, patient)
     finally:
         await fhir.close()
 
@@ -621,6 +627,44 @@ async def record_growth(
         await fhir.close()
 
 
+async def _compute_growth(fhir: FHIRClient, patient: dict[str, Any]) -> dict[str, Any]:
+    """Growth history + latest WHO flags for a resolved patient (shared by the
+    growth endpoint and the CHDR aggregate)."""
+    pid = str(patient["id"])
+    gender = patient.get("gender")
+    bd = date.fromisoformat(patient["birthDate"]) if patient.get("birthDate") else None
+    obs = await fhir.search("Observation",
+                            {"patient": pid, "category": "vital-signs", "_sort": "-date", "_count": "100"})
+    points: list[dict[str, Any]] = []
+    latest_w: tuple[str, float] | None = None
+    latest_h: tuple[str, float] | None = None
+    for o in obs:
+        loinc = next((c.get("code") for c in (o.get("code") or {}).get("coding", [])
+                      if c.get("system") == "http://loinc.org"), None)
+        if loinc not in (WEIGHT_LOINC, HEIGHT_LOINC):
+            continue
+        when = o.get("effectiveDateTime", "")[:10]
+        val = (o.get("valueQuantity") or {}).get("value")
+        if not when or val is None:
+            continue
+        age_m = _age_months(bd, date.fromisoformat(when))
+        kind = "weight" if loinc == WEIGHT_LOINC else "height"
+        flags = _assess_growth(gender, age_m, val if kind == "weight" else None,
+                               val if kind == "height" else None)
+        points.append({"date": when, "age_months": age_m, "kind": kind, "value": val, "flags": flags})
+        if kind == "weight" and (latest_w is None or when > latest_w[0]):
+            latest_w = (when, val)
+        if kind == "height" and (latest_h is None or when > latest_h[0]):
+            latest_h = (when, val)
+    latest_flags = _assess_growth(
+        gender,
+        _age_months(bd, date.fromisoformat(latest_w[0])) if latest_w else (
+            _age_months(bd, date.fromisoformat(latest_h[0])) if latest_h else None),
+        latest_w[1] if latest_w else None, latest_h[1] if latest_h else None,
+    )
+    return {"points": points, "latest_flags": latest_flags}
+
+
 @router.get("/{phn}/growth")
 async def growth(
     phn: str,
@@ -634,39 +678,45 @@ async def growth(
         patient = await _resolve_pid(fhir, phn)
         if not patient:
             raise HTTPException(status_code=404, detail=f"no FHIR patient for {phn}")
-        pid = str(patient["id"])
-        gender = patient.get("gender")
-        bd = date.fromisoformat(patient["birthDate"]) if patient.get("birthDate") else None
-        obs = await fhir.search("Observation",
-                                {"patient": pid, "category": "vital-signs", "_sort": "-date", "_count": "100"})
-        points: list[dict[str, Any]] = []
-        latest_w: tuple[str, float] | None = None
-        latest_h: tuple[str, float] | None = None
-        for o in obs:
-            loinc = next((c.get("code") for c in (o.get("code") or {}).get("coding", [])
-                          if c.get("system") == "http://loinc.org"), None)
-            if loinc not in (WEIGHT_LOINC, HEIGHT_LOINC):
-                continue
-            when = o.get("effectiveDateTime", "")[:10]
-            val = (o.get("valueQuantity") or {}).get("value")
-            if not when or val is None:
-                continue
-            age_m = _age_months(bd, date.fromisoformat(when))
-            kind = "weight" if loinc == WEIGHT_LOINC else "height"
-            flags = _assess_growth(gender, age_m, val if kind == "weight" else None,
-                                   val if kind == "height" else None)
-            points.append({"date": when, "age_months": age_m, "kind": kind, "value": val, "flags": flags})
-            if kind == "weight" and (latest_w is None or when > latest_w[0]):
-                latest_w = (when, val)
-            if kind == "height" and (latest_h is None or when > latest_h[0]):
-                latest_h = (when, val)
-        latest_flags = _assess_growth(
-            gender,
-            _age_months(bd, date.fromisoformat(latest_w[0])) if latest_w else (
-                _age_months(bd, date.fromisoformat(latest_h[0])) if latest_h else None),
-            latest_w[1] if latest_w else None, latest_h[1] if latest_h else None,
-        )
-        return {"points": points, "latest_flags": latest_flags}
+        return await _compute_growth(fhir, patient)
+    finally:
+        await fhir.close()
+
+
+@router.get("/{phn}/chdr")
+async def child_health_record(
+    phn: str,
+    principal: Annotated[Principal, Depends(require_user)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> dict[str, Any]:
+    """Child Health Development Record (FR-7.x) — the single aggregate the parent
+    portal and the midwife field view both render: demographics, immunization
+    schedule, growth history, and a consolidated alert list (overdue vaccines +
+    growth deviations)."""
+    fhir = FHIRClient(settings.fhir_base_url)
+    try:
+        patient = await _resolve_pid(fhir, phn)
+        if not patient:
+            raise HTTPException(status_code=404, detail=f"no FHIR patient for {phn}")
+        bd = patient.get("birthDate")
+        name = next((n for n in patient.get("name", [])), {})
+        full = name.get("text") or " ".join(name.get("given", []) + [name.get("family", "")]).strip()
+        imm = await _compute_immunizations(fhir, patient)
+        grw = await _compute_growth(fhir, patient)
+        age_m = _age_months(date.fromisoformat(bd), datetime.now(timezone.utc).date()) if bd else None
+        alerts: list[dict[str, str]] = []
+        overdue_names = [v["name"] for v in imm["schedule"] if v["status"] == "overdue"]
+        if overdue_names:
+            alerts.append({"severity": "warn",
+                           "text": f"{len(overdue_names)} overdue immunisation(s): {', '.join(overdue_names)}"})
+        for f in grw["latest_flags"]:
+            alerts.append({"severity": "block", "text": {"underweight": "Underweight for age (weight-for-age < -2SD)",
+                                                          "stunted": "Stunted (height-for-age < -2SD)"}.get(f, f)})
+        return {
+            "child": {"phn": phn, "name": full or "Unknown", "sex": patient.get("gender"),
+                      "birth_date": bd, "age_months": age_m},
+            "immunizations": imm, "growth": grw, "alerts": alerts,
+        }
     finally:
         await fhir.close()
 
