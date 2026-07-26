@@ -76,6 +76,7 @@ _ACTION = {
     "patient_registered": "C",
     "birth_enrolment": "C",
     "immunization_recorded": "C",
+    "growth_recorded": "C",
     "checkin": "C",
     "proposal_committed": "C",
     "queue_state_change": "U",
