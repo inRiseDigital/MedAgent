@@ -10,7 +10,7 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from app.audit import dispatch_once
+from app.audit import dispatch_once, verify_chain
 from app.auth import Principal, require_user
 from app.config import Settings
 from app.deps import get_settings
@@ -29,6 +29,14 @@ async def flush(request: Request) -> dict[str, int]:
     sm: async_sessionmaker = request.app.state.sessionmaker
     n = await dispatch_once(sm, settings.fhir_base_url)
     return {"dispatched": n}
+
+
+@internal_router.get("/verify")
+async def verify(request: Request) -> dict[str, Any]:
+    """Verify the tamper-evident audit hash chain (03 §5.4, backlog 0.2).
+    intact=false with broken_at_seq means an AuditEvent was altered."""
+    settings: Settings = request.app.state.settings
+    return await verify_chain(settings.fhir_base_url)
 
 
 @public_router.get("/access-log")

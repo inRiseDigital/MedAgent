@@ -41,7 +41,7 @@ services→Anthropic API (cross-border, PHI-minimised).
 |--------|-----------|-------|
 | Client tampers with request to read another patient | Portal PHN comes from the **session claim, never the client**; care-relationship decision service gates clinician reads | **Built** (app layer); FHIR-boundary enforcement **deferred — R-1** |
 | Prescription written bypassing safety | Deterministic Rx-safety engine computes the verdict server-side; the LLM only narrates; block is a hard stop; commit is safety-gated | **Built** |
-| Audit record altered/deleted to hide access | Audit written via transactional outbox → FHIR AuditEvent | **Partial** — tamper-evident hash-chaining is deferred with the interceptor (03 §5.4) |
+| Audit record altered/deleted to hide access | Audit written via transactional outbox → FHIR AuditEvent, now **hash-chained** (SHA-256 prevHash|content) with `/internal/audit/verify` | **Built** — altering any event breaks the chain and is detected |
 | Man-in-the-middle | TLS at the gateway; HAPI has no published port | **Built** |
 
 ### R — Repudiation

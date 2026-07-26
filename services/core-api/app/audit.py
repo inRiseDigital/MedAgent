@@ -15,6 +15,8 @@ compatible so the interceptor can take over without a data migration.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 from typing import Any
 
@@ -27,6 +29,47 @@ from app.models import AuditOutbox
 logger = logging.getLogger(__name__)
 
 _TYPE_SYSTEM = "https://fhir.medagent.health.lk/cs/audit-event-type"
+
+# Tamper-evident hash chain (03 §5.4, backlog 0.2). Each AuditEvent carries an
+# extension linking it to the previous: hash = SHA-256(prevHash | canonical
+# fields). Altering any event's content changes its recomputed hash and breaks
+# the next event's prevHash link — detectable by GET /internal/audit/verify.
+AUDIT_HASH_EXT = "https://fhir.medagent.health.lk/ext/audit-hash"
+_GENESIS = "GENESIS"
+
+
+def _chain_basis(ae: dict[str, Any]) -> str:
+    """Canonical, stable projection of the AuditEvent's meaningful content. Does
+    NOT include the hash extension or HAPI-added fields (id/meta), so it is
+    reproducible at verify time."""
+    return json.dumps(
+        {k: ae.get(k) for k in ("type", "action", "recorded", "agent", "entity", "outcome", "outcomeDesc")},
+        sort_keys=True, separators=(",", ":"), default=str,
+    )
+
+
+def _chain_hash(prev: str, ae: dict[str, Any]) -> str:
+    return hashlib.sha256(f"{prev}|{_chain_basis(ae)}".encode()).hexdigest()
+
+
+def _read_hash_ext(ae: dict[str, Any]) -> dict[str, Any] | None:
+    for e in ae.get("extension", []):
+        if e.get("url") == AUDIT_HASH_EXT:
+            out: dict[str, Any] = {}
+            for x in e.get("extension", []):
+                out[x["url"]] = x.get("valueString", x.get("valueInteger"))
+            return out
+    return None
+
+
+async def _chain_head(fhir: FHIRClient) -> tuple[int, str]:
+    """The (seq, hash) of the most recent chained AuditEvent, or (0, GENESIS)."""
+    recent = await fhir.search("AuditEvent", {"_sort": "-_lastUpdated", "_count": "10"})
+    for ae in recent:
+        h = _read_hash_ext(ae)
+        if h and h.get("hash"):
+            return int(h.get("seq") or 0), str(h["hash"])
+    return 0, _GENESIS
 
 # Map outbox event types to FHIR AuditEvent.action (C/R/U/D/E).
 _ACTION = {
@@ -99,15 +142,55 @@ async def dispatch_once(
                     .limit(limit)
                 )
             ).scalars().all()
+            seq, prev_hash = await _chain_head(fhir) if rows else (0, _GENESIS)
             for row in rows:
                 try:
-                    await fhir.create("AuditEvent", _to_audit_event(row))
+                    ae = _to_audit_event(row)
+                    h = _chain_hash(prev_hash, ae)
+                    ae.setdefault("extension", []).append({
+                        "url": AUDIT_HASH_EXT,
+                        "extension": [
+                            {"url": "seq", "valueInteger": seq + 1},
+                            {"url": "prevHash", "valueString": prev_hash},
+                            {"url": "hash", "valueString": h},
+                        ],
+                    })
+                    await fhir.create("AuditEvent", ae)
                 except Exception:  # noqa: BLE001 — leave undispatched, retry next cycle
                     logger.exception("audit dispatch failed for row %s", row.id)
                     continue
+                seq, prev_hash = seq + 1, h  # advance the chain only on success
                 row.dispatched = True
                 await session.commit()
                 dispatched += 1
     finally:
         await fhir.close()
     return dispatched
+
+
+async def verify_chain(fhir_base_url: str, limit: int = 500) -> dict[str, Any]:
+    """Walk the chained AuditEvents in sequence and recompute the hash chain.
+    Returns whether it is intact and, if not, the seq where it first broke —
+    proof the audit trail has not been altered (03 §5.4, NFR-8)."""
+    fhir = FHIRClient(fhir_base_url)
+    try:
+        # newest-first so the chained events (created since 0.2 shipped) are in
+        # the page even when the store holds many older, pre-chain events.
+        events = await fhir.search("AuditEvent", {"_sort": "-_lastUpdated", "_count": str(limit)})
+    finally:
+        await fhir.close()
+
+    chained = []
+    for ae in events:
+        ext = _read_hash_ext(ae)
+        if ext and ext.get("hash"):
+            chained.append((int(ext.get("seq") or 0), ext, ae))
+    chained.sort(key=lambda t: t[0])
+
+    prev = _GENESIS
+    for seq, ext, ae in chained:
+        recomputed = _chain_hash(str(ext.get("prevHash") or _GENESIS), ae)
+        if str(ext.get("prevHash")) != prev or recomputed != str(ext.get("hash")):
+            return {"events": len(chained), "intact": False, "broken_at_seq": seq}
+        prev = str(ext["hash"])
+    return {"events": len(chained), "intact": True, "broken_at_seq": None}

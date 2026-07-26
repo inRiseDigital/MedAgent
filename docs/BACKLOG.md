@@ -11,8 +11,7 @@ Status: `[ ]` to-do · `[~]` in progress · `[x]` done.
       *Done when:* chat streams a response with no Anthropic request (`AGENT_LLM_MODE=stub`).
 - [ ] **0.1 FHIR-boundary interceptors** (authz + consent + read-audit, real logic, side-port tested).
       *Done when:* grant→200, no-grant→403, core-api down→deny; reads show in the access log.
-- [ ] **0.2 Audit hash-chaining** (tamper-evident).
-      *Done when:* altering one audit row fails chain verification.
+- [x] **0.2 Audit hash-chaining** (tamper-evident). Each AuditEvent carries SHA-256(prevHash|content); `GET /internal/audit/verify` recomputes the chain. Verified: clean → intact:true (3 events); tamper one event → intact:false, broken_at_seq:3; restore → intact:true.
 
 ## Track 1 — Complete clinical write-back (unlocks lab/imaging/schedule agents) ✅
 - [x] **1.1 Coded diagnosis** (ICD-10 → `Condition`). Verified: commit → `Condition/1101`, ICD-10 coded, audited; doctor UI (Clinical-entry panel).
