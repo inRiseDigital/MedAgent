@@ -37,6 +37,7 @@ _ACTION = {
     "consent_denied": "R",
     "consent_change": "U",
     "record_exported": "E",
+    "lab_state_change": "U",
 }
 
 

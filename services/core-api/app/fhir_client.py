@@ -137,6 +137,27 @@ class FHIRClient:
         assert last is not None
         raise last
 
+    async def update(
+        self, resource_type: str, resource_id: str, resource: dict[str, Any], token: str | None = None
+    ) -> dict[str, Any]:
+        """PUT an existing resource (update in place). Retries once on a dropped
+        connection (RemoteProtocolError = server disconnected without a response)."""
+        last: Exception | None = None
+        for _ in range(2):
+            try:
+                resp = await self._client.put(
+                    f"/{resource_type}/{resource_id}",
+                    json={**resource, "id": resource_id},
+                    headers={"Content-Type": "application/fhir+json", **_auth_header(token)},
+                )
+                resp.raise_for_status()
+                return dict(resp.json())
+            except httpx.RemoteProtocolError as exc:
+                last = exc
+                continue
+        assert last is not None
+        raise last
+
 
 def _auth_header(token: str | None) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"} if token else {}

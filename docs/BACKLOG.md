@@ -21,7 +21,7 @@ Status: `[ ]` to-do · `[~]` in progress · `[x]` done.
 - [x] **1.4 Lab / imaging orders** (→ `ServiceRequest`). Verified: lab → `ServiceRequest/1107`, imaging → `ServiceRequest/1108`, audited; UI. (Agent-invoked ordering arrives with the Lab agent 2.6, in live LLM mode.)
 
 ## Track 2 — Lab network (first national module)
-- [ ] **2.1 LIS hub + specimen state machine** (ordered→collected→…→released). *Done when:* transitions via API, each audited.
+- [x] **2.1 LIS hub + specimen state machine** (ordered→collected→…→released). Verified: advanced through every state; invalid skip + past-released both 409; each transition audited (`lab_state_change`). core-api `lab` router; state on the ServiceRequest.
 - [ ] **2.2 Accession + barcode** (Code 39/128). *Done when:* sample gets accession + scannable barcode.
 - [ ] **2.3 Analyzer interface (ASTM/HL7)** + simulator. *Done when:* sim scans barcode, pulls order, pushes result.
 - [ ] **2.4 Result release + critical alert** (auto-verify normals; validate abnormals → `DiagnosticReport` LOINC). *Done when:* normal auto-releases; critical pages the doctor.
