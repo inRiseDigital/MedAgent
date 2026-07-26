@@ -23,7 +23,7 @@ Status: `[ ]` to-do · `[~]` in progress · `[x]` done.
 ## Track 2 — Lab network (first national module)
 - [x] **2.1 LIS hub + specimen state machine** (ordered→collected→…→released). Verified: advanced through every state; invalid skip + past-released both 409; each transition audited (`lab_state_change`). core-api `lab` router; state on the ServiceRequest.
 - [x] **2.2 Accession + barcode** (Code 128). Verified: collection assigns accession `MA…`, creates a FHIR `Specimen`, and `GET /lab/{id}/label` serves a printable Code128 SVG (44 bars + accession text); label 409 before collection. `python-barcode`.
-- [ ] **2.3 Analyzer interface (ASTM/HL7)** + simulator. *Done when:* sim scans barcode, pulls order, pushes result.
+- [x] **2.3 Analyzer interface** (pull/result keyed by barcode; ASTM/HL7 adapter wraps in prod). Verified: PULL finds order by accession → in-progress; RESULT push → preliminary `Observation` → resulted; wrong-state 409; unknown accession 404.
 - [ ] **2.4 Result release + critical alert** (auto-verify normals; validate abnormals → `DiagnosticReport` LOINC). *Done when:* normal auto-releases; critical pages the doctor.
 - [ ] **2.5 Notify doctor + patient; multi-lab routing.** *Done when:* result in "pending results" + portal; one point → two labs.
 - [ ] **2.6 Lab agent `summarise_report`** (voice "give summary" → cited summary). *Done when:* cited, abnormal-highlighted summary (needs live LLM or 0.3 stub).

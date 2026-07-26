@@ -233,3 +233,104 @@ async def label(
         return Response(content=_barcode_svg(accession), media_type="image/svg+xml")
     finally:
         await fhir.close()
+
+
+# --- Analyzer interface (FR-8.3, backlog 2.3) --------------------------------
+# Bidirectional interface: the analyzer scans the barcode, PULLs the order, runs,
+# and PUSHes the result. Modelled here as JSON keyed by the accession; a real
+# deployment wraps these in an ASTM E1394 / HL7 v2 (ORU) framing adapter.
+
+async def _find_by_accession(fhir: FHIRClient, accession: str) -> dict[str, Any] | None:
+    rows = await fhir.search("ServiceRequest", {"identifier": f"{ACCESSION_SYSTEM}|{accession}"})
+    return rows[0] if rows else None
+
+
+async def _audit_lab(session: AsyncSession, actor: str, pid: str, sr_id: str, frm: str, to: str) -> None:
+    session.add(AuditOutbox(event={
+        "type": "lab_state_change", "actor": actor, "patient_fhir_id": pid,
+        "committed": f"ServiceRequest/{sr_id}", "from_state": frm, "to_state": to,
+    }))
+
+
+@router.post("/analyzer/pull")
+async def analyzer_pull(
+    accession: str,
+    request: Request,
+    principal: Annotated[Principal, Depends(require_user)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> dict[str, Any]:
+    """Analyzer scans the barcode and pulls the order. Requires the specimen to be
+    received at the lab; moves it to in-progress and returns what to run."""
+    token = _bearer(request)
+    fhir = FHIRClient(settings.fhir_base_url)
+    try:
+        sr = await _find_by_accession(fhir, accession)
+        if not sr or not _is_lab(sr):
+            raise HTTPException(status_code=404, detail="no lab order for that accession")
+        sr_id = str(sr["id"])
+        pid = str(sr.get("subject", {}).get("reference", "")).split("/")[-1]
+        current = _state_of(sr)
+        if current != "received":
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT,
+                                detail=f"specimen is '{current}', must be 'received' to pull")
+        await fhir.update("ServiceRequest", sr_id, _with_state(sr, "in-progress"), token)
+        await _audit_lab(session, principal.subject, pid, sr_id, current, "in-progress")
+        loinc = next((c.get("code") for c in (sr.get("code") or {}).get("coding", [])
+                      if c.get("system") == "http://loinc.org"), None)
+        return {"accession": accession, "order_id": sr_id, "test": _cc_text(sr.get("code")),
+                "loinc": loinc, "patient": pid, "state": "in-progress"}
+    finally:
+        await fhir.close()
+
+
+class AnalyzerResult(BaseModel):
+    accession: str
+    value: float
+    unit: str | None = ""
+    loinc: str | None = None
+    test: str | None = None
+
+
+@router.post("/analyzer/result")
+async def analyzer_result(
+    body: AnalyzerResult,
+    request: Request,
+    principal: Annotated[Principal, Depends(require_user)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> dict[str, Any]:
+    """Analyzer pushes a result back. Stores a preliminary Observation linked to
+    the order and moves the specimen to resulted (release/validation is 2.4)."""
+    token = _bearer(request)
+    fhir = FHIRClient(settings.fhir_base_url)
+    try:
+        sr = await _find_by_accession(fhir, body.accession)
+        if not sr or not _is_lab(sr):
+            raise HTTPException(status_code=404, detail="no lab order for that accession")
+        sr_id = str(sr["id"])
+        pid = str(sr.get("subject", {}).get("reference", "")).split("/")[-1]
+        current = _state_of(sr)
+        if current != "in-progress":
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT,
+                                detail=f"specimen is '{current}', must be 'in-progress' to accept a result")
+        code: dict[str, Any] = {"text": body.test or _cc_text(sr.get("code"))}
+        if body.loinc:
+            code["coding"] = [{"system": "http://loinc.org", "code": body.loinc}]
+        obs = await fhir.create("Observation", {
+            "resourceType": "Observation",
+            "status": "preliminary",  # released/validated in 2.4
+            "category": [{"coding": [{"system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                                      "code": "laboratory"}]}],
+            "code": code,
+            "subject": {"reference": f"Patient/{pid}"},
+            "basedOn": [{"reference": f"ServiceRequest/{sr_id}"}],
+            "valueQuantity": {"value": body.value, "unit": body.unit or "",
+                              "system": "http://unitsofmeasure.org", "code": body.unit or ""},
+        }, token)
+        await fhir.update("ServiceRequest", sr_id, _with_state(sr, "resulted"), token)
+        await _audit_lab(session, principal.subject, pid, sr_id, current, "resulted")
+        return {"accession": body.accession, "order_id": sr_id,
+                "result": f"Observation/{obs.get('id')}", "state": "resulted"}
+    finally:
+        await fhir.close()
