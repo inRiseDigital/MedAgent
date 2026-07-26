@@ -98,6 +98,7 @@ export interface PatientSummary {
   allergies: { text: string; criticality: string; ref: string }[];
   vitals: { text: string; value?: number; unit?: string; when?: string }[];
   appointments: { start?: string; status?: string }[];
+  results: { text: string; conclusion?: string; critical: boolean; ref: string }[];
 }
 
 export interface AccessLogEntry {

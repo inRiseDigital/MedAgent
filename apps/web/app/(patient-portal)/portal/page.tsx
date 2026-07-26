@@ -131,6 +131,26 @@ export default async function PortalHomePage() {
 
           <Card>
             <CardHeader>
+              <CardTitle>{t("results")}</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {summary.results.length ? (
+                <ul className="space-y-1">
+                  {summary.results.map((r) => (
+                    <li key={r.ref} className="flex items-center justify-between gap-3 text-sm">
+                      <span>{r.text}</span>
+                      {r.critical ? <Badge variant="block">{t("resultCritical")}</Badge> : null}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-sm text-muted-foreground">{t("none")}</p>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
               <CardTitle>{t("exportTitle")}</CardTitle>
             </CardHeader>
             <CardContent>

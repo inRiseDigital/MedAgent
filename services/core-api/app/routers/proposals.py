@@ -176,6 +176,10 @@ def _build_resource(kind: str, pid: str, payload: dict[str, Any], principal: Pri
             "requester": {"display": principal.subject},
             "priority": payload.get("priority", "routine"),
         }
+        # Multi-lab routing (FR-8.1/8.8): the target lab the order is routed to —
+        # own hospital lab, a regional government lab, or (future) a private lab.
+        if payload.get("target_lab"):
+            res["performer"] = [{"display": payload["target_lab"]}]
         if enc:
             res["encounter"] = enc
         return "ServiceRequest", res

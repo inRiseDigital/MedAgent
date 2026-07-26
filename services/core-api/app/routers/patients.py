@@ -189,6 +189,9 @@ async def _load_summary(fhir: FHIRClient, phn: str) -> tuple[dict[str, Any], str
         "Observation", {"patient": pid, "category": "vital-signs", "_sort": "-date", "_count": "5"}
     )
     appts = await fhir.search("Appointment", {"patient": pid, "status": "booked", "_sort": "date"})
+    reports = await fhir.search(
+        "DiagnosticReport", {"patient": pid, "_sort": "-issued", "_count": "5"}
+    )
 
     summary = {
         "patient": {"phn": phn, "name": full or "Unknown", "gender": patient.get("gender"),
@@ -203,6 +206,9 @@ async def _load_summary(fhir: FHIRClient, phn: str) -> tuple[dict[str, Any], str
                     "unit": (o.get("valueQuantity") or {}).get("unit"),
                     "when": o.get("effectiveDateTime")} for o in vitals],
         "appointments": [{"start": ap.get("start"), "status": ap.get("status")} for ap in appts],
+        "results": [{"text": _cc_text(r.get("code")), "conclusion": r.get("conclusion"),
+                     "critical": bool(r.get("conclusion") and "CRITICAL" in r["conclusion"]),
+                     "ref": f"DiagnosticReport/{r.get('id')}"} for r in reports],
     }
     return summary, pid
 

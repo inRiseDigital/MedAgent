@@ -87,6 +87,8 @@
     "medications": "Current medications",
     "allergies": "Allergies",
     "appointments": "Upcoming appointments",
+    "results": "ஆய்வக முடிவுகள்",
+    "resultCritical": "மிக முக்கியமான",
     "accessLog": "Who accessed my record",
     "accessLogIntro": "Every time a clinician records or changes something in your record, it is logged here.",
     "accessLogEmpty": "No access recorded yet.",

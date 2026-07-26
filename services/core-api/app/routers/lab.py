@@ -129,12 +129,20 @@ async def _resolve_patient(fhir: FHIRClient, ref: str) -> str | None:
         return None
 
 
+def _target_lab(sr: dict[str, Any]) -> str | None:
+    for p in sr.get("performer", []):
+        if p.get("display"):
+            return p["display"]
+    return None
+
+
 class LabOrderState(BaseModel):
     id: str
     test: str
     state: str
     priority: str | None = None
     accession: str | None = None
+    target_lab: str | None = None
 
 
 @router.get("/worklist", response_model=list[LabOrderState])
@@ -153,7 +161,7 @@ async def worklist(
         return [
             LabOrderState(id=str(sr["id"]), test=_cc_text(sr.get("code")),
                           state=_state_of(sr), priority=sr.get("priority"),
-                          accession=_accession_of(sr))
+                          accession=_accession_of(sr), target_lab=_target_lab(sr))
             for sr in srs if _is_lab(sr)
         ]
     finally:
@@ -361,6 +369,52 @@ async def analyzer_result(
 
 
 # --- Result release + critical-value alert (FR-8.4/8.5, backlog 2.4) ---------
+
+class LabReport(BaseModel):
+    id: str
+    test: str
+    conclusion: str | None = None
+    value: float | None = None
+    unit: str | None = None
+    critical: bool = False
+    issued: str | None = None
+
+
+@router.get("/reports", response_model=list[LabReport])
+async def reports(
+    patient: str,
+    principal: Annotated[Principal, Depends(require_user)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> list[LabReport]:
+    """Released lab reports for a patient — the doctor's 'pending results' list
+    and the source for the patient portal (FR-2.3 / FR-5.3, backlog 2.5)."""
+    fhir = FHIRClient(settings.fhir_base_url)
+    try:
+        pid = await _resolve_patient(fhir, patient)
+        if not pid:
+            raise HTTPException(status_code=404, detail=f"no FHIR patient for {patient}")
+        reps = await fhir.search("DiagnosticReport", {"patient": pid, "_sort": "-issued"})
+        out: list[LabReport] = []
+        for r in reps:
+            value = unit = None
+            refs = [x.get("reference", "") for x in r.get("result", [])]
+            if refs:
+                try:
+                    obs = await fhir.read("Observation", refs[0].split("/")[-1])
+                    vq = obs.get("valueQuantity") or {}
+                    value, unit = vq.get("value"), vq.get("unit")
+                except Exception:  # noqa: BLE001
+                    pass
+            conclusion = r.get("conclusion")
+            out.append(LabReport(
+                id=str(r["id"]), test=_cc_text(r.get("code")), conclusion=conclusion,
+                value=value, unit=unit, critical=bool(conclusion and "CRITICAL" in conclusion),
+                issued=r.get("issued") or (r.get("meta") or {}).get("lastUpdated"),
+            ))
+        return out
+    finally:
+        await fhir.close()
+
 
 class ReleaseRequest(BaseModel):
     validated_by: str | None = None  # pathologist id — required to release abnormals

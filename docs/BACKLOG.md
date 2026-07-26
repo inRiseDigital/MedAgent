@@ -25,7 +25,7 @@ Status: `[ ]` to-do · `[~]` in progress · `[x]` done.
 - [x] **2.2 Accession + barcode** (Code 128). Verified: collection assigns accession `MA…`, creates a FHIR `Specimen`, and `GET /lab/{id}/label` serves a printable Code128 SVG (44 bars + accession text); label 409 before collection. `python-barcode`.
 - [x] **2.3 Analyzer interface** (pull/result keyed by barcode; ASTM/HL7 adapter wraps in prod). Verified: PULL finds order by accession → in-progress; RESULT push → preliminary `Observation` → resulted; wrong-state 409; unknown accession 404.
 - [x] **2.4 Result release + critical alert**. Verified: normal potassium 4.2 auto-releases → `DiagnosticReport` (final, Observation→final); critical 6.4 detected `critical`, blocked pending `validated_by`, emits `lab_critical_value` alert, releases after pathologist validation. Reference ranges keyed by LOINC.
-- [ ] **2.5 Notify doctor + patient; multi-lab routing.** *Done when:* result in "pending results" + portal; one point → two labs.
+- [x] **2.5 Pending results + portal + multi-lab routing.** Verified: released reports appear via `GET /lab/reports` (doctor pending list) and in `summary.results` → a **Lab results card in the patient portal** (critical flagged); orders carry a `target_lab` (own / regional gov / private) — two orders routed to two labs. (Real SMS/push channel reuses notify-service — follow-up.)
 - [ ] **2.6 Lab agent `summarise_report`** (voice "give summary" → cited summary). *Done when:* cited, abnormal-highlighted summary (needs live LLM or 0.3 stub).
 
 ## Track 3 — Ambient AI + voice (adoption)

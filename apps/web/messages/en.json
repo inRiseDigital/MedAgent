@@ -87,6 +87,8 @@
     "medications": "Current medications",
     "allergies": "Allergies",
     "appointments": "Upcoming appointments",
+    "results": "Lab results",
+    "resultCritical": "Critical",
     "accessLog": "Who accessed my record",
     "accessLogIntro": "Every time a clinician records or changes something in your record, it is logged here.",
     "accessLogEmpty": "No access recorded yet.",
