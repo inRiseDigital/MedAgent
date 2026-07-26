@@ -75,6 +75,7 @@ async def _chain_head(fhir: FHIRClient) -> tuple[int, str]:
 _ACTION = {
     "patient_registered": "C",
     "birth_enrolment": "C",
+    "immunization_recorded": "C",
     "checkin": "C",
     "proposal_committed": "C",
     "queue_state_change": "U",

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import html
 import logging
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Annotated, Any
 from uuid import UUID, uuid4
 
@@ -391,6 +391,123 @@ async def patient_brief(
         "problems": [x["text"] for x in summary["problems"]],
         "flags": flags,
     }
+
+
+# --- Immunization engine (FR-7.3, backlog 4.2) ------------------------------
+# Sri Lanka national EPI schedule (curated pilot subset). Due date = birth +
+# months. Given doses are FHIR Immunization resources tagged with the schedule
+# key; status is computed against today.
+IMMUNIZATION_KEY_SYSTEM = "https://fhir.medagent.health.lk/id/immunization-key"
+EPI_SCHEDULE = [
+    {"key": "bcg", "name": "BCG", "months": 0},
+    {"key": "opv0", "name": "OPV (birth dose)", "months": 0},
+    {"key": "penta1", "name": "Pentavalent 1 (DTP-HepB-Hib) + OPV 1", "months": 2},
+    {"key": "penta2", "name": "Pentavalent 2 + OPV 2", "months": 4},
+    {"key": "penta3", "name": "Pentavalent 3 + OPV 3", "months": 6},
+    {"key": "mmr1", "name": "MMR 1", "months": 9},
+    {"key": "je", "name": "Live JE", "months": 12},
+    {"key": "dtp_booster", "name": "DTP booster + OPV + MMR 2", "months": 18},
+]
+
+
+def _add_months(d: date, months: int) -> date:
+    m = d.month - 1 + months
+    y, mo = d.year + m // 12, m % 12 + 1
+    leap = y % 4 == 0 and (y % 100 != 0 or y % 400 == 0)
+    last = [31, 29 if leap else 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][mo - 1]
+    return date(y, mo, min(d.day, last))
+
+
+async def _resolve_pid(fhir: FHIRClient, phn: str) -> dict[str, Any] | None:
+    rows = await fhir.search("Patient", {"identifier": f"{PHN_SYSTEM}|{phn}"})
+    return rows[0] if rows else None
+
+
+@router.get("/{phn}/immunizations")
+async def immunizations(
+    phn: str,
+    principal: Annotated[Principal, Depends(require_user)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> dict[str, Any]:
+    """The child's immunization schedule with status (given / overdue / due-soon /
+    upcoming) — auto-generated from the birth date against the EPI schedule."""
+    fhir = FHIRClient(settings.fhir_base_url)
+    try:
+        patient = await _resolve_pid(fhir, phn)
+        if not patient:
+            raise HTTPException(status_code=404, detail=f"no FHIR patient for {phn}")
+        pid = str(patient["id"])
+        bd = date.fromisoformat(patient["birthDate"]) if patient.get("birthDate") else None
+        given = await fhir.search("Immunization", {"patient": pid})
+        given_on: dict[str, str] = {}
+        for im in given:
+            for ident in im.get("identifier", []):
+                if ident.get("system") == IMMUNIZATION_KEY_SYSTEM:
+                    given_on[ident["value"]] = im.get("occurrenceDateTime", "")
+        today = datetime.now(timezone.utc).date()
+        rows, overdue = [], 0
+        for v in EPI_SCHEDULE:
+            due = _add_months(bd, v["months"]) if bd else None
+            if v["key"] in given_on:
+                st = "given"
+            elif due is None:
+                st = "unknown"
+            elif due < today:
+                st, overdue = "overdue", overdue + 1
+            elif due <= today + timedelta(days=30):
+                st = "due-soon"
+            else:
+                st = "upcoming"
+            rows.append({"key": v["key"], "name": v["name"],
+                         "due": due.isoformat() if due else None,
+                         "status": st, "given_on": given_on.get(v["key"])})
+        return {"schedule": rows, "overdue": overdue}
+    finally:
+        await fhir.close()
+
+
+class GiveVaccineRequest(BaseModel):
+    key: str
+    date: str | None = None  # ISO date; defaults to today
+
+
+@router.post("/{phn}/immunizations", status_code=status.HTTP_201_CREATED)
+async def record_immunization(
+    phn: str,
+    body: GiveVaccineRequest,
+    request: Request,
+    principal: Annotated[Principal, Depends(require_user)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> dict[str, Any]:
+    """Record a given dose as a completed FHIR Immunization (FR-7.3), audited."""
+    auth = request.headers.get("authorization", "")
+    token = auth[7:] if auth.lower().startswith("bearer ") else None
+    v = next((x for x in EPI_SCHEDULE if x["key"] == body.key), None)
+    if not v:
+        raise HTTPException(status_code=422, detail=f"unknown vaccine key '{body.key}'")
+    occ = body.date or datetime.now(timezone.utc).date().isoformat()
+    fhir = FHIRClient(settings.fhir_base_url)
+    try:
+        patient = await _resolve_pid(fhir, phn)
+        if not patient:
+            raise HTTPException(status_code=404, detail=f"no FHIR patient for {phn}")
+        pid = str(patient["id"])
+        im = await fhir.create("Immunization", {
+            "resourceType": "Immunization",
+            "status": "completed",
+            "vaccineCode": {"text": v["name"]},
+            "patient": {"reference": f"Patient/{pid}"},
+            "occurrenceDateTime": occ,
+            "identifier": [{"system": IMMUNIZATION_KEY_SYSTEM, "value": body.key}],
+        }, token)
+        session.add(AuditOutbox(event={
+            "type": "immunization_recorded", "actor": principal.subject,
+            "patient_fhir_id": pid, "committed": f"Immunization/{im.get('id')}", "vaccine": body.key,
+        }))
+        return {"recorded": f"Immunization/{im.get('id')}", "vaccine": v["name"], "date": occ}
+    finally:
+        await fhir.close()
 
 
 def _li(items: list[str]) -> str:

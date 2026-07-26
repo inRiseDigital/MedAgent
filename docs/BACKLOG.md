@@ -34,7 +34,7 @@ Status: `[ ]` to-do · `[~]` in progress · `[x]` done.
 
 ## Track 4 — Lifetime record & child health
 - [x] **4.1 Birth enrolment** (FR-7.1/7.2/7.8). `POST /patients/newborn`: issues PHN via MPI, creates the FHIR Patient (+ birth-registration id), and a guardian `RelatedPerson` linking the mother with `proxy-full` rights expiring at majority. Verified: Baby Perera (PHN 429…, Patient/1192), guardian→mother Nimal, expires 2044-07-20, searchable + summary loads. (Guardian *portal login* proxy = follow-up.)
-- [ ] **4.2 Immunization engine** (auto-schedule, due/given/missed alerts). *Done when:* schedule at birth; missed dose alerts.
+- [x] **4.2 Immunization engine** (FR-7.3). `GET /patients/{phn}/immunizations` auto-generates the SL EPI schedule from the birth date with per-vaccine status (given/overdue/due-soon/upcoming) + overdue count; `POST` records a given dose as a FHIR Immunization (audited). Verified for Baby Perera: BCG+OPV overdue at birth; record BCG → given, overdue 2→1.
 - [ ] **4.3 Growth monitoring** (weight/height → WHO curves + malnutrition flag). *Done when:* low weight flags underweight.
 - [ ] **4.4 Midwife field PWA (offline)** + CHDR parent view. *Done when:* offline visit syncs; parent sees CHDR.
 
