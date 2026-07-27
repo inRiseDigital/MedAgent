@@ -101,8 +101,9 @@ class FHIRClient:
     async def search(
         self, resource_type: str, params: dict[str, str], token: str | None = None
     ) -> list[dict[str, Any]]:
-        """GET a search bundle and return its resources."""
-        resp = await self._get(f"/{resource_type}", params={**params, "_count": "50"}, token=token)
+        """GET a search bundle and return its resources. `_count` defaults to 50 but
+        a caller-supplied `_count` in params wins."""
+        resp = await self._get(f"/{resource_type}", params={"_count": "50", **params}, token=token)
         bundle = resp.json()
         return [e["resource"] for e in bundle.get("entry", []) if "resource" in e]
 

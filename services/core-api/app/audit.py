@@ -207,17 +207,31 @@ async def _drain(session: Any, fhir: FHIRClient, limit: int) -> int:
     return dispatched
 
 
-async def verify_chain(fhir_base_url: str, limit: int = 500) -> dict[str, Any]:
+async def verify_chain(fhir_base_url: str, limit: int = 5000) -> dict[str, Any]:
     """Walk the chained AuditEvents in sequence and recompute the hash chain.
     Returns whether it is intact and, if not, the seq where it first broke —
-    proof the audit trail has not been altered (03 §5.4, NFR-8)."""
+    proof the audit trail has not been altered (03 §5.4, NFR-8).
+
+    Robustness (learned the hard way): this must never report `intact: true` when
+    it simply could not read the chain. We fetch a plain page (no dependency on a
+    `_sort` param, which can silently return nothing on a cold search index) and
+    compare against the server's own count; a shortfall yields `intact: null` with
+    a reason rather than a false pass. We also explicitly flag duplicate sequence
+    numbers — the exact signature of a fork from concurrent dispatch.
+    """
     fhir = FHIRClient(fhir_base_url)
     try:
-        # newest-first so the chained events (created since 0.2 shipped) are in
-        # the page even when the store holds many older, pre-chain events.
-        events = await fhir.search("AuditEvent", {"_sort": "-_lastUpdated", "_count": str(limit)})
+        total = await _audit_count(fhir)
+        # Plain search, high _count — no reliance on a (possibly cold) sort index.
+        events = await fhir.search("AuditEvent", {"_count": str(limit)})
     finally:
         await fhir.close()
+
+    # False-pass guard: the store reports events but we retrieved none → a read
+    # problem, not an empty/intact chain.
+    if total > 0 and not events:
+        return {"events": 0, "total": total, "intact": None,
+                "error": "could not read AuditEvents (retrieved 0 of %d)" % total}
 
     chained = []
     for ae in events:
@@ -226,10 +240,34 @@ async def verify_chain(fhir_base_url: str, limit: int = 500) -> dict[str, Any]:
             chained.append((int(ext.get("seq") or 0), ext, ae))
     chained.sort(key=lambda t: t[0])
 
+    # Duplicate seq = a fork (two dispatchers minted the same seq). Detect it
+    # explicitly rather than relying on the linkage check downstream.
+    seqs = [s for s, _, _ in chained]
+    dup = next((s for s in seqs if seqs.count(s) > 1), None)
+    if dup is not None:
+        return {"events": len(chained), "total": total, "intact": False,
+                "broken_at_seq": dup, "error": f"duplicate sequence {dup} (chain fork)"}
+
+    # If we couldn't page the whole store, we can't vouch for the tail.
+    truncated = len(events) < total
+
     prev = _GENESIS
     for seq, ext, ae in chained:
         recomputed = _chain_hash(str(ext.get("prevHash") or _GENESIS), ae)
         if str(ext.get("prevHash")) != prev or recomputed != str(ext.get("hash")):
-            return {"events": len(chained), "intact": False, "broken_at_seq": seq}
+            return {"events": len(chained), "total": total, "intact": False, "broken_at_seq": seq}
         prev = str(ext["hash"])
-    return {"events": len(chained), "intact": True, "broken_at_seq": None}
+    out: dict[str, Any] = {"events": len(chained), "total": total,
+                           "intact": (None if truncated else True), "broken_at_seq": None}
+    if truncated:
+        out["error"] = f"verified {len(events)} of {total} events; tail not read"
+    return out
+
+
+async def _audit_count(fhir: FHIRClient) -> int:
+    """Server-reported total AuditEvent count (via _summary=count)."""
+    try:
+        resp = await fhir._get("/AuditEvent", params={"_summary": "count"}, token=None)
+        return int(resp.json().get("total") or 0)
+    except Exception:  # noqa: BLE001 — count is a guard, not the source of truth
+        return 0
