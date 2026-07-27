@@ -61,3 +61,25 @@ tests, (b) 0.1 boundary enforcement, (c) voice, (d) UI for Track 2/5/6.
 **Sequencing:** A → B → C → D. D is last because it is the only item that can
 break the running stack; it needs a service-auth handshake so core-api's own
 writes survive enforcement.
+
+## Completion status (this effort)
+
+- **A. Tests — DONE.** +30 regression tests (audit-chain tamper/fork/false-pass,
+  imaging/registry/growth rulesets, referral transitions, waitlist order, outbreak
+  signal, and the Rx-safety engine). Suites: core-api 40, agent-service 12, all green.
+- **B. UI — DONE (core).** Referral inbox screen + accept/reject/complete actions;
+  imaging + lab results cards on the patient page; nav + auth-gate + i18n. Full web
+  `tsc --noEmit` clean. *Remaining (B5):* migrate the pre-existing hardcoded English
+  in clinical-entry/dashboard into `messages/*` (cosmetic; new screens already gated
+  and localised where they add nav).
+- **C. Voice — DONE.** Web Speech dictation into the clinical note (3.2) + "give
+  summary" chat command (3.3), progressive-enhancement (hidden when unsupported).
+- **D. FHIR-boundary interceptor — LOGIC DONE, activation STAGED.** AuthzInterceptor
+  enforce mode implemented + 14 unit tests (JAR built, BUILD SUCCESS), shipped
+  default-off so runtime is untouched. *Remaining:* D2/D3 (Consent/Audit real logic)
+  and D5 (register + core-api header forwarding + side-port validation) are genuine
+  S2 — documented in `platform/fhir/README.md` and THREAT-MODEL R-1.
+
+**Verification note:** every phase now has automated tests except the peripheral
+stubs listed above (notify adapters, telemedicine SFU, queue transition matrix),
+which are deferred by design.
