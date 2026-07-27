@@ -41,15 +41,15 @@ tests, (b) 0.1 boundary enforcement, (c) voice, (d) UI for Track 2/5/6.
 - [x] A6. Analytics: outbreak threshold signal.
 
 ### B. UI wiring (demo value)
-- [ ] B1. Referrals inbox/outbox screen + act buttons.
-- [ ] B2. Imaging worklist (triaged reports, urgent-first).
-- [ ] B3. Lab worklist / results screen.
+- [x] B1. Referrals inbox/outbox screen + act buttons.
+- [x] B2. Imaging worklist (triaged reports, urgent-first).
+- [x] B3. Lab worklist / results screen.
 - [ ] B4. Scheduling / waitlist screen.
 - [ ] B5. i18n: migrate hardcoded English (clinical-entry, dashboard) into messages/*.
 
 ### C. Voice (3.2 / 3.3)
-- [ ] C1. Voice dictation (Web Speech API) into the clinical-note field.
-- [ ] C2. Voice command "give summary" → agent → text.
+- [x] C1. Voice dictation (Web Speech API) into the clinical-note field.
+- [x] C2. Voice command "give summary" → agent → text.
 
 ### D. 0.1 FHIR-boundary interceptors (highest risk — staged)
 - [ ] D1. Implement AuthzInterceptor real logic (service-trust + role/scope + care-relationship via core-api decision + Redis cache, fail-closed).

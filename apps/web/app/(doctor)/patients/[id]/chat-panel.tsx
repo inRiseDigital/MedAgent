@@ -13,6 +13,8 @@ import { useTranslations } from "next-intl";
 import { Sparkles, User } from "lucide-react";
 import { Badge, Button, Spinner, type BadgeProps } from "@medagent/ui";
 
+import { VoiceButton } from "@/components/voice-button";
+
 // Markdown rendering is loaded as a separate client-only chunk: it must NEVER
 // be able to break the chat's core interactivity (send / input) if the markdown
 // library fails to load. Falls back to plain text while loading / on failure.
@@ -291,6 +293,20 @@ export function ChatPanel({ patientId }: { patientId: string }) {
           placeholder={t("chatPrompt")}
           aria-label={t("chatPrompt")}
           className="flex-1 rounded-lg border border-border bg-background px-3.5 py-2.5 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        />
+        <VoiceButton
+          title="Voice command — say 'give summary'"
+          onTranscript={(tx) => {
+            // FR-3.3: a spoken "summary"/"brief" command triggers the summary;
+            // anything else is dictated into the input for review before sending.
+            if (/\b(summary|brief)\b/i.test(tx)) {
+              void send(
+                "Give me a concise, cited summary of this patient — active problems, current medications, allergies, and recent results.",
+              );
+            } else {
+              setInput((prev) => (prev ? `${prev} ${tx}` : tx));
+            }
+          }}
         />
         <Button type="submit" disabled={busy || !input.trim()}>
           {busy ? t("chatSending") : t("chatSend")}

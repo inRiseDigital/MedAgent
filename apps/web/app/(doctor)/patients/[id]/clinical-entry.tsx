@@ -11,6 +11,8 @@ import { useMemo, useState } from "react";
 import { ClipboardList, FlaskConical, HeartPulse, Scan, StickyNote } from "lucide-react";
 import { Button } from "@medagent/ui";
 
+import { VoiceButton } from "@/components/voice-button";
+
 type Kind = "diagnosis" | "vitals" | "note" | "lab_order" | "imaging_order";
 
 const TABS: { kind: Kind; label: string; Icon: typeof HeartPulse }[] = [
@@ -128,7 +130,15 @@ export function ClinicalEntry({ patientId }: { patientId: string }) {
           </>
         )}
         {kind === "note" && (
-          <textarea className={`${inputCls} sm:col-span-2`} rows={3} placeholder="Clinical note / consultation findings…" value={f.text ?? ""} onChange={(e) => set("text", e.target.value)} />
+          <div className="relative sm:col-span-2">
+            <textarea className={`${inputCls} pr-11`} rows={3} placeholder="Clinical note / consultation findings…" value={f.text ?? ""} onChange={(e) => set("text", e.target.value)} />
+            <div className="absolute right-2 top-2">
+              <VoiceButton
+                title="Dictate note"
+                onTranscript={(t) => set("text", `${f.text ? f.text + " " : ""}${t}`)}
+              />
+            </div>
+          </div>
         )}
         {kind === "lab_order" && (
           <>
