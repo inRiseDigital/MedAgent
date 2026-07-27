@@ -41,6 +41,7 @@ export const config = {
     "/patients/:path*",
     "/day/:path*",
     "/proposals/:path*",
+    "/referrals/:path*",
     "/dashboard/:path*",
     "/portal/:path*",
   ],

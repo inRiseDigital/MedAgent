@@ -11,15 +11,20 @@ import { Badge, Card, CardContent } from "@medagent/ui";
 
 import {
   fetchChildHealth,
+  fetchImagingReports,
+  fetchLabReports,
   fetchPatientBrief,
   fetchPatientSummary,
   type ChildHealthRecord,
+  type ImagingReport,
+  type LabReport,
   type PatientBrief,
   type PatientSummary,
 } from "@/lib/api";
 import { ChatPanel } from "./chat-panel";
 import { ChildHealthCard } from "./child-health";
 import { ClinicalEntry } from "./clinical-entry";
+import { ImagingCard, LabResultsCard } from "./diagnostics";
 import { ProposalPanel } from "./proposal-panel";
 
 function age(birthDate?: string): string {
@@ -71,6 +76,20 @@ export default async function PatientSessionPage({ params }: { params: Promise<{
     } catch {
       chdr = null;
     }
+  }
+
+  // Diagnostics (patient-scoped worklists) — best-effort.
+  let imaging: ImagingReport[] = [];
+  let labs: LabReport[] = [];
+  try {
+    imaging = (await fetchImagingReports(id)).reports;
+  } catch {
+    imaging = [];
+  }
+  try {
+    labs = await fetchLabReports(id);
+  } catch {
+    labs = [];
   }
 
   const highAllergies = summary?.allergies.filter((a) => a.criticality === "high") ?? [];
@@ -216,6 +235,14 @@ export default async function PatientSessionPage({ params }: { params: Promise<{
           </div>
         </Card>
       </div>
+
+      {/* Diagnostics — imaging + lab results (shown when present) */}
+      {imaging.length > 0 || labs.length > 0 ? (
+        <div className="grid gap-4 lg:grid-cols-2">
+          {imaging.length > 0 ? <ImagingCard reports={imaging} /> : null}
+          {labs.length > 0 ? <LabResultsCard reports={labs} /> : null}
+        </div>
+      ) : null}
 
       {/* Child Health Development Record — children only */}
       {chdr ? <ChildHealthCard chdr={chdr} /> : null}

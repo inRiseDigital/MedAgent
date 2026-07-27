@@ -16,7 +16,8 @@
     "patients": "Patients",
     "proposals": "Proposals",
     "signOut": "Sign out",
-    "dashboard": "Dashboard"
+    "dashboard": "Dashboard",
+    "referrals": "Referrals"
   },
   "queue": {
     "title": "Live queue",

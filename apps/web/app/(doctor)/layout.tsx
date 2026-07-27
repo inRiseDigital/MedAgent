@@ -7,7 +7,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { getTranslations } from "next-intl/server";
-import { Activity, LayoutList, Users } from "lucide-react";
+import { Activity, LayoutList, Send, Users } from "lucide-react";
 
 import { SessionGuard } from "@/components/session-guard";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -19,6 +19,7 @@ export default async function DoctorLayout({ children }: { children: ReactNode }
   const navItems = [
     { href: "/queue", label: t("queue"), Icon: LayoutList },
     { href: "/patients", label: t("patients"), Icon: Users },
+    { href: "/referrals", label: t("referrals"), Icon: Send },
     { href: "/dashboard", label: t("dashboard"), Icon: Activity },
   ];
 

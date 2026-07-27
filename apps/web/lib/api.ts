@@ -192,6 +192,64 @@ export interface CapacityView {
 export async function fetchAnalyticsOverview(): Promise<AnalyticsOverview> {
   return coreApiGet<AnalyticsOverview>(`/api/v1/analytics/overview`);
 }
+
+// --- Referrals (FR-9) ---
+export interface ReferralItem {
+  task_id: string;
+  referral_ref?: string;
+  patient_ref?: string;
+  patient_name?: string;
+  to_facility?: string;
+  specialty?: string;
+  reason?: string;
+  priority?: string;
+  status?: string;
+  requested_by?: string;
+  authored_on?: string;
+}
+export interface ReferralInbox {
+  facility: string;
+  count: number;
+  items: ReferralItem[];
+}
+export async function fetchReferralInbox(facility: string, includeClosed = false): Promise<ReferralInbox> {
+  const q = new URLSearchParams({ facility });
+  if (includeClosed) q.set("include_closed", "true");
+  return coreApiGet<ReferralInbox>(`/api/v1/referrals/inbox?${q.toString()}`);
+}
+
+// --- Imaging (FR-10) ---
+export interface ImagingReport {
+  ref: string;
+  code?: string;
+  conclusion?: string;
+  issued?: string;
+  flag?: "urgent" | "abnormal" | "normal" | string;
+  needs_review?: boolean;
+  matched?: string;
+}
+export interface ImagingReports {
+  patient: string;
+  count: number;
+  reports: ImagingReport[];
+}
+export async function fetchImagingReports(phn: string): Promise<ImagingReports> {
+  return coreApiGet<ImagingReports>(`/api/v1/imaging/reports?patient=${encodeURIComponent(phn)}`);
+}
+
+// --- Lab results (FR-8) ---
+export interface LabReport {
+  id: string;
+  test?: string;
+  conclusion?: string;
+  value?: number;
+  unit?: string;
+  critical: boolean;
+  issued?: string;
+}
+export async function fetchLabReports(phn: string): Promise<LabReport[]> {
+  return coreApiGet<LabReport[]>(`/api/v1/lab/reports?patient=${encodeURIComponent(phn)}`);
+}
 export async function fetchOutbreak(): Promise<OutbreakView> {
   return coreApiGet<OutbreakView>(`/api/v1/analytics/outbreak`);
 }

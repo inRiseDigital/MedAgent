@@ -16,7 +16,8 @@
     "patients": "Patients",
     "proposals": "Proposals",
     "signOut": "Sign out",
-    "dashboard": "கட்டுப்பாட்டு பலகை"
+    "dashboard": "கட்டுப்பாட்டு பலகை",
+    "referrals": "பரிந்துரைகள்"
   },
   "queue": {
     "title": "Live queue",
