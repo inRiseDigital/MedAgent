@@ -32,7 +32,7 @@ export default function proxy(request: NextRequest): NextResponse {
 export const config = {
   /*
    * Route groups don't appear in URLs, so the (doctor) group is protected
-   * by its concrete paths (06 §1): queue, patients, day, proposals.
+   * by its concrete paths (06 §1): queue, patients, day, proposals, dashboard.
    * S2 extends the matcher to (patient-portal) and (kiosk) once their
    * session/role models land (07 §2, 05 §5).
    */
@@ -41,6 +41,7 @@ export const config = {
     "/patients/:path*",
     "/day/:path*",
     "/proposals/:path*",
+    "/dashboard/:path*",
     "/portal/:path*",
   ],
 };

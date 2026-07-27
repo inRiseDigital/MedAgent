@@ -152,3 +152,49 @@ export async function fetchAccessLog(phn: string): Promise<AccessLogEntry[]> {
     `/api/v1/audit/access-log?patient=${encodeURIComponent(phn)}`,
   );
 }
+
+// --- National analytics (FR-12) ---
+export interface AnalyticsOverview {
+  as_of: string;
+  patients_registered: number;
+  lab_reports: number;
+  imaging_studies: number;
+  immunizations: number;
+  referrals_open: number;
+  appointments: number;
+  notifiable_cases: number;
+  notifiable_by_disease: Record<string, number>;
+}
+export interface OutbreakSignal {
+  disease: string;
+  cases: number;
+  watch_at: number;
+  alert_at: number;
+  signal: "alert" | "watch" | "none";
+}
+export interface OutbreakView {
+  as_of: string;
+  any_alert: boolean;
+  signals: OutbreakSignal[];
+}
+export interface CapacityRow {
+  facility: string;
+  waitlist: number;
+  free_slots: number;
+  open_referrals: number;
+}
+export interface CapacityView {
+  as_of: string;
+  totals: { waitlist: number; free_slots: number; open_referrals: number };
+  by_facility: CapacityRow[];
+}
+
+export async function fetchAnalyticsOverview(): Promise<AnalyticsOverview> {
+  return coreApiGet<AnalyticsOverview>(`/api/v1/analytics/overview`);
+}
+export async function fetchOutbreak(): Promise<OutbreakView> {
+  return coreApiGet<OutbreakView>(`/api/v1/analytics/outbreak`);
+}
+export async function fetchCapacity(): Promise<CapacityView> {
+  return coreApiGet<CapacityView>(`/api/v1/analytics/capacity`);
+}

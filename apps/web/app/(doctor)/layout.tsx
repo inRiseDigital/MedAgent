@@ -19,6 +19,7 @@ export default async function DoctorLayout({ children }: { children: ReactNode }
   const navItems = [
     { href: "/queue", label: t("queue"), Icon: LayoutList },
     { href: "/patients", label: t("patients"), Icon: Users },
+    { href: "/dashboard", label: t("dashboard"), Icon: Activity },
   ];
 
   return (

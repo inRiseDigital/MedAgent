@@ -15,7 +15,8 @@
     "day": "Today",
     "patients": "Patients",
     "proposals": "Proposals",
-    "signOut": "Sign out"
+    "signOut": "Sign out",
+    "dashboard": "උපකරණ පුවරුව"
   },
   "queue": {
     "title": "Live queue",
