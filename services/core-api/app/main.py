@@ -24,7 +24,7 @@ from app.auth import JWKSCache
 from app.config import Settings
 from app.logging_config import configure_logging
 from app.routers import audit as audit_router
-from app.routers import authz, consent, face_events, lab, patients, proposals, queue, referrals
+from app.routers import authz, consent, face_events, lab, patients, proposals, queue, referrals, schedule
 from app.telemetry import configure_telemetry
 
 logger = logging.getLogger(__name__)
@@ -84,6 +84,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(proposals.router, prefix=API_V1_PREFIX)
     app.include_router(lab.router, prefix=API_V1_PREFIX)
     app.include_router(referrals.router, prefix=API_V1_PREFIX)
+    app.include_router(schedule.router, prefix=API_V1_PREFIX)
     app.include_router(consent.router, prefix=API_V1_PREFIX)
     app.include_router(audit_router.public_router, prefix=API_V1_PREFIX)
     app.include_router(audit_router.internal_router)
