@@ -117,6 +117,7 @@ async def require_user(
             key=key,
             algorithms=["RS256", "ES256"],
             issuer=settings.keycloak_issuer,
+            leeway=settings.jwt_leeway_seconds,  # tolerate small clock skew (RFC 7519)
             # TODO(S1/S2): enforce audience `aud:core-api` once the realm client
             # scopes are applied (02 §2). Until then aud is not validated.
             options={"verify_aud": False},

@@ -179,6 +179,9 @@ services:
       # `AUTH_DISABLED=true docker compose up` lets you exercise the API before
       # Keycloak is stood up. NEVER set outside local dev.
       AUTH_DISABLED: ${AUTH_DISABLED:-false}
+      # Dev: Docker Desktop VM clocks drift vs the host, so tolerate more JWT
+      # clock skew locally than the prod-safe 60s default (02 auth.py).
+      JWT_LEEWAY_SECONDS: ${JWT_LEEWAY_SECONDS:-300}
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
       OTEL_SERVICE_NAME: core-api
     env_file:

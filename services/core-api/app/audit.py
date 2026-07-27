@@ -20,7 +20,7 @@ import json
 import logging
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.fhir_client import FHIRClient
@@ -86,6 +86,8 @@ _ACTION = {
     "lab_state_change": "U",
     "lab_result_released": "C",
     "lab_critical_value": "R",
+    "referral_created": "C",
+    "referral_state_change": "U",
 }
 
 
@@ -128,46 +130,80 @@ def _to_audit_event(row: AuditOutbox) -> dict[str, Any]:
     return ae
 
 
+# Serialise the whole dispatch across the process (background loop) AND the
+# manual /internal/audit/dispatch endpoint AND any extra uvicorn workers. Without
+# this, two dispatchers can both read the same chain head and mint duplicate
+# sequence numbers — forking the hash chain (03 §5.4). A Postgres session-level
+# advisory lock is process- and worker-safe; if another dispatcher holds it we
+# skip this cycle and the pending rows are simply retried next time.
+_DISPATCH_LOCK_KEY = 0x4155_4454  # "AUDT"
+
+
 async def dispatch_once(
     sessionmaker: async_sessionmaker, fhir_base_url: str, limit: int = 100
 ) -> int:
     """Drain up to `limit` undispatched outbox rows into FHIR AuditEvents.
-    Returns the number dispatched."""
+    Returns the number dispatched (0 if another dispatcher holds the lock)."""
     dispatched = 0
     fhir = FHIRClient(fhir_base_url)
     try:
-        async with sessionmaker() as session:
-            rows = (
-                await session.execute(
-                    select(AuditOutbox)
-                    .where(AuditOutbox.dispatched.is_(False))
-                    .order_by(AuditOutbox.created_ts)
-                    .limit(limit)
+        # The lock is held on its OWN session/connection that never commits until
+        # unlock — the drain session commits per row, which would otherwise return
+        # the lock-holding connection to the pool and drop the (session-level) lock.
+        async with sessionmaker() as lock_session:
+            got = (
+                await lock_session.execute(
+                    text("SELECT pg_try_advisory_lock(:k)"), {"k": _DISPATCH_LOCK_KEY}
                 )
-            ).scalars().all()
-            seq, prev_hash = await _chain_head(fhir) if rows else (0, _GENESIS)
-            for row in rows:
-                try:
-                    ae = _to_audit_event(row)
-                    h = _chain_hash(prev_hash, ae)
-                    ae.setdefault("extension", []).append({
-                        "url": AUDIT_HASH_EXT,
-                        "extension": [
-                            {"url": "seq", "valueInteger": seq + 1},
-                            {"url": "prevHash", "valueString": prev_hash},
-                            {"url": "hash", "valueString": h},
-                        ],
-                    })
-                    await fhir.create("AuditEvent", ae)
-                except Exception:  # noqa: BLE001 — leave undispatched, retry next cycle
-                    logger.exception("audit dispatch failed for row %s", row.id)
-                    continue
-                seq, prev_hash = seq + 1, h  # advance the chain only on success
-                row.dispatched = True
-                await session.commit()
-                dispatched += 1
+            ).scalar()
+            if not got:
+                logger.debug("audit dispatch skipped — another dispatcher holds the lock")
+                return 0
+            try:
+                async with sessionmaker() as work_session:
+                    dispatched = await _drain(work_session, fhir, limit)
+            finally:
+                await lock_session.execute(
+                    text("SELECT pg_advisory_unlock(:k)"), {"k": _DISPATCH_LOCK_KEY}
+                )
+                await lock_session.rollback()  # end the lock txn; connection resets
     finally:
         await fhir.close()
+    return dispatched
+
+
+async def _drain(session: Any, fhir: FHIRClient, limit: int) -> int:
+    """Chain-and-write pending outbox rows. Caller must hold the dispatch lock."""
+    dispatched = 0
+    rows = (
+        await session.execute(
+            select(AuditOutbox)
+            .where(AuditOutbox.dispatched.is_(False))
+            .order_by(AuditOutbox.created_ts)
+            .limit(limit)
+        )
+    ).scalars().all()
+    seq, prev_hash = await _chain_head(fhir) if rows else (0, _GENESIS)
+    for row in rows:
+        try:
+            ae = _to_audit_event(row)
+            h = _chain_hash(prev_hash, ae)
+            ae.setdefault("extension", []).append({
+                "url": AUDIT_HASH_EXT,
+                "extension": [
+                    {"url": "seq", "valueInteger": seq + 1},
+                    {"url": "prevHash", "valueString": prev_hash},
+                    {"url": "hash", "valueString": h},
+                ],
+            })
+            await fhir.create("AuditEvent", ae)
+        except Exception:  # noqa: BLE001 — leave undispatched, retry next cycle
+            logger.exception("audit dispatch failed for row %s", row.id)
+            continue
+        seq, prev_hash = seq + 1, h  # advance the chain only on success
+        row.dispatched = True
+        await session.commit()
+        dispatched += 1
     return dispatched
 
 

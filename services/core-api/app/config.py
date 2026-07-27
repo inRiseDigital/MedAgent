@@ -45,6 +45,10 @@ class Settings(BaseSettings):
         description="Local bootstrapping escape hatch ONLY. Never true outside local dev.",
     )
     jwks_cache_ttl_seconds: int = 300
+    # Clock-skew tolerance for JWT exp/iat/nbf validation (RFC 7519 leeway). A
+    # small allowance for drift between the Keycloak and service clocks; keep low
+    # in production (NTP-synced), raise only for dev where container clocks drift.
+    jwt_leeway_seconds: int = 60
 
     # Face-service webhook (05 §3). JSON object {key_id: secret} — dual keys during rotation.
     face_webhook_hmac_keys: dict[str, str] = Field(default_factory=dict)
