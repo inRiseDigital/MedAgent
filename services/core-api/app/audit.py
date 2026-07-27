@@ -84,6 +84,8 @@ _ACTION = {
     "econsult_created": "C",
     "econsult_started": "U",
     "econsult_completed": "U",
+    "imaging_reported": "C",
+    "imaging_urgent_flag": "R",
 }
 
 
