@@ -13,7 +13,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, String, func
+from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, String, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -97,3 +97,24 @@ class AuditOutbox(Base):
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
     dispatched: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+
+class AuditChainHead(Base):
+    """Strongly-consistent head of the tamper-evident audit hash chain (03 §5.4).
+
+    A single row (id=1) holding the last dispatched (seq, hash). The head MUST be
+    read from here — NOT derived from a FHIR AuditEvent search — because HAPI's
+    search index is eventually-consistent: a dispatcher reading the head via search
+    can miss a just-written event and re-mint its sequence number, forking the
+    chain. Postgres gives read-your-writes; combined with the dispatch advisory
+    lock, sequence assignment is exact.
+    """
+
+    __tablename__ = "audit_chain_head"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+    seq: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    hash: Mapped[str] = mapped_column(String, nullable=False, default="GENESIS")
+    updated_ts: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )

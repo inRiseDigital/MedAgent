@@ -24,7 +24,7 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.fhir_client import FHIRClient
-from app.models import AuditOutbox
+from app.models import AuditChainHead, AuditOutbox
 
 logger = logging.getLogger(__name__)
 
@@ -62,15 +62,6 @@ def _read_hash_ext(ae: dict[str, Any]) -> dict[str, Any] | None:
     return None
 
 
-async def _chain_head(fhir: FHIRClient) -> tuple[int, str]:
-    """The (seq, hash) of the most recent chained AuditEvent, or (0, GENESIS)."""
-    recent = await fhir.search("AuditEvent", {"_sort": "-_lastUpdated", "_count": "10"})
-    for ae in recent:
-        h = _read_hash_ext(ae)
-        if h and h.get("hash"):
-            return int(h.get("seq") or 0), str(h["hash"])
-    return 0, _GENESIS
-
 # Map outbox event types to FHIR AuditEvent.action (C/R/U/D/E).
 _ACTION = {
     "patient_registered": "C",
@@ -88,6 +79,8 @@ _ACTION = {
     "lab_critical_value": "R",
     "referral_created": "C",
     "referral_state_change": "U",
+    "waitlist_add": "C",
+    "appointment_booked": "U",
 }
 
 
@@ -173,7 +166,13 @@ async def dispatch_once(
 
 
 async def _drain(session: Any, fhir: FHIRClient, limit: int) -> int:
-    """Chain-and-write pending outbox rows. Caller must hold the dispatch lock."""
+    """Chain-and-write pending outbox rows. Caller must hold the dispatch lock.
+
+    The chain head is read from the `audit_chain_head` row (Postgres, read-your-
+    writes) — never from a FHIR search — and advanced in the SAME transaction that
+    marks each row dispatched, so a stale search index can never cause a duplicate
+    sequence number.
+    """
     dispatched = 0
     rows = (
         await session.execute(
@@ -183,7 +182,16 @@ async def _drain(session: Any, fhir: FHIRClient, limit: int) -> int:
             .limit(limit)
         )
     ).scalars().all()
-    seq, prev_hash = await _chain_head(fhir) if rows else (0, _GENESIS)
+    if not rows:
+        return 0
+    head = (
+        await session.execute(select(AuditChainHead).where(AuditChainHead.id == 1))
+    ).scalar_one_or_none()
+    if head is None:  # defensive — the migration seeds this row
+        head = AuditChainHead(id=1, seq=0, hash=_GENESIS)
+        session.add(head)
+        await session.flush()
+    seq, prev_hash = head.seq, head.hash
     for row in rows:
         try:
             ae = _to_audit_event(row)
@@ -201,6 +209,7 @@ async def _drain(session: Any, fhir: FHIRClient, limit: int) -> int:
             logger.exception("audit dispatch failed for row %s", row.id)
             continue
         seq, prev_hash = seq + 1, h  # advance the chain only on success
+        head.seq, head.hash = seq, prev_hash  # persisted atomically with the row below
         row.dispatched = True
         await session.commit()
         dispatched += 1
