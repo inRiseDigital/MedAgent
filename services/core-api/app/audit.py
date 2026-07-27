@@ -242,7 +242,15 @@ async def verify_chain(fhir_base_url: str, limit: int = 5000) -> dict[str, Any]:
         events = await fhir.search("AuditEvent", {"_count": str(limit)})
     finally:
         await fhir.close()
+    return evaluate_chain(events, total)
 
+
+def evaluate_chain(events: list[dict[str, Any]], total: int) -> dict[str, Any]:
+    """Pure chain evaluation over the fetched AuditEvents (unit-testable, no I/O).
+
+    Never reports intact=true when it could not read the chain (false-pass guard),
+    flags duplicate sequence numbers (fork), recomputes each hash + prevHash link,
+    and flags a truncated read (intact=null)."""
     # False-pass guard: the store reports events but we retrieved none → a read
     # problem, not an empty/intact chain.
     if total > 0 and not events:
