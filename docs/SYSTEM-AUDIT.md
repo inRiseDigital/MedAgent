@@ -52,10 +52,10 @@ tests, (b) 0.1 boundary enforcement, (c) voice, (d) UI for Track 2/5/6.
 - [x] C2. Voice command "give summary" → agent → text.
 
 ### D. 0.1 FHIR-boundary interceptors (highest risk — staged)
-- [ ] D1. Implement AuthzInterceptor real logic (service-trust + role/scope + care-relationship via core-api decision + Redis cache, fail-closed).
+- [x] D1. Implement AuthzInterceptor real logic (service-trust + role/scope + care-relationship via core-api decision + Redis cache, fail-closed).
 - [ ] D2. Implement ConsentInterceptor evaluation + cache invalidation.
 - [ ] D3. Implement AuditInterceptor persistence (or keep app-side chain authoritative).
-- [ ] D4. Enable the @Disabled JUnit tests; build the JAR.
+- [x] D4. Enable the @Disabled JUnit tests; build the JAR.
 - [ ] D5. Wire runtime enablement WITHOUT breaking core-api writes (service credential); validate on a side port before flipping.
 
 **Sequencing:** A → B → C → D. D is last because it is the only item that can

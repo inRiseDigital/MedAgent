@@ -77,10 +77,16 @@ services→Anthropic API (cross-border, PHI-minimised).
 
 ## Top residual risks (ranked)
 
-1. **R-1 — FHIR-boundary enforcement not live.** Highest residual: a bug or
-   compromise in a token-holding service could over-read at HAPI. App-layer
-   controls gate the real paths today; promote enforcement into HAPI
-   (test-first) before multi-facility rollout.
+1. **R-1 — FHIR-boundary enforcement implemented, not yet activated.** The
+   `AuthzInterceptor` now has a real **enforce mode** (trusted-service credential +
+   role/scope write-gate + no-trawl search shaping on patient-compartment types +
+   purposeOfUse stamp, fail-closed), unit-tested (14 cases, JAR built). It ships
+   **default-off** (`MEDAGENT_AUTHZ_MODE=skeleton`) and the dev compose does not yet
+   register the interceptor, so the boundary is inert at runtime — app-layer
+   controls still gate the real paths. Remaining to activate (staged, see
+   `platform/fhir/README.md`): register via application.yaml, core-api header
+   forwarding, side-port validation. Per-user care-relationship decision-service
+   call is the S2 follow-on. Activate before multi-facility rollout.
 2. **R-3 — LLM path unquantified under sustained concurrency** — needs a
    recorded-LLM harness before the chat load gate is meaningful. (The offline
    stub mode now exists, so this can be built without burning quota.)

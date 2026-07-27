@@ -56,14 +56,57 @@ Non-negotiable invariants (asserted by integration tests from S2, 10 §3.4):
   because this is the single choke point.
 - **Order is load-bearing** (03 §2): authz → consent → validation → storage → audit.
 
+## AuthzInterceptor modes (backlog 0.1)
+
+`MEDAGENT_AUTHZ_MODE` selects behaviour:
+
+- **`skeleton`** (default) — S1 fail-closed contract (writes always denied; reads
+  denied unless `MEDAGENT_AUTHZ_PERMISSIVE_READ=true`). This is what the tests and
+  the current dev stack assume; the running compose does not register the
+  interceptor at all, so the boundary is inert today.
+- **`enforce`** — the implemented boundary controls (unit-tested, 14 cases):
+  1. **Trusted-service credential** — every request must carry
+     `X-MedAgent-Service-Key` matching `MEDAGENT_SERVICE_KEY` (constant-time compare).
+  2. **Role/scope gate** — only `doctor|nurse|admin|system` (from `X-MedAgent-Roles`)
+     may write clinical types; receptionists cannot.
+  3. **No-trawl** — a search of a patient-**compartment** type (Observation,
+     Condition, MedicationRequest, DiagnosticReport, DocumentReference,
+     AllergyIntolerance, Immunization, Encounter, Specimen, ImagingStudy, Procedure)
+     without a `patient`/`subject`/`_id` param is rejected. **Workflow** types
+     (Task, ServiceRequest, Flag, Appointment) are exempt so facility-scoped `_tag`
+     worklists (referral inbox, surveillance line-lists) still work.
+  4. **purposeOfUse** stamped (TREAT default / BTG / PATRQT from `X-MedAgent-Purpose`).
+  Any evaluation error fails closed.
+
+### Activating enforce mode (staged — R-1, do NOT flip blindly)
+
+1. Register the interceptor: restore the interceptor-registering `application.yaml`
+   (the dev compose currently overrides `SPRING_CONFIG_LOCATION` to work around a
+   base-config/search-routing issue — 03 §1 runbook) so HAPI actually loads it.
+2. Set on the `fhir` service: `MEDAGENT_AUTHZ_MODE=enforce`,
+   `MEDAGENT_SERVICE_KEY=<secret>`.
+3. Have core-api/agent-service forward `X-MedAgent-Service-Key` (the same secret)
+   and `X-MedAgent-Roles: system` on every FHIR call (FHIRClient change; inert
+   until the interceptor is in enforce mode).
+4. Validate on a **side port / staging** first: confirm the platform's own writes,
+   patient-scoped reads, and `_tag` worklist searches all pass, and that a
+   credential-less request is denied — before any pilot rollout.
+
+**Still S2 (not yet implemented):** per-user care-relationship enforcement via the
+Redis decision cache + core-api `GET /internal/authz/decision`. Enforce mode today
+is the service-trust + role + no-trawl boundary; the per-user compartment decision
+call is the next step (the corresponding JUnit case stays `@Disabled` and honest).
+
 ## Runtime env
 
 | Var | Purpose |
 |---|---|
 | `HAPI_DB_URL` / `HAPI_DB_USER` / `HAPI_DB_PASS` | Postgres datasource (`hapi_db`) |
-| `MEDAGENT_AUTHZ_DECISION_URL` | core-api decision endpoint (02 §7.2) |
-| `MEDAGENT_REDIS_URL` | shared authz/consent decision cache (ADR F-4) |
-| `MEDAGENT_AUTHZ_PERMISSIVE_READ` | S1 dev bootstrap only — see above |
+| `MEDAGENT_AUTHZ_MODE` | `skeleton` (default) or `enforce` (see above) |
+| `MEDAGENT_SERVICE_KEY` | shared trusted-service credential for `enforce` mode |
+| `MEDAGENT_AUTHZ_DECISION_URL` | core-api decision endpoint (02 §7.2) — S2 |
+| `MEDAGENT_REDIS_URL` | shared authz/consent decision cache (ADR F-4) — S2 |
+| `MEDAGENT_AUTHZ_PERMISSIVE_READ` | S1/skeleton dev bootstrap only — see above |
 
 ## Network posture
 
