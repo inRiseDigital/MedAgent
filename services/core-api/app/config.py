@@ -59,3 +59,6 @@ class Settings(BaseSettings):
 
     # SSE ticket issuance (02 §11).
     sse_ticket_ttl_seconds: int = 30
+    # Telemedicine single-use join tokens (FR-9.7). Long enough to cover a late
+    # join to a scheduled consult, short enough to bound a leaked link.
+    telemedicine_join_ttl_seconds: int = 3600

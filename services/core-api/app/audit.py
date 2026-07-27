@@ -81,6 +81,9 @@ _ACTION = {
     "referral_state_change": "U",
     "waitlist_add": "C",
     "appointment_booked": "U",
+    "econsult_created": "C",
+    "econsult_started": "U",
+    "econsult_completed": "U",
 }
 
 
