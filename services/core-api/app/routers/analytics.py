@@ -45,6 +45,12 @@ _OUTBREAK: dict[str, tuple[int, int]] = {
 _DEFAULT_THRESHOLD = (5, 15)
 
 
+def outbreak_signal(disease: str, cases: int) -> str:
+    """none / watch / alert for a disease's case count vs its threshold (pure)."""
+    watch, alert = _OUTBREAK.get(disease, _DEFAULT_THRESHOLD)
+    return "alert" if cases >= alert else "watch" if cases >= watch else "none"
+
+
 async def _count(fhir: FHIRClient, rtype: str, params: dict[str, str] | None = None) -> int:
     try:
         resp = await fhir._get(f"/{rtype}", params={"_summary": "count", **(params or {})}, token=None)
@@ -103,9 +109,8 @@ async def outbreak(
         signals = []
         for disease, n in counts.items():
             watch, alert = _OUTBREAK.get(disease, _DEFAULT_THRESHOLD)
-            level = "alert" if n >= alert else "watch" if n >= watch else "none"
             signals.append({"disease": disease, "cases": n, "watch_at": watch,
-                            "alert_at": alert, "signal": level})
+                            "alert_at": alert, "signal": outbreak_signal(disease, n)})
         rank = {"alert": 0, "watch": 1, "none": 2}
         signals.sort(key=lambda s: (rank[s["signal"]], -s["cases"]))
         return {"as_of": datetime.now(timezone.utc).isoformat(),

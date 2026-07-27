@@ -162,6 +162,12 @@ async def add_to_waitlist(
         await fhir.close()
 
 
+def order_waitlist(waits: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Booking order: urgency (priority asc = more urgent) then longest wait
+    (created asc = FIFO within a band). Pure + testable."""
+    return sorted(waits, key=lambda a: (a.get("priority", 3), a.get("created", "")))
+
+
 def _patient_ref(appt: dict[str, Any]) -> str | None:
     for p in appt.get("participant", []):
         ref = (p.get("actor") or {}).get("reference", "")
@@ -196,8 +202,7 @@ async def auto_book(
                                                          "status": "waitlist", "_count": "200"})
             if _specialty_of(a) == specialty
         ]
-        # urgency (priority asc = more urgent), then longest wait (created asc)
-        waits.sort(key=lambda a: (a.get("priority", 3), a.get("created", "")))
+        waits = order_waitlist(waits)  # urgency, then longest wait (FIFO within band)
 
         booked = []
         for appt in waits:

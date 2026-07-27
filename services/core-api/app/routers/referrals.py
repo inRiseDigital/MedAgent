@@ -57,6 +57,12 @@ _ALLOWED_FROM: dict[str, set[str]] = {
 _ACTIVE = {"requested", "accepted", "in-progress"}
 
 
+def can_transition(current: str | None, action: str) -> bool:
+    """Whether a referral in `current` status may take `action` (pure, testable)."""
+    target = _TRANSITIONS.get(action)
+    return target is not None and current in _ALLOWED_FROM.get(target, set())
+
+
 async def _resolve_pid(fhir: FHIRClient, phn: str) -> dict[str, Any] | None:
     if not phn.isdigit():
         return await _safe_read(fhir, phn)
@@ -240,7 +246,7 @@ async def act_on_referral(
         except Exception:  # noqa: BLE001
             raise HTTPException(status_code=404, detail="referral not found")
         current = task.get("status")
-        if current not in _ALLOWED_FROM[target]:
+        if not can_transition(current, body.action):
             raise HTTPException(status_code=409,
                                 detail=f"cannot {body.action} a referral in state '{current}'")
         task["status"] = target

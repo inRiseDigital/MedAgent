@@ -7,9 +7,12 @@ regress silently. All pure functions; no FHIR/DB.
 
 from __future__ import annotations
 
+from app.routers.analytics import outbreak_signal
 from app.routers.imaging import _classify as imaging_classify
 from app.routers.patients import _assess_growth, _interp
+from app.routers.referrals import can_transition
 from app.routers.registry import classify_notifiable
+from app.routers.schedule import order_waitlist
 
 
 # --- Imaging triage (6.1) ---
@@ -67,3 +70,35 @@ def test_growth_interpolation_midpoint() -> None:
 
 def test_growth_unknown_age_no_flags() -> None:
     assert _assess_growth("male", None, 2.0, 40.0) == []
+
+
+# --- Referral transitions (5.1) ---
+def test_referral_legal_transitions() -> None:
+    assert can_transition("requested", "accept") is True
+    assert can_transition("accepted", "complete") is True
+    assert can_transition("requested", "reject") is True
+
+
+def test_referral_illegal_transitions() -> None:
+    assert can_transition("completed", "accept") is False   # terminal
+    assert can_transition("requested", "complete") is False  # must accept first
+    assert can_transition("requested", "bogus") is False     # unknown action
+
+
+# --- Waitlist auto-book ordering (5.2) ---
+def test_waitlist_urgency_beats_arrival_order() -> None:
+    waits = [
+        {"id": "a", "priority": 3, "created": "2026-08-01T08:00:00Z"},  # routine, earliest
+        {"id": "b", "priority": 2, "created": "2026-08-01T09:00:00Z"},  # urgent, later
+        {"id": "c", "priority": 3, "created": "2026-08-01T08:30:00Z"},  # routine, middle
+    ]
+    order = [w["id"] for w in order_waitlist(waits)]
+    assert order == ["b", "a", "c"]  # urgent first, then routine FIFO
+
+
+# --- Outbreak early-warning thresholds (6.3) ---
+def test_outbreak_signal_escalation() -> None:
+    assert outbreak_signal("dengue", 2) == "none"    # below watch (3)
+    assert outbreak_signal("dengue", 4) == "watch"   # >= watch, < alert (8)
+    assert outbreak_signal("dengue", 8) == "alert"   # >= alert
+    assert outbreak_signal("cholera", 1) == "alert"  # single-case disease trips immediately
