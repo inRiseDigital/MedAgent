@@ -25,8 +25,8 @@ from app.config import Settings
 from app.logging_config import configure_logging
 from app.routers import audit as audit_router
 from app.routers import (
-    authz, consent, face_events, imaging, lab, patients, proposals, queue, referrals, schedule,
-    telemedicine,
+    authz, consent, face_events, imaging, lab, patients, proposals, queue, referrals, registry,
+    schedule, telemedicine,
 )
 from app.telemetry import configure_telemetry
 
@@ -90,6 +90,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(schedule.router, prefix=API_V1_PREFIX)
     app.include_router(telemedicine.router, prefix=API_V1_PREFIX)
     app.include_router(imaging.router, prefix=API_V1_PREFIX)
+    app.include_router(registry.router, prefix=API_V1_PREFIX)
     app.include_router(consent.router, prefix=API_V1_PREFIX)
     app.include_router(audit_router.public_router, prefix=API_V1_PREFIX)
     app.include_router(audit_router.internal_router)

@@ -86,6 +86,8 @@ _ACTION = {
     "econsult_completed": "U",
     "imaging_reported": "C",
     "imaging_urgent_flag": "R",
+    "notifiable_disease_reported": "C",
+    "notifiable_disease_alert": "R",
 }
 
 
