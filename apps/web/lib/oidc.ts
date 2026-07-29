@@ -173,11 +173,16 @@ export async function refreshTokens(refreshToken: string): Promise<TokenSet> {
   return toTokenSet((await res.json()) as TokenEndpointResponse);
 }
 
-export async function buildLogoutUrl(idToken: string): Promise<string> {
+export async function buildLogoutUrl(idToken: string, postLogoutRedirectUri?: string): Promise<string> {
   const config = await discover();
   const url = new URL(config.end_session_endpoint);
   url.searchParams.set("id_token_hint", idToken);
-  url.searchParams.set("post_logout_redirect_uri", appUrl());
+  // Must EXACTLY match a registered post-logout URI (Keycloak silently ignores a
+  // mismatch and parks the user on its logout page). The realm registers
+  // `https://localhost/*`, so a bare origin without the trailing slash fails —
+  // always end with `/`. Prefer the caller's real browser origin.
+  const target = (postLogoutRedirectUri ?? appUrl()).replace(/\/$/, "") + "/";
+  url.searchParams.set("post_logout_redirect_uri", target);
   url.searchParams.set("client_id", clientId());
   return url.toString();
 }

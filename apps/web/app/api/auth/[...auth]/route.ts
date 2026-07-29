@@ -17,7 +17,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 import {
-  appUrl,
   buildAuthorizeUrl,
   buildLogoutUrl,
   exchangeCode,
@@ -157,9 +156,13 @@ async function handleCallback(request: NextRequest): Promise<NextResponse> {
   return res;
 }
 
-async function handleLogout(_request: NextRequest): Promise<NextResponse> {
+async function handleLogout(request: NextRequest): Promise<NextResponse> {
   const idToken = await destroySession();
-  const target = idToken ? await buildLogoutUrl(idToken) : appUrl();
+  // Use the real browser origin (from the gateway's forwarded headers) so the
+  // post-logout redirect matches where the user actually is (https://localhost),
+  // and lands back on the app (which then shows the login screen).
+  const home = `${publicBase(request)}/`;
+  const target = idToken ? await buildLogoutUrl(idToken, home) : home;
   const res = NextResponse.redirect(target);
   res.cookies.delete(SESSION_COOKIE);
   return res;
