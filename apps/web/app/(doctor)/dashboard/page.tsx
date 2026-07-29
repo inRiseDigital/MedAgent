@@ -8,6 +8,8 @@ import { getTranslations } from "next-intl/server";
 import { Activity, AlertTriangle, CalendarClock, FlaskConical, Scan, Send, ShieldAlert, Syringe, Users } from "lucide-react";
 import { Card, CardContent } from "@medagent/ui";
 
+import { CLINICAL, requireRoles } from "@/lib/require-role";
+
 import {
   fetchAnalyticsOverview,
   fetchCapacity,
@@ -40,6 +42,7 @@ const SIGNAL_STYLE: Record<string, string> = {
 };
 
 export default async function DashboardPage() {
+  await requireRoles(CLINICAL); // clinicians only — receptionist bounced to /queue
   const t = await getTranslations("nav");
 
   let overview: AnalyticsOverview | null = null;

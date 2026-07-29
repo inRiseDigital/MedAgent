@@ -9,10 +9,15 @@ import { getTranslations } from "next-intl/server";
 import { HeartPulse } from "lucide-react";
 
 import { SessionGuard } from "@/components/session-guard";
+import { SignOutButton } from "@/components/sign-out-button";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { PATIENT, requireRoles } from "@/lib/require-role";
 
 export default async function PortalLayout({ children }: { children: ReactNode }) {
   const tc = await getTranslations("common");
+  const tn = await getTranslations("nav");
+  // Portal is for patients/guardians only — a staff session is bounced to /queue.
+  await requireRoles(PATIENT);
   return (
     <div className="min-h-screen bg-background">
       <SessionGuard />
@@ -24,7 +29,10 @@ export default async function PortalLayout({ children }: { children: ReactNode }
             </span>
             <span className="text-base font-semibold tracking-tight">{tc("appName")}</span>
           </span>
-          <ThemeToggle />
+          <span className="flex items-center gap-2">
+            <ThemeToggle />
+            <SignOutButton label={tn("signOut")} />
+          </span>
         </div>
       </header>
       <div className="mx-auto max-w-lg p-4 text-base">{children}</div>

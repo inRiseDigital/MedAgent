@@ -9,6 +9,7 @@ import { Send, ShieldAlert } from "lucide-react";
 import { Badge, Card, CardContent } from "@medagent/ui";
 
 import { fetchReferralInbox, type ReferralInbox } from "@/lib/api";
+import { CLINICAL, requireRoles } from "@/lib/require-role";
 import { ReferralActions } from "./referral-actions";
 
 const DEFAULT_FACILITY = "teaching-hospital";
@@ -26,6 +27,7 @@ export default async function ReferralsPage({
 }: {
   searchParams: Promise<{ facility?: string; closed?: string }>;
 }) {
+  await requireRoles(CLINICAL); // clinicians only
   const { facility: facParam, closed } = await searchParams;
   const facility = facParam ?? DEFAULT_FACILITY;
   const includeClosed = closed === "1";

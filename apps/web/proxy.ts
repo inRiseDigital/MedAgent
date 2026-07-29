@@ -24,8 +24,11 @@ export default function proxy(request: NextRequest): NextResponse {
     login.searchParams.set("returnTo", request.nextUrl.pathname);
     return NextResponse.redirect(login);
   }
-  // S2: validate the session record server-side + map roles to route
-  // groups; presence-only checking is a scaffold placeholder.
+  // Edge layer does presence-only (it can't read the encrypted session record).
+  // Role → route-group enforcement now lives in the server-component layouts/pages
+  // via lib/require-role.ts (STAFF for (doctor), CLINICAL for clinical pages,
+  // PATIENT for (patient-portal)), and the gateway re-validates the bearer token
+  // on every API call (01 §1).
   return NextResponse.next();
 }
 

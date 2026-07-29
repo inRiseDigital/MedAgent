@@ -10,18 +10,27 @@ import { getTranslations } from "next-intl/server";
 import { Activity, LayoutList, Send, Users } from "lucide-react";
 
 import { SessionGuard } from "@/components/session-guard";
+import { SignOutButton } from "@/components/sign-out-button";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { CLINICAL, requireRoles, STAFF } from "@/lib/require-role";
 
 export default async function DoctorLayout({ children }: { children: ReactNode }) {
   const t = await getTranslations("nav");
   const tc = await getTranslations("common");
 
+  // Staff-only route group: a patient/guardian session is bounced to the portal.
+  const session = await requireRoles(STAFF);
+  const isClinician = session.roles.some((r) => CLINICAL.includes(r));
+  const isReceptionist = session.roles.includes("receptionist");
+
+  // Receptionist: demographics + queue only, never clinical surfaces (02 §3).
   const navItems = [
-    { href: "/queue", label: t("queue"), Icon: LayoutList },
-    { href: "/patients", label: t("patients"), Icon: Users },
-    { href: "/referrals", label: t("referrals"), Icon: Send },
-    { href: "/dashboard", label: t("dashboard"), Icon: Activity },
-  ];
+    { href: "/queue", label: t("queue"), Icon: LayoutList, show: true },
+    { href: "/patients", label: t("patients"), Icon: Users, show: true },
+    { href: "/referrals", label: t("referrals"), Icon: Send, show: isClinician },
+    { href: "/dashboard", label: t("dashboard"), Icon: Activity, show: isClinician },
+  ].filter((i) => i.show);
+  const roleLabel = isClinician ? "Clinician" : isReceptionist ? "Reception" : "Staff";
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
@@ -41,10 +50,14 @@ export default async function DoctorLayout({ children }: { children: ReactNode }
           </span>
           <span className="text-sm font-semibold tracking-tight">{tc("appName")}</span>
           <span className="ml-1 hidden rounded bg-muted px-1.5 py-0.5 text-[0.65rem] font-medium uppercase tracking-wide text-muted-foreground sm:inline">
-            Clinician
+            {roleLabel}
           </span>
         </div>
-        <ThemeToggle />
+        <div className="flex items-center gap-2">
+          <span className="hidden text-xs text-muted-foreground sm:inline">{session.displayName}</span>
+          <ThemeToggle />
+          <SignOutButton label={t("signOut")} />
+        </div>
       </header>
 
       <div className="flex min-h-0 flex-1">

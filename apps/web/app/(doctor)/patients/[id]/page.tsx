@@ -21,6 +21,7 @@ import {
   type PatientBrief,
   type PatientSummary,
 } from "@/lib/api";
+import { CLINICAL, requireRoles } from "@/lib/require-role";
 import { ChatPanel } from "./chat-panel";
 import { ChildHealthCard } from "./child-health";
 import { ClinicalEntry } from "./clinical-entry";
@@ -51,6 +52,7 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 }
 
 export default async function PatientSessionPage({ params }: { params: Promise<{ id: string }> }) {
+  await requireRoles(CLINICAL); // clinical record — receptionist bounced to /queue
   const { id } = await params;
   const t = await getTranslations("patient");
 
