@@ -157,6 +157,16 @@ async function handleCallback(request: NextRequest): Promise<NextResponse> {
 }
 
 async function handleLogout(request: NextRequest): Promise<NextResponse> {
+  // Refresh first so the id_token_hint we hand Keycloak is CURRENT. Keycloak
+  // rejects an expired id_token_hint (can't resolve the client to validate the
+  // redirect) and shows "Logout failed" — which is exactly the idle-then-logout
+  // case, since the login-time id_token may have expired while the session cookie
+  // is still valid. getAccessToken silently refreshes + persists a fresh id_token.
+  try {
+    await getAccessToken();
+  } catch {
+    /* refresh unavailable — fall through to whatever token we have */
+  }
   const idToken = await destroySession();
   // Use the real browser origin (from the gateway's forwarded headers) so the
   // post-logout redirect matches where the user actually is (https://localhost),
