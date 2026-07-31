@@ -92,6 +92,21 @@ def build_agent(
         from app.agent.stub import StubChatModel
 
         llm: Any = StubChatModel()
+    elif settings.agent_llm_mode == "openai":
+        # Any OpenAI-compatible provider (Groq / OpenRouter / Cerebras / Together).
+        # The model MUST support tool calling — this is a ReAct+tools agent. Used
+        # as a free fallback when the Anthropic quota is capped (04 ADR AG-2:
+        # safety determinism comes from the Rx engine, not the chat model, so a
+        # different narration model is acceptable).
+        from langchain_openai import ChatOpenAI
+
+        llm = ChatOpenAI(
+            model=settings.llm_openai_model,
+            api_key=settings.llm_openai_api_key,
+            base_url=settings.llm_openai_base_url,
+            temperature=0,
+            max_tokens=2048,
+        )
     else:
         # NOTE: newer models (e.g. claude-sonnet-5) reject `temperature` — it is
         # deprecated for them — so we do not pass it. Determinism for the

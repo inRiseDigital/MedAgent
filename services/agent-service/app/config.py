@@ -42,7 +42,16 @@ class Settings(BaseSettings):
     anthropic_model: str = "claude-sonnet-5"
     anthropic_temperature: float = 0.2
 
-    # LLM mode: "live" (real Claude) or "stub" (deterministic offline model — no
-    # API calls). Stub mode lets the chat be load-tested in CI and demoed when the
-    # provider is unavailable / quota-capped, without touching the real API.
+    # LLM mode: "live" (real Claude), "stub" (deterministic offline model — no API
+    # calls), or "openai" (any OpenAI-compatible provider — Groq / OpenRouter /
+    # Cerebras / Together — for a free key when the Anthropic quota is capped).
+    # Stub mode lets the chat be demoed when the provider is unavailable.
     agent_llm_mode: str = "live"
+
+    # OpenAI-compatible fallback provider (used when agent_llm_mode == "openai").
+    # The model MUST support tool/function calling (the agent is a ReAct+tools
+    # graph). Example (Groq): base_url=https://api.groq.com/openai/v1,
+    # model=llama-3.3-70b-versatile.
+    llm_openai_base_url: str = "https://api.groq.com/openai/v1"
+    llm_openai_api_key: str = ""
+    llm_openai_model: str = "llama-3.3-70b-versatile"
