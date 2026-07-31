@@ -90,7 +90,12 @@ async def chat(
                 "data: [DONE]\n\n",
             ]
 
-        if not settings.anthropic_api_key:
+        mode = settings.agent_llm_mode
+        missing_key = (
+            (mode == "live" and not settings.anthropic_api_key)
+            or (mode == "openai" and not settings.llm_openai_api_key)
+        )
+        if missing_key:
             for f in _fail("Agent is not configured (no model key)."):
                 yield f
             return
@@ -105,13 +110,34 @@ async def chat(
         proposals: list[dict[str, Any]] = []
         agent = build_agent(settings, fhir_id, sources, proposals)
         try:
-            async for event in agent.astream_events(
-                {"messages": [{"role": "user", "content": question}]}, version="v2"
+            # Provider-agnostic streaming. We ask for BOTH "messages" (token stream)
+            # and "values" (full state per step). Anthropic streams the answer token
+            # by token via "messages"; OpenAI-compatible providers (e.g. Groq) do NOT
+            # stream the post-tool-call answer through langgraph, so those token
+            # chunks are empty — for them we fall back to the final message content
+            # from "values". `streamed` guards against emitting both (no duplication).
+            streamed = False
+            final_answer = ""
+            async for mode, data in agent.astream(
+                {"messages": [{"role": "user", "content": question}]},
+                stream_mode=["messages", "values"],
             ):
-                if event["event"] == "on_chat_model_stream":
-                    delta = _delta_text(event["data"]["chunk"])
-                    if delta:
-                        yield _sse({"type": "text-delta", "id": text_id, "delta": delta})
+                if mode == "messages":
+                    token = data[0]
+                    if token.__class__.__name__ == "AIMessageChunk":
+                        delta = _delta_text(token)
+                        if delta:
+                            streamed = True
+                            yield _sse({"type": "text-delta", "id": text_id, "delta": delta})
+                elif mode == "values":
+                    msgs = data.get("messages", []) if isinstance(data, dict) else []
+                    if msgs and getattr(msgs[-1], "type", "") == "ai":
+                        text = _delta_text(msgs[-1])
+                        if text:
+                            final_answer = text
+            # Fallback for providers that didn't stream tokens: emit the answer once.
+            if not streamed and final_answer:
+                yield _sse({"type": "text-delta", "id": text_id, "delta": final_answer})
         except Exception as exc:  # noqa: BLE001 — never leak a stack trace to the UI
             logger.exception("agent run failed")
             m = str(exc).lower()

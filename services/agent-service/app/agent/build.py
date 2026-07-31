@@ -106,6 +106,12 @@ def build_agent(
             base_url=settings.llm_openai_base_url,
             temperature=0,
             max_tokens=2048,
+            # streaming OFF: some OpenAI-compatible providers (Groq) emit streamed
+            # tool-call deltas that don't reconstruct in LangChain, truncating the
+            # ReAct loop before the final answer. With streaming off the tool calls
+            # arrive complete; the chat SSE emits the final answer via the "values"
+            # fallback in routers/chat.py.
+            streaming=False,
         )
     else:
         # NOTE: newer models (e.g. claude-sonnet-5) reject `temperature` — it is
