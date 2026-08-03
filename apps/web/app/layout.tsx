@@ -1,13 +1,24 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
 import { NextIntlClientProvider } from "next-intl";
 import { getLocale, getMessages } from "next-intl/server";
 import { Providers } from "./providers";
+import { PwaRegister } from "./pwa-register";
 import "./globals.css";
 
 export const metadata: Metadata = {
   title: "MedAgent",
   description: "MedAgent platform — doctor workspace, patient portal and check-in kiosk.",
+  manifest: "/manifest.webmanifest",
+  icons: { icon: "/icon.svg", apple: "/icon.svg" },
+  appleWebApp: { capable: true, title: "MedAgent", statusBarStyle: "black-translucent" },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#000000",
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
 };
 
 /*
@@ -41,6 +52,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
         <NextIntlClientProvider locale={locale} messages={messages}>
           <Providers>{children}</Providers>
         </NextIntlClientProvider>
+        <PwaRegister />
       </body>
     </html>
   );
