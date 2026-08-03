@@ -95,13 +95,16 @@ def build_patient_tools(
     patient_fhir_id: str,
     sources: list[dict[str, Any]],
     proposals: list[dict[str, Any]] | None = None,
+    cards: list[dict[str, Any]] | None = None,
 ) -> list[BaseTool]:
     """Build the full read + screening tool belt for one patient. `proposals`, if
     given, accumulates write-intent drafts (e.g. draft_prescription) that the chat
-    layer surfaces as sign-off cards."""
+    layer surfaces as sign-off cards. `cards`, if given, accumulates generative-UI
+    summary cards (present_card) the chat layer renders alongside the answer."""
     fhir = FhirClient(fhir_base_url, patient_fhir_id, sources)
     pid = patient_fhir_id
     drafts = proposals if proposals is not None else []
+    card_sink = cards if cards is not None else []
 
     @tool
     async def get_patient_summary() -> str:
@@ -373,6 +376,18 @@ def build_patient_tools(
             f"and offer alternatives. Do NOT claim it is prescribed — the clinician must review and sign."
         )
 
+    @tool
+    async def present_card(title: str, points: str, tone: str = "info") -> str:
+        """Show the patient a clear visual SUMMARY CARD alongside your reply. Use once
+        when explaining a result, medicine, or condition. `title` is a short heading;
+        `points` is 2–4 key takeaways separated by ' | ' (pipe); `tone` is one of
+        good | warn | urgent | info. This supplements your written answer — still reply
+        normally in plain language."""
+        pts = [p.strip() for p in points.split("|") if p.strip()][:4]
+        t = tone if tone in {"good", "warn", "urgent", "info"} else "info"
+        card_sink.append({"kind": "summary", "tone": t, "title": title.strip()[:120], "points": pts})
+        return "Summary card shown to the patient. Continue your plain-language reply."
+
     return [
         get_patient_summary,
         get_record_overview,
@@ -390,4 +405,5 @@ def build_patient_tools(
         get_social_history,
         screen_medication,
         draft_prescription,
+        present_card,
     ]

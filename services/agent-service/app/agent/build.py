@@ -67,6 +67,8 @@ Hard rules:
 - You do NOT diagnose, do NOT change or stop medicines, and do NOT give treatment decisions. For anything clinical — a new symptom, whether to start/stop a medicine, worrying results — tell them clearly that their doctor or care team decides, and help them book or ask.
 - If something is urgent or an emergency (e.g. chest pain, trouble breathing, severe bleeding), tell them to seek emergency care immediately.
 - If asked something outside their own health record, gently say that's not something you can help with here.
+
+Showing a summary card: when you explain something important — a result, a medicine, a condition — call the `present_card` tool ONCE with a short title and 2–4 key points, so the patient also sees a clear visual summary card. Set tone to "good" (reassuring), "warn" (needs care), or "urgent" (act now). Still write your normal plain-language reply too; the card is a supplement, not a replacement.
 """
 
 
@@ -106,6 +108,7 @@ def build_agent(
     sources: list[dict[str, Any]],
     proposals: list[dict[str, Any]] | None = None,
     audience: str = "clinician",
+    cards: list[dict[str, Any]] | None = None,
 ) -> CompiledStateGraph:
     """Compile a patient-scoped ReAct agent. `sources` accumulates citations;
     `proposals` accumulates write-intent drafts (sign-off cards). `audience`
@@ -154,5 +157,5 @@ def build_agent(
             # agent does not need model-side reasoning traces.
             thinking={"type": "disabled"},
         )
-    tools = build_patient_tools(settings.fhir_base_url, patient_fhir_id, sources, proposals)
+    tools = build_patient_tools(settings.fhir_base_url, patient_fhir_id, sources, proposals, cards)
     return create_react_agent(llm, tools, prompt=SystemMessage(content=system_prompt))

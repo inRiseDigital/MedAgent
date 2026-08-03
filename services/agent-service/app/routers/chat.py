@@ -112,7 +112,8 @@ async def chat(
 
         sources: list[dict[str, Any]] = []
         proposals: list[dict[str, Any]] = []
-        agent = build_agent(settings, fhir_id, sources, proposals, audience=body.audience)
+        cards: list[dict[str, Any]] = []
+        agent = build_agent(settings, fhir_id, sources, proposals, audience=body.audience, cards=cards)
         try:
             # Provider-agnostic streaming. We ask for BOTH "messages" (token stream)
             # and "values" (full state per step). Anthropic streams the answer token
@@ -163,6 +164,8 @@ async def chat(
             yield _sse({"type": "data-citations", "data": sources})
         if proposals:  # write-intent drafts → sign-off cards (04 §2.2)
             yield _sse({"type": "data-proposals", "data": proposals})
+        if cards:  # generative-UI summary cards (present_card) rendered by the client
+            yield _sse({"type": "data-cards", "data": cards})
         yield _sse({"type": "finish"})
         yield "data: [DONE]\n\n"
 

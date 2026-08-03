@@ -181,9 +181,15 @@ export function Concierge({ patientPhn, name, signals }: { patientPhn: string; n
             const p = line.slice(6).trim();
             if (!p || p === "[DONE]") continue;
             try {
-              const o = JSON.parse(p) as { type?: string; delta?: string; data?: { ref: string; resource_type?: string }[] };
+              const o = JSON.parse(p) as { type?: string; delta?: string; data?: unknown };
               if (o.type === "text-delta" && o.delta) { bump((n) => ({ ...n, text: n.text + o.delta })); down(); }
-              else if (o.type === "data-citations" && Array.isArray(o.data)) { const cites = o.data; bump((n) => ({ ...n, cites })); down(); }
+              else if (o.type === "data-citations" && Array.isArray(o.data)) { const cites = o.data as { ref: string; resource_type?: string }[]; bump((n) => ({ ...n, cites })); down(); }
+              else if (o.type === "data-cards" && Array.isArray(o.data)) {
+                for (const c of o.data as { tone?: Tone; title?: string; points?: string[] }[]) {
+                  if (!c.title) continue;
+                  push({ t: "card", data: { tone: c.tone ?? "info", kicker: "Summary", title: c.title, facts: (c.points ?? []).map((x) => ({ x })) } });
+                }
+              }
             } catch { /* keep-alive */ }
           }
         }
