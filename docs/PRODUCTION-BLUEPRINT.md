@@ -182,6 +182,30 @@ and patient** (waiting room, screen-share to show results/X-rays, consented reco
 
 ---
 
+## 8.6 Progress log (2026-08-04) — conversational-commerce made real
+
+Executed a full task list; **7 of the remaining items shipped, verified & committed:**
+- ✅ **Concierge quick wins:** "Who saw my record" → real audit log; "Am I due" → live agent.
+- ✅ **Real booking (1.5):** new `GET /schedule/slots` + `POST /schedule/book`; BFF
+  `/api/portal/booking` (PHN from session); concierge fetches real slots and creates a
+  **real FHIR Appointment** (409-safe). 27 demo slots seeded.
+- ✅ **Real refill (2.6):** new `POST /patients/{phn}/refill` → FHIR Task to the
+  prescriber inbox (ownership-checked, audited); BFF `/api/portal/refill`; concierge lists
+  the patient's **real meds** and sends a **real request**.
+- ✅ **PWA:** manifest + maskable icon + dev-safe service worker + `/offline` + install metadata.
+- ✅ **Localisation:** cookie-driven locale + in-app **En/සිං/தமிழ் switcher**; nav +
+  composer translated (real Sinhala/Tamil).
+- ✅ **Notifications producer (§6):** granted core-api `events:user:*`; `publish_user()`;
+  booking + refill push a **real personal notification**; patient portal shows live toasts.
+
+**Still remaining (large, do as focused sessions):**
+- ❌ **Generative-UI card protocol (1.1/3.3)** — agent answers are rich-text (already
+  formatted); typed `data-card` frames are the upgrade.
+- ❌ **Real video (§5)** — Jitsi/LiveKit wiring of `telemedicine.py` + shared room UI (CSP +
+  external SFU + doctor/patient integration).
+- ❌ **Multi-agent supervisor (3.10)** — activating `orchestrator.py` + wiring `/chat` to it
+  is risky to the working chat; needs isolated build + tests.
+
 ## 8.5 Progress log (2026-08-03)
 
 **Done (real, record-backed):**
