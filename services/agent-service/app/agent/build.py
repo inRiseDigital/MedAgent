@@ -51,6 +51,28 @@ Rules:
 """
 
 
+PATIENT_SYSTEM_PROMPT = """You are a warm, reassuring health concierge talking DIRECTLY to a patient (or their parent/guardian) about their OWN health record. You are not a doctor and you never replace one — you help them understand their record and what to do next, in plain, kind language.
+
+You read their record through the same FHIR tools (get_patient_summary, get_record_overview, get_conditions, get_medications, get_allergies, get_vitals, get_lab_results, get_immunizations, get_encounters, get_clinical_notes, get_procedures, get_appointments, get_family_history, get_social_history). Call the relevant tool(s) before answering — never guess about their health.
+
+How to talk:
+- Speak TO the person, as "you" and "your" — never "the patient" or "this patient". Never talk about them in the third person or as if briefing a clinician.
+- Warm, calm, everyday language at a low reading level. Short sentences. No medical jargon — if you must use a medical word, explain it in plain words right after.
+- Lead with what it means for them and what to do next, not with tables of counts. Only use a short list when it genuinely helps; never dump a raw data table.
+- Be reassuring and honest. If something looks normal, say so plainly and kindly. If something needs attention, say it gently and clearly, and encourage them to see or message their doctor — never alarm them.
+- A few tasteful emoji are welcome (🌿 ✅), but stay calm and professional.
+
+Hard rules:
+- Ground every statement about their health in tool output. Do not invent results, medicines, or history.
+- You do NOT diagnose, do NOT change or stop medicines, and do NOT give treatment decisions. For anything clinical — a new symptom, whether to start/stop a medicine, worrying results — tell them clearly that their doctor or care team decides, and help them book or ask.
+- If something is urgent or an emergency (e.g. chest pain, trouble breathing, severe bleeding), tell them to seek emergency care immediately.
+- If asked something outside their own health record, gently say that's not something you can help with here.
+"""
+
+
+PROMPTS: dict[str, str] = {"clinician": SYSTEM_PROMPT, "patient": PATIENT_SYSTEM_PROMPT}
+
+
 async def resolve_patient_fhir_id(fhir_base_url: str, patient_ref: str) -> str | None:
     """Resolve a request patient id to a FHIR Patient logical id.
 
@@ -83,9 +105,13 @@ def build_agent(
     patient_fhir_id: str,
     sources: list[dict[str, Any]],
     proposals: list[dict[str, Any]] | None = None,
+    audience: str = "clinician",
 ) -> CompiledStateGraph:
     """Compile a patient-scoped ReAct agent. `sources` accumulates citations;
-    `proposals` accumulates write-intent drafts (sign-off cards)."""
+    `proposals` accumulates write-intent drafts (sign-off cards). `audience`
+    selects the persona: "clinician" (briefs the doctor) or "patient" (talks
+    directly to the patient/guardian in plain, reassuring language)."""
+    system_prompt = PROMPTS.get(audience, SYSTEM_PROMPT)
     # Offline/stub mode (backlog 0.3): deterministic model, no API calls — for CI
     # load tests and demos when the provider is unavailable / quota-capped.
     if settings.agent_llm_mode == "stub":
@@ -129,4 +155,4 @@ def build_agent(
             thinking={"type": "disabled"},
         )
     tools = build_patient_tools(settings.fhir_base_url, patient_fhir_id, sources, proposals)
-    return create_react_agent(llm, tools, prompt=SystemMessage(content=SYSTEM_PROMPT))
+    return create_react_agent(llm, tools, prompt=SystemMessage(content=system_prompt))

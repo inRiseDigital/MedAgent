@@ -103,6 +103,7 @@ export function Concierge({ patientPhn, name }: { patientPhn: string; name: stri
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
             patient_id: patientPhn,
+            audience: "patient",
             messages: history.map((t) => ({ role: t.t === "me" ? "user" : "assistant", content: t.text })),
           }),
         });

@@ -112,6 +112,11 @@ services:
       - /repo/packages/ts-sdk/node_modules
     environment:
       NODE_ENV: development
+      # Windows/macOS bind mounts don't deliver inotify events to the Linux
+      # container, so `next dev` never sees host edits and serves stale modules.
+      # Poll the filesystem so Fast Refresh actually works across the bind mount.
+      WATCHPACK_POLLING: "true"
+      CHOKIDAR_USEPOLLING: "true"
       NEXT_PUBLIC_APP_URL: https://localhost
       NEXT_PUBLIC_API_BASE_URL: https://localhost/api
       NEXT_PUBLIC_KEYCLOAK_URL: https://localhost/auth
