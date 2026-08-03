@@ -182,6 +182,51 @@ and patient** (waiting room, screen-share to show results/X-rays, consented reco
 
 ---
 
+## 8.5 Progress log (2026-08-03)
+
+**Done (real, record-backed):**
+- ✅ Patient AI persona (warm, plain-language) + `audience` switch.
+- ✅ Agent-first typed questions → live agent reads the real record; citation chips.
+- ✅ Agent answers rendered as formatted rich text (markdown), not raw output.
+- ✅ Proactive greeting nudges are **real & age-aware** (overdue EPI only for
+  children; real latest-result card, critical-aware). Dengue fiction removed.
+- ✅ "Explain it simply" / "View result" use the patient's **real** latest result.
+- ✅ Summary tab: **real vital trend charts** — new `GET /patients/{phn}/vitals/trends`
+  endpoint + `LineFade` tiles; deduped vitals; honest range-bar fallback.
+- ✅ Record/Summary rows are **tappable → ask the live agent** (result / med /
+  problem / allergy / critical flag), via decoupled window events.
+- ✅ Me tab: **real, human-readable access log** (no raw UUIDs).
+- ✅ Responsive desktop: sidebar + chat + **at-a-glance right rail**; fixed mobile bar.
+- ✅ Dev hot-reload fixed (webpack + polling); patient BFF reads via server components.
+
+**Partial:**
+- ⚠️ **Patient BFF (3.1)** — reads flow through server components (`coreApiGet` +
+  token); no dedicated action routes yet (booking/refill).
+- ⚠️ **Agent read-action tools (1.3/3.2)** — "due items"/"latest result" are
+  computed in the page layer, not yet agent tools; agent tools still hit FHIR
+  directly (consent/authz-via-core-api still pending).
+- ⚠️ **Localisation** — `en/si/ta.json` + next-intl exist, but the patient app
+  strings are hardcoded English and there's no in-app language switcher.
+- ⚠️ **"Who saw my record"** — real on the Me tab; the concierge chat chip is
+  still scripted.
+
+**Not started (still scripted or absent):**
+- ❌ Concierge **book / refill / dueCheck / invite / join-video** flows (scripted).
+- ❌ **Real booking (1.5)** — `schedule.py` still unexposed.
+- ❌ **Refill endpoint (Phase 2.6)** — none exists.
+- ❌ **Generative-UI card protocol (1.1/3.3)** — agent still emits text + end-of-
+  stream citations/proposals only; no typed `data-card` kinds.
+- ❌ **Notifications producer + Redis ACL (§6)** — SSE infra idle for patients.
+- ❌ **HITL `interrupt()` + Postgres checkpointer / chat history (Phase 2.8)**.
+- ❌ **Real video (§5, Phase 2.9)** — telemedicine media still a stub.
+- ❌ **Supervisor/multi-agent activation (Phase 3.10)** — `orchestrator.py` dead code.
+- ❌ **PWA/offline**, **consent granularity**, **emergency escalation**,
+  **profile/PHN onboarding**, **seeded Slots/Appointments**.
+
+**Quick real wins remaining (data already exists):** make the concierge
+`dueCheck` chip use `/immunizations`, and `whoSaw` chip use `/audit/access-log`
+— both are already-real endpoints powering other views.
+
 ## 8. First concrete step
 
 Phase 1.1 + 1.3 + 1.4 together are the highest-leverage move: they turn the **look** you
