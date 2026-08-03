@@ -63,6 +63,10 @@
 .mh-bubble { background: var(--mh-surface); border-radius: 20px 20px 20px 7px; padding: 11px 15px;
   font-size: 15px; line-height: 1.45; box-shadow: var(--mh-shadow); color: var(--mh-ink); white-space: pre-wrap; }
 .mh-msg.me .mh-bubble { background: var(--mh-tint-2); color: #fff; border-radius: 20px 20px 7px 20px; }
+/* citation chips under a live (agentic) answer — signals it's grounded in the record */
+.mh-srcs { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 8px 0 0 2px; }
+.mh-srcs-lbl { font: 700 11px/1 var(--font, inherit); color: var(--mh-ink-3); }
+.mh-src { font: 700 10.5px/1 var(--font, inherit); color: var(--mh-tint-ink); background: var(--mh-fill); padding: 5px 8px; border-radius: 999px; }
 
 .mh-ccard { background: var(--mh-surface); border-radius: 20px; box-shadow: var(--mh-shadow); overflow: hidden; }
 .mh-ccard .strip { height: 4px; }

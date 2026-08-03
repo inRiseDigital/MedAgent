@@ -33,7 +33,7 @@ type CardData = {
   actions?: Action[];
 };
 type Node =
-  | { t: "ai"; text: string; streaming?: boolean }
+  | { t: "ai"; text: string; streaming?: boolean; cites?: { ref: string; resource_type?: string }[] }
   | { t: "me"; text: string }
   | { t: "typing" }
   | { t: "card"; data: CardData }
@@ -125,8 +125,9 @@ export function Concierge({ patientPhn, name }: { patientPhn: string; name: stri
             const p = line.slice(6).trim();
             if (!p || p === "[DONE]") continue;
             try {
-              const o = JSON.parse(p) as { type?: string; delta?: string };
+              const o = JSON.parse(p) as { type?: string; delta?: string; data?: { ref: string; resource_type?: string }[] };
               if (o.type === "text-delta" && o.delta) { bump((n) => ({ ...n, text: n.text + o.delta })); down(); }
+              else if (o.type === "data-citations" && Array.isArray(o.data)) { const cites = o.data; bump((n) => ({ ...n, cites })); down(); }
             } catch { /* keep-alive */ }
           }
         }
@@ -149,15 +150,10 @@ export function Concierge({ patientPhn, name }: { patientPhn: string; name: stri
     { label: "🔒 Who saw my record?", act: () => whoSaw() },
   ], []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Intent router (mirrors the demo's handleFree): map free text to a scripted
-  // flow; anything off-script goes to the LIVE patient-persona agent.
+  // Agent-first: every typed question goes to the LIVE patient-persona agent,
+  // which reads the real FHIR record and answers with citations. Scripted flows
+  // fire only from explicit card/chip taps (booking, refill, the greeting cards).
   function handleFree(text: string) {
-    const l = text.toLowerCase();
-    if (/result|dengue|explain|lab/.test(l)) return explain();
-    if (/book|appoint|follow|visit|schedule/.test(l)) return book("your follow-up", "Cardiology");
-    if (/refill|medic|drug|prescription|tablet/.test(l)) return refill();
-    if (/due|vaccine|remind|immun|jab/.test(l)) return dueCheck();
-    if (/who|access|saw|privacy|log/.test(l)) return whoSaw();
     void streamAgent(text);
   }
 
@@ -323,7 +319,22 @@ export function Concierge({ patientPhn, name }: { patientPhn: string; name: stri
           if (n.t === "typing") return <div key={i} className="mh-msg ai"><div className="mh-ai-row"><span className="mh-av"><Sparkles className="h-4 w-4" /></span><div className="mh-typing"><i /><i /><i /></div></div></div>;
           if (n.t === "ai")
             return (
-              <div key={i} className="mh-msg ai"><div className="mh-ai-row"><span className="mh-av"><Sparkles className="h-4 w-4" /></span><div className="mh-bubble">{n.text || (n.streaming ? "…" : "")}</div></div></div>
+              <div key={i} className="mh-msg ai">
+                <div className="mh-ai-row">
+                  <span className="mh-av"><Sparkles className="h-4 w-4" /></span>
+                  <div className="min-w-0">
+                    <div className="mh-bubble">{n.text || (n.streaming ? "…" : "")}</div>
+                    {n.cites?.length ? (
+                      <div className="mh-srcs">
+                        <span className="mh-srcs-lbl">✓ Grounded in your record</span>
+                        {n.cites.slice(0, 6).map((c, k) => (
+                          <span key={k} className="mh-src">{c.resource_type ?? c.ref}</span>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
             );
           // node with an avatar + a rich body
           const body =
