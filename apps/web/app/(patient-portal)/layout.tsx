@@ -10,8 +10,8 @@ import { HeartPulse } from "lucide-react";
 
 import { SessionGuard } from "@/components/session-guard";
 import { SignOutButton } from "@/components/sign-out-button";
-import { ThemeToggle } from "@/components/theme-toggle";
 import { PATIENT, requireRoles } from "@/lib/require-role";
+import "../mh-theme.css";
 
 export default async function PortalLayout({ children }: { children: ReactNode }) {
   const tc = await getTranslations("common");
@@ -19,23 +19,20 @@ export default async function PortalLayout({ children }: { children: ReactNode }
   // Portal is for patients/guardians only — a staff session is bounced to /queue.
   await requireRoles(PATIENT);
   return (
-    <div className="min-h-screen bg-background">
+    <div className="mh min-h-screen">
       <SessionGuard />
-      <header className="border-b border-border bg-card">
+      <header className="sticky top-0 z-20 border-b border-border bg-[color:var(--mh-bg)]/80 backdrop-blur-md">
         <div className="mx-auto flex max-w-lg items-center justify-between px-4 py-3">
           <span className="flex items-center gap-2">
-            <span className="flex h-7 w-7 items-center justify-center rounded-md bg-primary text-primary-foreground">
+            <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary text-primary-foreground">
               <HeartPulse className="h-4 w-4" />
             </span>
             <span className="text-base font-semibold tracking-tight">{tc("appName")}</span>
           </span>
-          <span className="flex items-center gap-2">
-            <ThemeToggle />
-            <SignOutButton label={tn("signOut")} />
-          </span>
+          <SignOutButton label={tn("signOut")} />
         </div>
       </header>
-      <div className="mx-auto max-w-lg p-4 text-base">{children}</div>
+      <div className="mx-auto max-w-lg px-4 pb-4 pt-3 text-base">{children}</div>
     </div>
   );
 }
