@@ -56,6 +56,45 @@ const DAYS: [string, string[]][] = [
   ["Friday", ["10:00", "13:00", "15:30"]],
 ];
 
+// Lightweight markdown for agent answers — bold, inline code, bullet lists,
+// headings, paragraphs. No external library (keeps the bundle small + CSP clean),
+// matching the project's hand-rolled-primitives approach.
+function renderInline(text: string): React.ReactNode[] {
+  const out: React.ReactNode[] = [];
+  const re = /\*\*(.+?)\*\*|`([^`]+?)`/g;
+  let last = 0;
+  let m: RegExpExecArray | null;
+  let k = 0;
+  while ((m = re.exec(text)) !== null) {
+    if (m.index > last) out.push(text.slice(last, m.index));
+    if (m[1] != null) out.push(<strong key={k++}>{m[1]}</strong>);
+    else if (m[2] != null) out.push(<code key={k++} className="mh-code">{m[2]}</code>);
+    last = re.lastIndex;
+  }
+  if (last < text.length) out.push(text.slice(last));
+  return out;
+}
+function FormattedText({ text }: { text: string }) {
+  const blocks: React.ReactNode[] = [];
+  let bullets: string[] = [];
+  const flush = () => {
+    if (!bullets.length) return;
+    const items = bullets;
+    bullets = [];
+    blocks.push(<ul key={`u${blocks.length}`}>{items.map((b, i) => <li key={i}>{renderInline(b)}</li>)}</ul>);
+  };
+  for (const ln of text.split("\n")) {
+    const t = ln.trim();
+    if (/^[-*•]\s+/.test(t)) { bullets.push(t.replace(/^[-*•]\s+/, "")); continue; }
+    flush();
+    if (!t) continue;
+    if (/^#{1,4}\s+/.test(t)) { blocks.push(<p key={`h${blocks.length}`} className="mh-h">{renderInline(t.replace(/^#{1,4}\s+/, ""))}</p>); continue; }
+    blocks.push(<p key={`p${blocks.length}`}>{renderInline(t)}</p>);
+  }
+  flush();
+  return <div className="mh-rich">{blocks}</div>;
+}
+
 export type ConciergeSignals = {
   overdueVaccines: string[];
   latestResult: { text: string; conclusion?: string; critical: boolean; ref: string } | null;
@@ -334,7 +373,7 @@ export function Concierge({ patientPhn, name, signals }: { patientPhn: string; n
                 <div className="mh-ai-row">
                   <span className="mh-av"><Sparkles className="h-4 w-4" /></span>
                   <div className="min-w-0">
-                    <div className="mh-bubble">{n.text || (n.streaming ? "…" : "")}</div>
+                    <div className="mh-bubble">{n.text ? <FormattedText text={n.text} /> : (n.streaming ? "…" : "")}</div>
                     {n.cites?.length ? (
                       <div className="mh-srcs">
                         <span className="mh-srcs-lbl">✓ Grounded in your record</span>

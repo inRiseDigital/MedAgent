@@ -63,6 +63,17 @@
 .mh-bubble { background: var(--mh-surface); border-radius: 20px 20px 20px 7px; padding: 11px 15px;
   font-size: 15px; line-height: 1.45; box-shadow: var(--mh-shadow); color: var(--mh-ink); white-space: pre-wrap; }
 .mh-msg.me .mh-bubble { background: var(--mh-tint-2); color: #fff; border-radius: 20px 20px 7px 20px; }
+/* rich (markdown) rendering for agent answers */
+.mh-rich { white-space: normal; }
+.mh-rich > :first-child { margin-top: 0; }
+.mh-rich > :last-child { margin-bottom: 0; }
+.mh-rich p { margin: 0 0 9px; }
+.mh-rich strong { font-weight: 800; color: var(--mh-ink); }
+.mh-rich .mh-h { margin: 12px 0 5px; font-size: 14.5px; font-weight: 800; color: var(--mh-ink); letter-spacing: -0.01em; }
+.mh-rich ul { margin: 5px 0 10px; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 7px; }
+.mh-rich li { position: relative; padding-left: 17px; color: var(--mh-ink-2); }
+.mh-rich li::before { content: ""; position: absolute; left: 3px; top: 8px; width: 5px; height: 5px; border-radius: 50%; background: var(--mh-tint); }
+.mh-code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; background: var(--mh-fill); padding: 1px 6px; border-radius: 6px; }
 /* citation chips under a live (agentic) answer — signals it's grounded in the record */
 .mh-srcs { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 8px 0 0 2px; }
 .mh-srcs-lbl { font: 700 11px/1 var(--font, inherit); color: var(--mh-ink-3); }
