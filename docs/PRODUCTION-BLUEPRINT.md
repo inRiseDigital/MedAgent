@@ -203,15 +203,20 @@ Executed a full task list; **7 of the remaining items shipped, verified & commit
   clinician "Video visit" button join the **same** room (medagent-<phn>) and meet live.
   Production hardening (JWT-gated self-hosted room via telemedicine.py tokens) noted.
 
-**Still remaining (both modify the shared agent chat pipeline — do as a focused, TESTED session):**
-- ❌ **Generative-UI card protocol (1.1/3.3)** — agent answers are rich-text (already
-  formatted); typed `data-card` frames (agent tool → SSE frame → renderer) are the upgrade.
-  Additive but touches chat.py streaming + the LLM prompt.
-- ❌ **Multi-agent supervisor (3.10)** — activating `orchestrator.py` + wiring `/chat` to it
-  is risky to the working chat; needs isolated build + regression tests.
+- ✅ **Generative-UI card protocol (1.1/3.3):** new `present_card` agent tool → `data-cards`
+  SSE frame (mirrors `data-proposals`, additive — existing text/citation streaming untouched)
+  → concierge renders a premium summary card alongside the reply. Graceful when unused.
 
-**Net: 8 of the 10 remaining items shipped real this run. The 2 left both alter the core
-`/chat` pipeline every explanation now depends on — deliberately deferred to a tested pass.**
+**Still remaining (1 item — a core execution-model refactor, do as a focused, TESTED session):**
+- ❌ **Multi-agent supervisor (3.10)** — `orchestrator.py` is a real StateGraph but its nodes
+  are stubs and `/chat` uses the single ReAct agent. Activating it means making the nodes real
+  (intent classify, `rx_safety_gate` → real engine, `summary_agent` → the ReAct agent),
+  threading streaming through the graph, adding the Postgres checkpointer, and updating
+  `test_graph.py` — a change to the execution model every explanation flow now depends on.
+  Deferred to an isolated, regression-tested pass rather than rushed.
+
+**Net: 9 of the 10 remaining items shipped real this run.** The one left is the agent
+execution-model refactor — the highest-risk change to the working `/chat`, held for a tested pass.
 
 ## 8.5 Progress log (2026-08-03)
 
