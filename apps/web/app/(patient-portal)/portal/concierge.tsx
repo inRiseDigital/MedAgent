@@ -16,7 +16,6 @@ import {
   Mic,
   Send,
   Sparkles,
-  Star,
   Syringe,
 } from "lucide-react";
 
@@ -37,24 +36,29 @@ type Node =
   | { t: "typing" }
   | { t: "card"; data: CardData }
   | { t: "services" }
-  | { t: "carousel"; spec: string }
-  | { t: "slots"; name: string; spec: string }
-  | { t: "receipt"; name: string; spec: string; when: string };
+  | { t: "bslots"; slots: BSlot[] }
+  | { t: "breceipt"; b: BookResult };
 type Quick = { label: string; act: () => void };
+type BSlot = { id: string; start?: string; end?: string; specialty?: string; facility?: string };
+type BookResult = { appointment_id?: string; start?: string; end?: string; specialty?: string; facility?: string };
 
 const TONE_COLOR: Record<Tone, string> = { urgent: "var(--heart)", good: "var(--activity)", warn: "var(--nutri)", info: "var(--mh-tint)" };
 const TONE_BG: Record<Tone, string> = { urgent: "var(--heart-bg)", good: "var(--activity-bg)", warn: "var(--nutri-bg)", info: "var(--body-bg)" };
 const FACT_COLOR: Record<string, string> = { good: "var(--activity)", warn: "var(--nutri)", urgent: "var(--heart)" };
 
-const CLIN = [
-  { n: "Dr. Silva", i: "S", r: "4.9", s: "Tomorrow 9:00", c: "var(--resp)" },
-  { n: "Dr. Fernando", i: "F", r: "4.8", s: "Fri 10:00", c: "var(--body)" },
-  { n: "Dr. Rathnayake", i: "R", r: "4.7", s: "Mon 11:30", c: "var(--mind)" },
-];
-const DAYS: [string, string[]][] = [
-  ["Tomorrow", ["9:00", "11:30", "14:30"]],
-  ["Friday", ["10:00", "13:00", "15:30"]],
-];
+const dayLabel = (iso?: string) => (iso ? new Date(iso).toLocaleDateString([], { weekday: "long", month: "short", day: "numeric" }) : "");
+const timeLabel = (iso?: string) => (iso ? new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "");
+// Group real slots by calendar day for the picker.
+function groupSlots(slots: BSlot[]): [string, BSlot[]][] {
+  const by = new Map<string, BSlot[]>();
+  for (const s of slots) {
+    const k = dayLabel(s.start);
+    const arr = by.get(k) ?? [];
+    arr.push(s);
+    by.set(k, arr);
+  }
+  return [...by.entries()];
+}
 
 // Lightweight markdown for agent answers — bold, inline code, bullet lists,
 // headings, paragraphs. No external library (keeps the bundle small + CSP clean),
@@ -190,7 +194,7 @@ export function Concierge({ patientPhn, name, signals }: { patientPhn: string; n
   // ---- scripted conversational-commerce flows ----
   const menu = useCallback((): Quick[] => [
     { label: "💊 Refill a medicine", act: () => refill() },
-    { label: "📅 Book a follow-up", act: () => book("your follow-up", "Cardiology") },
+    { label: "📅 Book a follow-up", act: () => book("a follow-up") },
     { label: "🩺 Am I due for anything?", act: () => dueCheck() },
     { label: "🔒 Who saw my record?", act: () => whoSaw() },
   ], []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -259,26 +263,64 @@ export function Concierge({ patientPhn, name, signals }: { patientPhn: string; n
       setQuicks(menu());
     }, 900);
   }
-  function book(reason: string, spec: string) {
+  // REAL: fetch the patient's available slots from the scheduler, then book one.
+  function book(reason: string, spec?: string) {
     me(`Book ${reason}`);
-    typing(() => { push({ t: "ai", text: `Let's get you booked. First, pick a clinician for ${spec}:` }); push({ t: "carousel", spec }); setQuicks([]); });
+    setQuicks([]);
+    void (async () => {
+      setMsgs((m) => [...m, { t: "typing" }]);
+      down();
+      try {
+        const qs = spec ? `?specialty=${encodeURIComponent(spec)}` : "";
+        const res = await fetch(`/api/portal/booking${qs}`, { cache: "no-store" });
+        const data = res.ok ? ((await res.json()) as { slots?: BSlot[] }) : { slots: [] };
+        const slots = (data.slots ?? []).slice(0, 12);
+        setMsgs((m) => m.filter((n) => n.t !== "typing"));
+        if (!slots.length) {
+          push({ t: "ai", text: spec ? `There are no open ${spec} slots right now — I can add you to the waitlist if you'd like.` : "There are no open appointment slots right now. Please try again later." });
+          setQuicks(menu());
+          return;
+        }
+        push({ t: "ai", text: "Here are the next available times — pick one 👇" });
+        push({ t: "bslots", slots });
+      } catch {
+        setMsgs((m) => m.filter((n) => n.t !== "typing"));
+        push({ t: "ai", text: "Sorry — I couldn't load available times just now." });
+        setQuicks(menu());
+      }
+    })();
   }
-  function pickDoc(name2: string, spec: string) {
-    me(`With ${name2}`);
-    typing(() => { push({ t: "ai", text: "Great choice. When suits you?" }); push({ t: "slots", name: name2, spec }); setQuicks([]); }, 800);
-  }
-  function pickSlot(name2: string, spec: string, when: string) {
-    me(when);
-    typing(() => {
-      push({ t: "receipt", name: name2, spec, when });
-      window.setTimeout(() => push({ t: "ai", text: "Done ✨  Anything to add before you go?" }), 400);
-      setQuicks([
-        { label: "🎥 Join by video", act: () => note("Join by video", "When it's time, tap the appointment to enter a secure video room — no install needed.") },
-        { label: "📅 Add to calendar", act: () => note("Add to calendar", "Saved with a reminder the day before. 📅") },
-        { label: "👨‍👩‍👧 Invite family", act: () => invite() },
-        { label: "📋 Prep", act: () => { me("Prep instructions"); typing(() => push({ t: "card", data: { tone: "info", kicker: "Before your visit", title: "How to prepare", facts: [{ x: "Bring your medicines or a photo of them" }, { x: "No fasting needed" }, { x: "Arrive 10 min early — or use face check-in" }] } }), 800); } },
-      ]);
-    }, 950);
+  function confirmBooking(slot: BSlot) {
+    me(`${dayLabel(slot.start)}, ${timeLabel(slot.start)}`);
+    setQuicks([]);
+    void (async () => {
+      setMsgs((m) => [...m, { t: "typing" }]);
+      down();
+      try {
+        const res = await fetch("/api/portal/booking", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ slot: slot.id }) });
+        setMsgs((m) => m.filter((n) => n.t !== "typing"));
+        if (!res.ok) {
+          push({ t: "ai", text: res.status === 409 ? "Ah — that time was just taken. Pick another and I'll grab it." : "Sorry, I couldn't confirm that booking. Please try again." });
+          if (res.status === 409) push({ t: "bslots", slots: [] });
+          setQuicks(menu());
+          return;
+        }
+        const b = (await res.json()) as BookResult;
+        push({ t: "breceipt", b });
+        window.setTimeout(() => {
+          push({ t: "ai", text: "Booked ✨  Anything to add before you go?" });
+          setQuicks([
+            { label: "📅 Add to calendar", act: () => note("Add to calendar", "Saved with a reminder the day before. 📅") },
+            { label: "👨‍👩‍👧 Invite family", act: () => invite() },
+            ...menu(),
+          ]);
+        }, 450);
+      } catch {
+        setMsgs((m) => m.filter((n) => n.t !== "typing"));
+        push({ t: "ai", text: "Sorry — something went wrong confirming that." });
+        setQuicks(menu());
+      }
+    })();
   }
   function note(s: string, r: string) { me(s); typing(() => push({ t: "ai", text: r }), 650); }
   function invite() {
@@ -331,7 +373,7 @@ export function Concierge({ patientPhn, name, signals }: { patientPhn: string; n
         title: overdueVaccines.length === 1 ? `${overdueVaccines[0]} is overdue` : `${overdueVaccines.length} immunisations are overdue`,
         text: overdueVaccines.join(", "), cite: "National immunisation schedule (EPI)",
         actions: [
-          { kind: "pri", icon: <CalendarDays className="h-4 w-4" />, label: "Book vaccination", act: () => book("the overdue vaccination", "Child health") },
+          { kind: "pri", icon: <CalendarDays className="h-4 w-4" />, label: "Book vaccination", act: () => book("the overdue vaccination", "Child Health") },
           { kind: "ghost", icon: <Bell className="h-4 w-4" />, label: "Remind me", act: () => { me("Remind me tomorrow"); typing(() => push({ t: "ai", text: "Done — I'll nudge you tomorrow morning. 👍" }), 700); } },
         ] } }), d);
     }
@@ -349,8 +391,8 @@ export function Concierge({ patientPhn, name, signals }: { patientPhn: string; n
   }, [first, signals, push, me, typing, streamAgent, menu]);
 
   const services: { icon: React.ReactNode; c: string; t: string; d: string; act: () => void }[] = [
-    { icon: <CalendarDays className="h-[18px] w-[18px]" />, c: "resp", t: "Book a visit", d: "Any specialty", act: () => book("your follow-up", "Cardiology") },
-    { icon: <Syringe className="h-[18px] w-[18px]" />, c: "activity", t: "Vaccinations", d: "EPI schedule", act: () => book("a vaccination", "Child health") },
+    { icon: <CalendarDays className="h-[18px] w-[18px]" />, c: "resp", t: "Book a visit", d: "Any specialty", act: () => book("a visit") },
+    { icon: <Syringe className="h-[18px] w-[18px]" />, c: "activity", t: "Vaccinations", d: "Child Health", act: () => book("a vaccination", "Child Health") },
     { icon: <Sparkles className="h-[18px] w-[18px]" />, c: "nutri", t: "Refill meds", d: signals.medsCount ? `${signals.medsCount} active` : "Request", act: () => refill() },
     { icon: <FileText className="h-[18px] w-[18px]" />, c: "mind", t: "Explain a result", d: signals.latestResult ? "Latest ready" : "Ask anything", act: () => (signals.latestResult ? explainResult() : void streamAgent("Summarise my recent results in plain language.")) },
   ];
@@ -421,48 +463,31 @@ export function Concierge({ patientPhn, name, signals }: { patientPhn: string; n
                   ))}
                 </div>
               )
-            : n.t === "carousel" ? (
+            : n.t === "bslots" ? (
                 <div>
-                  <div className="mh-stepper"><i className="on" /><i /><i /><span>Step 1 / 3</span></div>
-                  <div className="mh-carousel">
-                    {CLIN.map((d, k) => (
-                      <button key={k} type="button" className="mh-doc" onClick={() => pickDoc(d.n, n.spec)}>
-                        <span className="av" style={{ background: `linear-gradient(150deg, ${d.c}, color-mix(in srgb, ${d.c} 55%, #000))` }}>{d.i}</span>
-                        <div className="dn">{d.n}</div><div className="dsp">{n.spec}</div>
-                        <div className="rt"><Star className="h-3 w-3" fill="currentColor" />{d.r}</div>
-                        <div className="sl">Next: {d.s}</div>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )
-            : n.t === "slots" ? (
-                <div>
-                  <div className="mh-stepper"><i className="on" /><i className="on" /><i /><span>Step 2 / 3</span></div>
-                  {DAYS.map(([day, times], k) => (
+                  {groupSlots(n.slots).map(([day, slots], k) => (
                     <div key={k}>
                       <div className="mh-daylab">{day}</div>
                       <div className="mh-slotgrid">
-                        {times.map((tm) => (
-                          <button key={tm} type="button" className="mh-slotpill" onClick={() => pickSlot(n.name, n.spec, `${day}, ${tm}`)}>{tm}</button>
+                        {slots.map((s) => (
+                          <button key={s.id} type="button" className="mh-slotpill" onClick={() => confirmBooking(s)}>{timeLabel(s.start)}</button>
                         ))}
                       </div>
                     </div>
                   ))}
                 </div>
               )
-            : n.t === "receipt" ? (
+            : n.t === "breceipt" ? (
                 <div className="mh-ccard">
                   <div className="strip" style={{ background: "var(--activity)" }} />
                   <div className="b">
                     <svg className="mh-check" viewBox="0 0 52 52"><circle cx="26" cy="26" r="23" style={{ strokeDasharray: 150, strokeDashoffset: 150, animation: "mh-draw .5s .15s forwards" }} /><path d="M15 27l7 7 15-16" style={{ strokeDasharray: 44, strokeDashoffset: 44, animation: "mh-draw .4s .55s forwards" }} /></svg>
                     <h4 style={{ textAlign: "center", marginTop: 12 }}>Appointment confirmed</h4>
                     <div style={{ marginTop: 12 }}>
-                      <div className="mh-rline"><span className="l">Clinician</span><span className="v">{n.name}</span></div>
-                      <div className="mh-rline"><span className="l">For</span><span className="v">{n.spec}</span></div>
-                      <div className="mh-rline"><span className="l">When</span><span className="v">{n.when}</span></div>
+                      {n.b.specialty ? <div className="mh-rline"><span className="l">For</span><span className="v">{n.b.specialty}</span></div> : null}
+                      <div className="mh-rline"><span className="l">When</span><span className="v">{dayLabel(n.b.start)}, {timeLabel(n.b.start)}</span></div>
                       <div className="mh-rline"><span className="l">Where</span><span className="v">Teaching Hospital</span></div>
-                      <div className="mh-rline"><span className="l">Ref</span><span className="v" style={{ color: "var(--mh-tint-ink)" }}>MA-4827</span></div>
+                      <div className="mh-rline"><span className="l">Ref</span><span className="v" style={{ color: "var(--mh-tint-ink)" }}>{n.b.appointment_id ? `MA-${n.b.appointment_id}` : "—"}</span></div>
                     </div>
                   </div>
                 </div>
