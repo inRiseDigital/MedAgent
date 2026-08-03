@@ -20,6 +20,8 @@ import {
   Syringe,
 } from "lucide-react";
 
+import { VideoRoom } from "@/components/video-room";
+
 type Tone = "urgent" | "good" | "warn" | "info";
 type Action = { label: string; kind?: "pri" | "ghost"; icon?: React.ReactNode; act: () => void };
 type CardData = {
@@ -115,8 +117,10 @@ export function Concierge({ patientPhn, name, signals }: { patientPhn: string; n
   const [quicks, setQuicks] = useState<Quick[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
+  const [inVideo, setInVideo] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const ran = useRef(false);
+  const videoRoom = `medagent-${patientPhn}`; // deterministic: doctor + patient meet here
 
   const down = useCallback(() => {
     requestAnimationFrame(() => {
@@ -199,6 +203,7 @@ export function Concierge({ patientPhn, name, signals }: { patientPhn: string; n
     { label: "💊 Refill a medicine", act: () => refill() },
     { label: "📅 Book a follow-up", act: () => book("a follow-up") },
     { label: "🩺 Am I due for anything?", act: () => dueCheck() },
+    { label: "🎥 Start a video visit", act: () => startVideo() },
     { label: "🔒 Who saw my record?", act: () => whoSaw() },
   ], []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -337,6 +342,7 @@ export function Concierge({ patientPhn, name, signals }: { patientPhn: string; n
         window.setTimeout(() => {
           push({ t: "ai", text: "Booked ✨  Anything to add before you go?" });
           setQuicks([
+            { label: "🎥 Join by video", act: () => startVideo() },
             { label: "📅 Add to calendar", act: () => note("Add to calendar", "Saved with a reminder the day before. 📅") },
             { label: "👨‍👩‍👧 Invite family", act: () => invite() },
             ...menu(),
@@ -350,6 +356,11 @@ export function Concierge({ patientPhn, name, signals }: { patientPhn: string; n
     })();
   }
   function note(s: string, r: string) { me(s); typing(() => push({ t: "ai", text: r }), 650); }
+  // REAL: open a live Jitsi video room the clinician joins from the patient page.
+  function startVideo() {
+    me("Start my video visit");
+    typing(() => { push({ t: "ai", text: "Connecting you to a secure video room — your clinician joins from their side. Tap Leave when you're done. 🎥" }); setInVideo(true); }, 500);
+  }
   function invite() {
     me("Invite family");
     typing(() => { push({ t: "ai", text: "Who would you like to invite? They'll get a secure one-time link." });
@@ -454,6 +465,7 @@ export function Concierge({ patientPhn, name, signals }: { patientPhn: string; n
 
   return (
     <div className="mh flex h-[calc(100dvh-9rem)] flex-col overflow-hidden lg:h-[calc(100dvh-7rem)]">
+      {inVideo ? <VideoRoom room={videoRoom} displayName={name} onClose={() => setInVideo(false)} /> : null}
       <div ref={scrollRef} className="flex flex-1 flex-col gap-3 overflow-y-auto p-3.5">
         {msgs.map((n, i) => {
           if (n.t === "me") return <div key={i} className="mh-msg me"><div className="mh-bubble">{n.text}</div></div>;

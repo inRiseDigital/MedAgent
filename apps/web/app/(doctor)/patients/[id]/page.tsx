@@ -26,6 +26,7 @@ import { ChatPanel } from "./chat-panel";
 import { ChildHealthCard } from "./child-health";
 import { ClinicalEntry } from "./clinical-entry";
 import { PatientCockpit } from "./cockpit";
+import { VideoButton } from "./video-button";
 import { ProposalPanel } from "./proposal-panel";
 
 function age(birthDate?: string): string {
@@ -117,14 +118,17 @@ export default async function PatientSessionPage({ params }: { params: Promise<{
             )}
           </p>
         </div>
-        {highAllergies.length > 0 ? (
-          <div className="ml-auto flex items-center gap-2 rounded-md border border-destructive/40 bg-destructive-surface px-3 py-1.5 text-destructive">
-            <ShieldAlert className="h-4 w-4 shrink-0" />
-            <span className="text-xs font-semibold">
-              {highAllergies.map((a) => a.text).join(", ")} allergy
-            </span>
-          </div>
-        ) : null}
+        <div className="ml-auto flex items-center gap-2">
+          {summary ? <VideoButton phn={summary.patient.phn} /> : null}
+          {highAllergies.length > 0 ? (
+            <div className="flex items-center gap-2 rounded-md border border-destructive/40 bg-destructive-surface px-3 py-1.5 text-destructive">
+              <ShieldAlert className="h-4 w-4 shrink-0" />
+              <span className="text-xs font-semibold">
+                {highAllergies.map((a) => a.text).join(", ")} allergy
+              </span>
+            </div>
+          ) : null}
+        </div>
       </div>
 
       {/* Clinician cockpit — vitals & lab gauges + imaging gallery */}
