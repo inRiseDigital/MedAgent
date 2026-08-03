@@ -198,13 +198,20 @@ Executed a full task list; **7 of the remaining items shipped, verified & commit
 - ✅ **Notifications producer (§6):** granted core-api `events:user:*`; `publish_user()`;
   booking + refill push a **real personal notification**; patient portal shows live toasts.
 
-**Still remaining (large, do as focused sessions):**
+- ✅ **Real video (§5):** `VideoRoom` (Jitsi iframe — camera/mic/screen-share, no external
+  script/CSP issue); patient concierge "Start a video visit" / "Join by video" and a
+  clinician "Video visit" button join the **same** room (medagent-<phn>) and meet live.
+  Production hardening (JWT-gated self-hosted room via telemedicine.py tokens) noted.
+
+**Still remaining (both modify the shared agent chat pipeline — do as a focused, TESTED session):**
 - ❌ **Generative-UI card protocol (1.1/3.3)** — agent answers are rich-text (already
-  formatted); typed `data-card` frames are the upgrade.
-- ❌ **Real video (§5)** — Jitsi/LiveKit wiring of `telemedicine.py` + shared room UI (CSP +
-  external SFU + doctor/patient integration).
+  formatted); typed `data-card` frames (agent tool → SSE frame → renderer) are the upgrade.
+  Additive but touches chat.py streaming + the LLM prompt.
 - ❌ **Multi-agent supervisor (3.10)** — activating `orchestrator.py` + wiring `/chat` to it
-  is risky to the working chat; needs isolated build + tests.
+  is risky to the working chat; needs isolated build + regression tests.
+
+**Net: 8 of the 10 remaining items shipped real this run. The 2 left both alter the core
+`/chat` pipeline every explanation now depends on — deliberately deferred to a tested pass.**
 
 ## 8.5 Progress log (2026-08-03)
 
