@@ -231,6 +231,93 @@ async def auto_book(
         await fhir.close()
 
 
+@router.get("/slots")
+async def list_free_slots(
+    principal: Annotated[Principal, Depends(require_user)],
+    settings: Annotated[Settings, Depends(get_settings)],
+    facility: str | None = None,
+    specialty: str | None = None,
+) -> dict[str, Any]:
+    """Free slots a patient can book, earliest first (FR-9.5, patient self-service)."""
+    fhir = FHIRClient(settings.fhir_base_url)
+    try:
+        params: dict[str, str] = {"status": "free", "_count": "100"}
+        if facility:
+            params["_tag"] = f"{FACILITY_TAG}|{facility}"
+        rows = await fhir.search("Slot", params)
+        out = []
+        for s in rows:
+            if not s.get("start"):
+                continue
+            spec = _specialty_of(s)
+            if specialty and spec != specialty:
+                continue
+            out.append({
+                "id": f"Slot/{s['id']}", "start": s.get("start"), "end": s.get("end"),
+                "facility": _facility_of(s), "specialty": spec,
+            })
+        out.sort(key=lambda x: x["start"] or "")
+        return {"slots": out[:60]}
+    finally:
+        await fhir.close()
+
+
+class BookRequest(BaseModel):
+    slot: str = Field(..., description="Slot/<id> or <id>")
+    patient: str = Field(..., description="PHN or FHIR id")
+    reason: str | None = None
+
+
+@router.post("/book", status_code=status.HTTP_201_CREATED)
+async def book_slot(
+    body: BookRequest,
+    request: Request,
+    principal: Annotated[Principal, Depends(require_user)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> dict[str, Any]:
+    """Patient self-service booking: claim a specific free Slot and create a booked
+    FHIR Appointment. Fail-closed if the slot was taken (409)."""
+    auth = request.headers.get("authorization", "")
+    token = auth[7:] if auth.lower().startswith("bearer ") else None
+    slot_id = body.slot.split("/", 1)[-1]
+    fhir = FHIRClient(settings.fhir_base_url)
+    try:
+        patient = await _resolve_pid(fhir, body.patient)
+        if not patient:
+            raise HTTPException(status_code=404, detail=f"no FHIR patient for {body.patient}")
+        pid = str(patient["id"])
+        try:
+            slot = await fhir.read("Slot", slot_id)
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=404, detail=f"no slot {slot_id}") from exc
+        if slot.get("status") != "free":
+            raise HTTPException(status_code=409, detail="that slot is no longer available")
+        facility = _facility_of(slot)
+        specialty = _specialty_of(slot)
+        appt = await fhir.create("Appointment", {
+            "resourceType": "Appointment", "status": "booked",
+            "serviceType": [{"text": specialty}] if specialty else [],
+            "meta": {"tag": [{"system": FACILITY_TAG, "code": facility}]} if facility else {},
+            "description": body.reason or (f"{specialty} appointment" if specialty else "Appointment"),
+            "start": slot.get("start"), "end": slot.get("end"),
+            "slot": [{"reference": f"Slot/{slot_id}"}],
+            "participant": [{"actor": {"reference": f"Patient/{pid}"}, "status": "accepted"}],
+        }, token)
+        slot["status"] = "busy"
+        await fhir.update("Slot", slot_id, slot, token)
+        appt_id = str(appt["id"])
+        session.add(AuditOutbox(event={
+            "type": "appointment_booked", "actor": principal.subject, "patient_fhir_id": pid,
+            "committed": f"Appointment/{appt_id}", "facility": facility,
+            "specialty": specialty, "start": slot.get("start"), "self_service": True,
+        }))
+        return {"appointment_id": appt_id, "status": "booked", "start": slot.get("start"),
+                "end": slot.get("end"), "facility": facility, "specialty": specialty}
+    finally:
+        await fhir.close()
+
+
 @router.get("/waiting-times")
 async def waiting_times(
     principal: Annotated[Principal, Depends(require_user)],
