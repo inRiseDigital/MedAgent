@@ -316,7 +316,7 @@ export function Concierge({ patientPhn, name }: { patientPhn: string; name: stri
   }
 
   return (
-    <div className="mh flex h-[calc(100dvh-8.5rem)] flex-col overflow-hidden rounded-[24px] border border-border" style={{ background: "var(--mh-surface-2)" }}>
+    <div className="mh flex h-[calc(100dvh-9rem)] flex-col overflow-hidden rounded-[24px] border border-border lg:h-[calc(100dvh-7rem)]" style={{ background: "var(--mh-surface-2)" }}>
       <div ref={scrollRef} className="flex flex-1 flex-col gap-3 overflow-y-auto p-3.5">
         {msgs.map((n, i) => {
           if (n.t === "me") return <div key={i} className="mh-msg me"><div className="mh-bubble">{n.text}</div></div>;

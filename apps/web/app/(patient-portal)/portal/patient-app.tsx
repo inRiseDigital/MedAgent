@@ -55,39 +55,45 @@ export function PatientApp({
         })}
       </nav>
 
-      {/* Content column */}
-      <div className="flex min-h-[calc(100dvh-8.5rem)] min-w-0 flex-1 flex-col">
-        <div className="mx-auto w-full max-w-2xl flex-1 lg:mx-0">
+      {/* Content column. Non-chat tabs scroll the page and get bottom padding so
+          their last items clear the fixed bar; the chat manages its own height. */}
+      <div className="min-w-0 flex-1">
+        <div className="mx-auto w-full max-w-2xl lg:mx-0">
           <div className={tab === "chat" ? "block" : "hidden"}>{concierge}</div>
-          <div className={tab === "summary" ? "block" : "hidden"}>{summary}</div>
-          <div className={tab === "record" ? "block" : "hidden"}>{record}</div>
-          <div className={tab === "me" ? "block" : "hidden"}>{me}</div>
+          <div className={tab === "summary" ? "block pb-28 lg:pb-2" : "hidden"}>{summary}</div>
+          <div className={tab === "record" ? "block pb-28 lg:pb-2" : "hidden"}>{record}</div>
+          <div className={tab === "me" ? "block pb-28 lg:pb-2" : "hidden"}>{me}</div>
         </div>
-
-        {/* Mobile bottom tab bar */}
-        <nav
-          className="sticky bottom-0 z-10 mt-4 flex gap-1 rounded-2xl border border-border bg-card/85 p-1.5 shadow-lg backdrop-blur lg:hidden"
-          aria-label="Patient app"
-        >
-          {tabs.map(({ k, label, Icon }) => {
-            const on = tab === k;
-            return (
-              <button
-                key={k}
-                type="button"
-                onClick={() => setTab(k)}
-                aria-current={on ? "page" : undefined}
-                className={`flex flex-1 flex-col items-center gap-1 rounded-xl px-2 py-2 text-[0.68rem] font-semibold transition-colors ${
-                  on ? "bg-primary/10 text-primary" : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                <Icon className="h-5 w-5" />
-                {label}
-              </button>
-            );
-          })}
-        </nav>
       </div>
+
+      {/* Mobile bottom tab bar — FIXED to the viewport so it never scrolls away.
+          A short gradient masks content passing behind the floating pill. */}
+      <nav
+        className="fixed inset-x-0 bottom-0 z-30 bg-gradient-to-t from-[color:var(--mh-bg)] via-[color:var(--mh-bg)]/85 to-transparent pt-4 lg:hidden"
+        aria-label="Patient app"
+      >
+        <div className="mx-auto max-w-lg px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+          <div className="flex gap-1 rounded-2xl border border-border bg-card/90 p-1.5 shadow-lg backdrop-blur">
+            {tabs.map(({ k, label, Icon }) => {
+              const on = tab === k;
+              return (
+                <button
+                  key={k}
+                  type="button"
+                  onClick={() => setTab(k)}
+                  aria-current={on ? "page" : undefined}
+                  className={`flex flex-1 flex-col items-center gap-1 rounded-xl px-2 py-2 text-[0.68rem] font-semibold transition-colors ${
+                    on ? "bg-primary/10 text-primary" : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  <Icon className="h-5 w-5" />
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </nav>
     </div>
   );
 }
