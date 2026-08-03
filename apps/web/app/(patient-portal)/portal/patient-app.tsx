@@ -18,11 +18,13 @@ export function PatientApp({
   summary,
   record,
   me,
+  rail,
 }: {
   concierge: ReactNode;
   summary: ReactNode;
   record: ReactNode;
   me: ReactNode;
+  rail: ReactNode;
 }) {
   const [tab, setTab] = useState<TabKey>("chat");
   const tabs: { k: TabKey; label: string; Icon: typeof Activity }[] = [
@@ -55,16 +57,24 @@ export function PatientApp({
         })}
       </nav>
 
-      {/* Content column. Non-chat tabs scroll the page and get bottom padding so
-          their last items clear the fixed bar; the chat manages its own height. */}
+      {/* Content column. Chat fills the width; reading-oriented tabs stay at a
+          comfortable measure. Non-chat tabs get bottom padding to clear the
+          fixed mobile bar; the chat manages its own height. */}
       <div className="min-w-0 flex-1">
+        {/* Chat spans the column so it uses the desktop space; bubbles are capped
+            for readability in CSS. Other tabs stay centred at reading width. */}
+        <div className={tab === "chat" ? "block" : "hidden"}>{concierge}</div>
         <div className="mx-auto w-full max-w-2xl lg:mx-0">
-          <div className={tab === "chat" ? "block" : "hidden"}>{concierge}</div>
           <div className={tab === "summary" ? "block pb-28 lg:pb-2" : "hidden"}>{summary}</div>
           <div className={tab === "record" ? "block pb-28 lg:pb-2" : "hidden"}>{record}</div>
           <div className={tab === "me" ? "block pb-28 lg:pb-2" : "hidden"}>{me}</div>
         </div>
       </div>
+
+      {/* Desktop right rail — at-a-glance context beside the chat (chat tab only) */}
+      {tab === "chat" ? (
+        <aside className="hidden xl:block xl:w-80 xl:shrink-0 2xl:w-96">{rail}</aside>
+      ) : null}
 
       {/* Mobile bottom tab bar — FIXED to the viewport so it never scrolls away.
           A short gradient masks content passing behind the floating pill. */}

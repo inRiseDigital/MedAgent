@@ -162,6 +162,43 @@ export function SummaryView({ summary }: { summary: PatientSummary }) {
   );
 }
 
+// Desktop-only right rail shown beside the concierge chat — a compact
+// at-a-glance snapshot so the wide screen carries useful context, not emptiness.
+export function SnapshotRail({ summary }: { summary: PatientSummary }) {
+  const nextAppt = summary.appointments.find((a) => a.start);
+  const vitals = summary.vitals.filter((v) => typeof v.value === "number").slice(0, 2);
+  const critical = summary.results.filter((r) => r.critical);
+  return (
+    <div className="space-y-4">
+      <SectionLabel>At a glance</SectionLabel>
+      {critical.length > 0 ? (
+        <div className="flex items-start gap-3 rounded-2xl border border-destructive/40 bg-destructive-surface p-4 text-destructive">
+          <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
+          <div>
+            <p className="text-sm font-semibold">{critical.length} result{critical.length > 1 ? "s" : ""} need{critical.length > 1 ? "" : "s"} attention</p>
+            <p className="text-xs opacity-90">{critical.map((r) => r.text).slice(0, 2).join(", ")}</p>
+          </div>
+        </div>
+      ) : null}
+      {nextAppt ? (
+        <div className="flex items-center gap-3 rounded-2xl border border-border bg-card p-4 shadow-sm">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+            <CalendarClock className="h-5 w-5" />
+          </span>
+          <div className="min-w-0">
+            <p className="text-[0.68rem] font-semibold uppercase tracking-wider text-muted-foreground">Next appointment</p>
+            <p className="truncate text-sm font-semibold">{nextAppt.start ? new Date(nextAppt.start).toLocaleString([], { weekday: "short", hour: "2-digit", minute: "2-digit" }) : "—"}</p>
+          </div>
+        </div>
+      ) : null}
+      {vitals.map((v, i) => (
+        <FavTile key={i} name={v.text} value={v.value as number} unit={v.unit} when={v.when} />
+      ))}
+      <p className="px-1 text-xs text-muted-foreground">Open the <span className="font-semibold text-foreground">Summary</span> tab for your full picture.</p>
+    </div>
+  );
+}
+
 function Group({ label, icon, children }: { label: string; icon: React.ReactNode; children: React.ReactNode }) {
   return (
     <div>

@@ -52,7 +52,7 @@
 }
 
 /* ---- concierge chat ---- */
-.mh-msg { max-width: 90%; animation: mh-rise 0.34s cubic-bezier(0.2, 0.7, 0.3, 1) both; }
+.mh-msg { max-width: min(90%, 46rem); animation: mh-rise 0.34s cubic-bezier(0.2, 0.7, 0.3, 1) both; }
 @media (prefers-reduced-motion: reduce) { .mh-msg { animation: none; } }
 @keyframes mh-rise { from { opacity: 0; transform: translateY(9px); } to { opacity: 1; transform: none; } }
 .mh-msg.ai { align-self: flex-start; }

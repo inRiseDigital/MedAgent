@@ -14,7 +14,7 @@ import {
 import { getSession } from "@/lib/session-store";
 import { Concierge } from "./concierge";
 import { PatientApp } from "./patient-app";
-import { MeView, RecordView, SummaryView } from "./views";
+import { MeView, RecordView, SnapshotRail, SummaryView } from "./views";
 
 export const dynamic = "force-dynamic";
 
@@ -71,6 +71,7 @@ export default async function PortalHomePage() {
       summary={<SummaryView summary={summary} />}
       record={<RecordView summary={summary} />}
       me={<MeView accessLog={accessLog} />}
+      rail={<SnapshotRail summary={summary} />}
     />
   );
 }
