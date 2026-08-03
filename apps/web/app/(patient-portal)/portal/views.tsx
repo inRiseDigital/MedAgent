@@ -316,6 +316,12 @@ function relTime(iso?: string): string {
   return d.toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" });
 }
 
+/** Plain-language one-liner for an access-log entry (shared with the concierge). */
+export function describeAccess(e: AccessLogEntry): { title: string; when: string } {
+  const title = accessTitle(e);
+  return { title, when: relTime(e.recorded) };
+}
+
 export function MeView({ accessLog }: { accessLog: AccessLogEntry[] }) {
   return (
     <div className="space-y-5 pt-2">

@@ -15,7 +15,7 @@ import {
 import { getSession } from "@/lib/session-store";
 import { Concierge } from "./concierge";
 import { PatientApp } from "./patient-app";
-import { MeView, RecordView, SnapshotRail, SummaryView } from "./views";
+import { describeAccess, MeView, RecordView, SnapshotRail, SummaryView } from "./views";
 
 export const dynamic = "force-dynamic";
 
@@ -73,6 +73,7 @@ export default async function PortalHomePage() {
       ? { text: latest.text, conclusion: latest.conclusion, critical: latest.critical, ref: latest.ref }
       : null,
     medsCount: summary.medications.length,
+    accessRecent: accessLog.slice(0, 5).map(describeAccess),
   };
 
   return (

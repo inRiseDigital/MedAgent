@@ -99,6 +99,7 @@ export type ConciergeSignals = {
   overdueVaccines: string[];
   latestResult: { text: string; conclusion?: string; critical: boolean; ref: string } | null;
   medsCount: number;
+  accessRecent: { title: string; when: string }[];
 };
 
 export function Concierge({ patientPhn, name, signals }: { patientPhn: string; name: string; signals: ConciergeSignals }) {
@@ -288,17 +289,24 @@ export function Concierge({ patientPhn, name, signals }: { patientPhn: string; n
         { label: "Someone else", act: () => note("Someone else", "Share their number in the Care tab and I'll send the invite.") },
       ]); }, 700);
   }
+  // REAL: the agent reads the record (immunisations, conditions, appointments)
+  // to answer what the patient is due for.
   function dueCheck() {
-    me("Am I due for anything?");
-    typing(() => { push({ t: "card", data: { tone: "info", kicker: "Reminders", title: "Coming up",
-      facts: [{ t: "urgent", x: "Baby's OPV vaccine — overdue" }, { t: "warn", x: "Yearly HbA1c check — next month" }, { t: "good", x: "Everything else up to date 🎉" }],
-      actions: [{ kind: "pri", icon: <CalendarDays className="h-4 w-4" />, label: "Book the vaccine", act: () => book("Baby's OPV vaccination", "Child health") }] } }); setQuicks(menu()); }, 900);
+    void streamAgent("Am I due for anything — vaccinations, screenings, or follow-ups? Check my record and tell me plainly, and cite it.");
   }
+  // REAL: recent access rendered from the audit log (passed as a signal).
   function whoSaw() {
     me("Who saw my record?");
-    typing(() => { push({ t: "card", data: { tone: "info", kicker: "Transparency", title: "Recent access",
-      facts: [{ t: "good", x: "Dr. Perera viewed your summary — today, 9:12" }, { t: "good", x: "Lab added your dengue result — yesterday" }, { x: "You downloaded your record — 3 days ago" }],
-      text: "Every view is logged and tamper-proof. Revoke access anytime in ‘Me’." } }); setQuicks(menu()); }, 850);
+    typing(() => {
+      const rows = signals.accessRecent.slice(0, 4);
+      push({ t: "card", data: { tone: "info", kicker: "Transparency", title: "Recent access to your record",
+        facts: rows.length
+          ? rows.map((r) => ({ t: r.title.startsWith("You") ? "good" : undefined, x: `${r.title}${r.when ? ` — ${r.when}` : ""}` }))
+          : [{ x: "No recent access recorded." }],
+        text: "Every view is logged and tamper-proof. See the full list and revoke access in ‘Me’.",
+        actions: [{ kind: "ghost", icon: <FileText className="h-4 w-4" />, label: "Open access log", act: () => window.dispatchEvent(new CustomEvent("mh:tab", { detail: "me" })) }] } });
+      setQuicks(menu());
+    }, 850);
   }
 
   // ---- greeting (proactive, driven by REAL record signals) ----
