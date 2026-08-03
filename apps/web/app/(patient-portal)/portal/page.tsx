@@ -6,6 +6,7 @@
  */
 import {
   fetchAccessLog,
+  fetchImmunizations,
   fetchPatientSummary,
   type AccessLogEntry,
   type PatientSummary,
@@ -41,9 +42,32 @@ export default async function PortalHomePage() {
     );
   }
 
+  // Real, record-derived signals for the concierge greeting (no scripted fiction).
+  const bd = summary.patient.birthDate;
+  const ageYears = bd ? Math.floor((Date.now() - Date.parse(bd)) / 31_557_600_000) : null;
+  // EPI immunisations only make sense for children — never show "overdue vaccine"
+  // nudges for an adult (the schedule would flag decades-old childhood doses).
+  let overdueVaccines: string[] = [];
+  if (ageYears !== null && ageYears < 6) {
+    try {
+      const imm = await fetchImmunizations(phn);
+      overdueVaccines = imm.schedule.filter((r) => r.status === "overdue").map((r) => r.name).slice(0, 4);
+    } catch {
+      overdueVaccines = [];
+    }
+  }
+  const latest = summary.results[0] ?? null;
+  const signals = {
+    overdueVaccines,
+    latestResult: latest
+      ? { text: latest.text, conclusion: latest.conclusion, critical: latest.critical, ref: latest.ref }
+      : null,
+    medsCount: summary.medications.length,
+  };
+
   return (
     <PatientApp
-      concierge={<Concierge patientPhn={phn} name={summary.patient.name} />}
+      concierge={<Concierge patientPhn={phn} name={summary.patient.name} signals={signals} />}
       summary={<SummaryView summary={summary} />}
       record={<RecordView summary={summary} />}
       me={<MeView accessLog={accessLog} />}

@@ -18,7 +18,6 @@ import {
   Sparkles,
   Star,
   Syringe,
-  Video,
 } from "lucide-react";
 
 type Tone = "urgent" | "good" | "warn" | "info";
@@ -57,7 +56,13 @@ const DAYS: [string, string[]][] = [
   ["Friday", ["10:00", "13:00", "15:30"]],
 ];
 
-export function Concierge({ patientPhn, name }: { patientPhn: string; name: string }) {
+export type ConciergeSignals = {
+  overdueVaccines: string[];
+  latestResult: { text: string; conclusion?: string; critical: boolean; ref: string } | null;
+  medsCount: number;
+};
+
+export function Concierge({ patientPhn, name, signals }: { patientPhn: string; name: string; signals: ConciergeSignals }) {
   const first = name.split(" ")[0] ?? "there";
   const [msgs, setMsgs] = useState<Node[]>([]);
   const [quicks, setQuicks] = useState<Quick[]>([]);
@@ -157,45 +162,30 @@ export function Concierge({ patientPhn, name }: { patientPhn: string; name: stri
     void streamAgent(text);
   }
 
-  function explain() {
-    me("Explain my dengue result simply");
-    typing(() => {
-      push({ t: "ai", text: "Of course — the short version 👇" });
-      push({ t: "card", data: { tone: "good", kicker: "In plain language", title: "You had dengue — and you're recovering well",
-        text: "Your test confirmed dengue. The reassuring part: platelets are steady and fever is settling.",
-        facts: [
-          { t: "good", x: "Platelets stable — no bleeding risk right now" },
-          { t: "good", x: "Fever coming down over the last 2 days" },
-          { t: "warn", x: "Keep resting and drink plenty of fluids" },
-        ],
-        cite: "Grounded in your record · not a diagnosis",
-        actions: [
-          { kind: "pri", icon: <MessageSquareText className="h-4 w-4" />, label: "What should I avoid?", act: () => avoid() },
-          { kind: "ghost", icon: <Video className="h-4 w-4" />, label: "Message my doctor", act: () => { me("Message my doctor"); typing(() => push({ t: "ai", text: "Sent to Dr. Perera's team. If anything feels worse — severe tummy pain, bleeding, or you can't keep fluids down — go to a hospital straight away." }), 900); } },
-        ] } });
-      setQuicks([{ label: "What should I avoid?", act: () => avoid() }, { label: "Book a check-up", act: () => book("a dengue check-up", "General") }, ...menu()]);
-    }, 1100);
+  // REAL: ask the live patient-persona agent to explain the patient's actual
+  // most-recent result in plain language, grounded in and citing the record.
+  function explainResult() {
+    const r = signals.latestResult;
+    const q = r
+      ? `Explain my most recent result — "${r.text}" (${r.ref}) — in simple, reassuring plain language. Say what it means for me and what to do next, and cite it.`
+      : "Explain my most recent lab result in simple, reassuring plain language, and cite it.";
+    void streamAgent(q);
   }
-  function avoid() {
-    me("What should I avoid?");
-    typing(() => {
-      push({ t: "card", data: { tone: "warn", kicker: "While you recover", title: "A few things to avoid",
-        facts: [
-          { t: "urgent", x: "⚠️ No ibuprofen or aspirin — they raise bleeding risk in dengue. Paracetamol is fine." },
-          { t: "warn", x: "Avoid strenuous activity for now" },
-          { t: "good", x: "Do: rest, fluids, watch for warning signs" },
-        ],
-        cite: "Consistent with your allergy & medication record",
-        actions: [{ kind: "pri", icon: <CalendarDays className="h-4 w-4" />, label: "Book a check-up", act: () => book("a dengue check-up", "General") }] } });
-      setQuicks(menu());
-    }, 950);
-  }
+  // REAL: show the actual result's conclusion straight from the record (no agent).
   function viewResult() {
-    me("View my dengue result");
+    const r = signals.latestResult;
+    me("View my result");
     typing(() => {
-      push({ t: "card", data: { tone: "good", kicker: "Lab result", title: "Dengue NS1 — positive → recovering", text: "Platelets stable, fever settling. No warning signs.", cite: "DiagnosticReport · Teaching Hospital" } });
+      if (r) {
+        push({ t: "card", data: { tone: r.critical ? "warn" : "good", kicker: "Lab result", title: r.text,
+          text: r.conclusion ?? "This result is on file. Tap “Explain it simply” for a plain-language summary.",
+          cite: `Grounded in your record · ${r.ref}`,
+          actions: [{ kind: "pri", icon: <MessageSquareText className="h-4 w-4" />, label: "Explain it simply", act: () => explainResult() }] } });
+      } else {
+        push({ t: "ai", text: "You don't have any recent lab results on file right now." });
+      }
       setQuicks(menu());
-    }, 900);
+    }, 700);
   }
 
   function refill() {
@@ -258,29 +248,50 @@ export function Concierge({ patientPhn, name }: { patientPhn: string; name: stri
       text: "Every view is logged and tamper-proof. Revoke access anytime in ‘Me’." } }); setQuicks(menu()); }, 850);
   }
 
-  // ---- greeting (proactive) ----
+  // ---- greeting (proactive, driven by REAL record signals) ----
   useEffect(() => {
     if (ran.current) return;
     ran.current = true;
-    push({ t: "ai", text: `Good morning, ${first} 🌿  I've checked your record — two things need you today.` });
-    // NOTE: no cleanup that clears these timeouts. React's StrictMode dev
-    // double-invoke would run the cleanup and, with the `ran` guard blocking a
-    // re-schedule, the cards would never appear. The `ran` guard already makes
-    // this run exactly once, so letting the timeouts stand is correct.
-    window.setTimeout(() => push({ t: "card", data: { tone: "urgent", kicker: "Action needed", title: "Baby's OPV vaccine is overdue", text: "The oral polio birth dose was due at birth and hasn't been given yet.", cite: "National immunisation schedule",
-      actions: [ { kind: "pri", icon: <CalendarDays className="h-4 w-4" />, label: "Book vaccination", act: () => book("Baby's OPV vaccination", "Child health") }, { kind: "ghost", icon: <Bell className="h-4 w-4" />, label: "Remind me", act: () => { me("Remind me tomorrow"); typing(() => push({ t: "ai", text: "Done — I'll nudge you tomorrow morning. 👍" }), 700); } } ] } }), 600);
-    window.setTimeout(() => {
-      push({ t: "card", data: { tone: "good", kicker: "Result ready", title: "Your dengue result is ready", text: "Reviewed by the lab. Good news overall — want it in plain language?",
-        actions: [ { kind: "pri", icon: <MessageSquareText className="h-4 w-4" />, label: "Explain it simply", act: () => explain() }, { kind: "ghost", icon: <FileText className="h-4 w-4" />, label: "View result", act: () => viewResult() } ] } });
-      window.setTimeout(() => { push({ t: "ai", text: "Or tap what you'd like to do 👇" }); push({ t: "services" }); setQuicks(menu()); }, 450);
-    }, 1250);
-  }, [first, push, me, typing, streamAgent, menu]);
+    const { overdueVaccines, latestResult } = signals;
+    const actionable = overdueVaccines.length > 0 || !!latestResult;
+    push({
+      t: "ai",
+      text: actionable
+        ? `Good morning, ${first} 🌿  I've checked your record — here's what needs you today.`
+        : `Good morning, ${first} 🌿  I've checked your record — everything looks up to date. How can I help?`,
+    });
+    // NOTE: no cleanup clearing these timeouts — StrictMode's dev double-invoke
+    // would fire it and the `ran` guard would then block re-scheduling, so the
+    // cards would never appear. `ran` already makes this run exactly once.
+    let delay = 600;
+    if (overdueVaccines.length) {
+      const d = delay; delay += 650;
+      window.setTimeout(() => push({ t: "card", data: { tone: "urgent", kicker: "Action needed",
+        title: overdueVaccines.length === 1 ? `${overdueVaccines[0]} is overdue` : `${overdueVaccines.length} immunisations are overdue`,
+        text: overdueVaccines.join(", "), cite: "National immunisation schedule (EPI)",
+        actions: [
+          { kind: "pri", icon: <CalendarDays className="h-4 w-4" />, label: "Book vaccination", act: () => book("the overdue vaccination", "Child health") },
+          { kind: "ghost", icon: <Bell className="h-4 w-4" />, label: "Remind me", act: () => { me("Remind me tomorrow"); typing(() => push({ t: "ai", text: "Done — I'll nudge you tomorrow morning. 👍" }), 700); } },
+        ] } }), d);
+    }
+    if (latestResult) {
+      const d = delay; delay += 650;
+      window.setTimeout(() => push({ t: "card", data: { tone: latestResult.critical ? "urgent" : "good", kicker: "Result ready",
+        title: latestResult.critical ? `Your ${latestResult.text} needs attention` : "Your latest result is ready",
+        text: latestResult.critical ? "This one is flagged — let me explain what it means and what to do." : `${latestResult.text} — reviewed and on file. Want it in plain language?`,
+        actions: [
+          { kind: "pri", icon: <MessageSquareText className="h-4 w-4" />, label: "Explain it simply", act: () => explainResult() },
+          { kind: "ghost", icon: <FileText className="h-4 w-4" />, label: "View result", act: () => viewResult() },
+        ] } }), d);
+    }
+    window.setTimeout(() => { push({ t: "ai", text: "Or tap what you'd like to do 👇" }); push({ t: "services" }); setQuicks(menu()); }, delay + 200);
+  }, [first, signals, push, me, typing, streamAgent, menu]);
 
   const services: { icon: React.ReactNode; c: string; t: string; d: string; act: () => void }[] = [
     { icon: <CalendarDays className="h-[18px] w-[18px]" />, c: "resp", t: "Book a visit", d: "Any specialty", act: () => book("your follow-up", "Cardiology") },
-    { icon: <Syringe className="h-[18px] w-[18px]" />, c: "activity", t: "Vaccinations", d: "For Baby", act: () => book("Baby's OPV vaccination", "Child health") },
-    { icon: <Sparkles className="h-[18px] w-[18px]" />, c: "nutri", t: "Refill meds", d: "2 active", act: () => refill() },
-    { icon: <FileText className="h-[18px] w-[18px]" />, c: "mind", t: "Explain a result", d: "Dengue ready", act: () => explain() },
+    { icon: <Syringe className="h-[18px] w-[18px]" />, c: "activity", t: "Vaccinations", d: "EPI schedule", act: () => book("a vaccination", "Child health") },
+    { icon: <Sparkles className="h-[18px] w-[18px]" />, c: "nutri", t: "Refill meds", d: signals.medsCount ? `${signals.medsCount} active` : "Request", act: () => refill() },
+    { icon: <FileText className="h-[18px] w-[18px]" />, c: "mind", t: "Explain a result", d: signals.latestResult ? "Latest ready" : "Ask anything", act: () => (signals.latestResult ? explainResult() : void streamAgent("Summarise my recent results in plain language.")) },
   ];
 
   function renderCard(d: CardData) {

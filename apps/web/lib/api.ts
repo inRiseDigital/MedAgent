@@ -113,6 +113,21 @@ export async function fetchPatientSummary(phn: string): Promise<PatientSummary> 
   return coreApiGet<PatientSummary>(`/api/v1/patients/${encodeURIComponent(phn)}/summary`);
 }
 
+export interface ImmunizationRow {
+  key: string;
+  name: string;
+  due: string | null;
+  status: "given" | "overdue" | "due-soon" | "upcoming" | "unknown" | string;
+  given_on?: string | null;
+}
+export interface ImmunizationSchedule {
+  schedule: ImmunizationRow[];
+  overdue: number;
+}
+export async function fetchImmunizations(phn: string): Promise<ImmunizationSchedule> {
+  return coreApiGet<ImmunizationSchedule>(`/api/v1/patients/${encodeURIComponent(phn)}/immunizations`);
+}
+
 export interface SafetyFlag {
   severity: "block" | "warn" | string;
   kind: "allergy" | "medication" | "lab" | string;
