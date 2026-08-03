@@ -9,6 +9,7 @@
  */
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
+import { useTranslations } from "next-intl";
 import { Activity, FileText, MessageSquareText, User } from "lucide-react";
 
 type TabKey = "chat" | "summary" | "record" | "me";
@@ -36,11 +37,12 @@ export function PatientApp({
     window.addEventListener("mh:tab", handler);
     return () => window.removeEventListener("mh:tab", handler);
   }, []);
+  const t = useTranslations("patientNav");
   const tabs: { k: TabKey; label: string; Icon: typeof Activity }[] = [
-    { k: "chat", label: "Concierge", Icon: MessageSquareText },
-    { k: "summary", label: "Summary", Icon: Activity },
-    { k: "record", label: "Record", Icon: FileText },
-    { k: "me", label: "Me", Icon: User },
+    { k: "chat", label: t("concierge"), Icon: MessageSquareText },
+    { k: "summary", label: t("summary"), Icon: Activity },
+    { k: "record", label: t("record"), Icon: FileText },
+    { k: "me", label: t("me"), Icon: User },
   ];
 
   return (

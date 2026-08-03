@@ -11,6 +11,7 @@ import { HeartPulse } from "lucide-react";
 import { SessionGuard } from "@/components/session-guard";
 import { SignOutButton } from "@/components/sign-out-button";
 import { PATIENT, requireRoles } from "@/lib/require-role";
+import { LocaleSwitcher } from "./portal/locale-switcher";
 import "../mh-theme.css";
 
 export default async function PortalLayout({ children }: { children: ReactNode }) {
@@ -29,7 +30,10 @@ export default async function PortalLayout({ children }: { children: ReactNode }
             </span>
             <span className="text-base font-semibold tracking-tight">{tc("appName")}</span>
           </span>
-          <SignOutButton label={tn("signOut")} />
+          <div className="flex items-center gap-2">
+            <LocaleSwitcher />
+            <SignOutButton label={tn("signOut")} />
+          </div>
         </div>
       </header>
       <div className="mx-auto max-w-lg px-4 pb-4 pt-3 text-base lg:max-w-6xl 2xl:max-w-[1600px]">{children}</div>

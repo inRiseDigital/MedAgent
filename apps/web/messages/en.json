@@ -1,4 +1,11 @@
 {
+  "patientNav": {
+    "concierge": "Concierge",
+    "summary": "Summary",
+    "record": "Record",
+    "me": "Me",
+    "ask": "Ask about your health…"
+  },
   "session": {
     "expiredTitle": "Session expired",
     "expiredBody": "For your security you've been signed out. Please sign in again to continue.",

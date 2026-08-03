@@ -8,6 +8,7 @@
  * comes from the `.mh` premium theme.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useTranslations } from "next-intl";
 import {
   Bell,
   CalendarDays,
@@ -109,6 +110,7 @@ export type ConciergeSignals = {
 
 export function Concierge({ patientPhn, name, signals }: { patientPhn: string; name: string; signals: ConciergeSignals }) {
   const first = name.split(" ")[0] ?? "there";
+  const tnav = useTranslations("patientNav");
   const [msgs, setMsgs] = useState<Node[]>([]);
   const [quicks, setQuicks] = useState<Quick[]>([]);
   const [input, setInput] = useState("");
@@ -535,7 +537,7 @@ export function Concierge({ patientPhn, name, signals }: { patientPhn: string; n
         onSubmit={(e) => { e.preventDefault(); const v = input.trim(); if (!v) return; setInput(""); handleFree(v); }}
       >
         <button type="button" className="mh-circ mic" aria-label="Speak"><Mic className="h-5 w-5" /></button>
-        <input value={input} onChange={(e) => setInput(e.target.value)} placeholder="Ask about your health…" aria-label="Ask about your health" />
+        <input value={input} onChange={(e) => setInput(e.target.value)} placeholder={tnav("ask")} aria-label={tnav("ask")} />
         <button type="submit" className="mh-circ send" disabled={busy || !input.trim()} aria-label="Send"><Send className="h-5 w-5" /></button>
       </form>
     </div>
