@@ -25,7 +25,7 @@ import { CLINICAL, requireRoles } from "@/lib/require-role";
 import { ChatPanel } from "./chat-panel";
 import { ChildHealthCard } from "./child-health";
 import { ClinicalEntry } from "./clinical-entry";
-import { ImagingCard, LabResultsCard } from "./diagnostics";
+import { PatientCockpit } from "./cockpit";
 import { ProposalPanel } from "./proposal-panel";
 
 function age(birthDate?: string): string {
@@ -126,6 +126,9 @@ export default async function PatientSessionPage({ params }: { params: Promise<{
           </div>
         ) : null}
       </div>
+
+      {/* Clinician cockpit — vitals & lab gauges + imaging gallery */}
+      <PatientCockpit summary={summary} labs={labs} imaging={imaging} />
 
       {/* Two-pane session layout */}
       <div className="grid gap-4 lg:grid-cols-[minmax(300px,1fr)_1.9fr]">
@@ -237,14 +240,6 @@ export default async function PatientSessionPage({ params }: { params: Promise<{
           </div>
         </Card>
       </div>
-
-      {/* Diagnostics — imaging + lab results (shown when present) */}
-      {imaging.length > 0 || labs.length > 0 ? (
-        <div className="grid gap-4 lg:grid-cols-2">
-          {imaging.length > 0 ? <ImagingCard reports={imaging} /> : null}
-          {labs.length > 0 ? <LabResultsCard reports={labs} /> : null}
-        </div>
-      ) : null}
 
       {/* Child Health Development Record — children only */}
       {chdr ? <ChildHealthCard chdr={chdr} /> : null}
