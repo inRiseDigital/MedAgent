@@ -267,14 +267,17 @@ export function Concierge({ patientPhn, name }: { patientPhn: string; name: stri
     if (ran.current) return;
     ran.current = true;
     push({ t: "ai", text: `Good morning, ${first} 🌿  I've checked your record — two things need you today.` });
-    const a = window.setTimeout(() => push({ t: "card", data: { tone: "urgent", kicker: "Action needed", title: "Baby's OPV vaccine is overdue", text: "The oral polio birth dose was due at birth and hasn't been given yet.", cite: "National immunisation schedule",
+    // NOTE: no cleanup that clears these timeouts. React's StrictMode dev
+    // double-invoke would run the cleanup and, with the `ran` guard blocking a
+    // re-schedule, the cards would never appear. The `ran` guard already makes
+    // this run exactly once, so letting the timeouts stand is correct.
+    window.setTimeout(() => push({ t: "card", data: { tone: "urgent", kicker: "Action needed", title: "Baby's OPV vaccine is overdue", text: "The oral polio birth dose was due at birth and hasn't been given yet.", cite: "National immunisation schedule",
       actions: [ { kind: "pri", icon: <CalendarDays className="h-4 w-4" />, label: "Book vaccination", act: () => book("Baby's OPV vaccination", "Child health") }, { kind: "ghost", icon: <Bell className="h-4 w-4" />, label: "Remind me", act: () => { me("Remind me tomorrow"); typing(() => push({ t: "ai", text: "Done — I'll nudge you tomorrow morning. 👍" }), 700); } } ] } }), 600);
-    const b = window.setTimeout(() => {
-      push({ t: "card", data: { tone: "good", kicker: "Result ready", title: "Your latest result is ready", text: "Reviewed by the lab. Want me to explain it in plain language?",
+    window.setTimeout(() => {
+      push({ t: "card", data: { tone: "good", kicker: "Result ready", title: "Your dengue result is ready", text: "Reviewed by the lab. Good news overall — want it in plain language?",
         actions: [ { kind: "pri", icon: <MessageSquareText className="h-4 w-4" />, label: "Explain it simply", act: () => explain() }, { kind: "ghost", icon: <FileText className="h-4 w-4" />, label: "View result", act: () => viewResult() } ] } });
       window.setTimeout(() => { push({ t: "ai", text: "Or tap what you'd like to do 👇" }); push({ t: "services" }); setQuicks(menu()); }, 450);
     }, 1250);
-    return () => { window.clearTimeout(a); window.clearTimeout(b); };
   }, [first, push, me, typing, streamAgent, menu]);
 
   const services: { icon: React.ReactNode; c: string; t: string; d: string; act: () => void }[] = [

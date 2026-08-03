@@ -93,7 +93,10 @@ services:
       dockerfile: apps/web/Dockerfile
       target: dev
     # Next.js dev server, hot reload via bind mount (10 §2.1)
-    command: ["pnpm", "--filter", "@medagent/web", "dev", "--port", "3000", "--hostname", "0.0.0.0"]
+    # --webpack (not Turbopack): Turbopack ignores WATCHPACK_POLLING and can't
+    # watch a Windows/macOS bind mount, so hot-reload silently breaks. webpack +
+    # the polling envs below makes Fast Refresh work across the bind mount.
+    command: ["pnpm", "--filter", "@medagent/web", "dev", "--webpack", "--port", "3000", "--hostname", "0.0.0.0"]
     networks: [edge, internal]
     ports:
       - "3000:3000" # dev convenience: direct access; real traffic via the gateway (https://localhost)
