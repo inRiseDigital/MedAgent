@@ -13,7 +13,7 @@ import {
 import { getSession } from "@/lib/session-store";
 import { Concierge } from "./concierge";
 import { PatientApp } from "./patient-app";
-import { HealthView, MeView, RecordView } from "./views";
+import { MeView, RecordView, SummaryView } from "./views";
 
 export const dynamic = "force-dynamic";
 
@@ -44,7 +44,7 @@ export default async function PortalHomePage() {
   return (
     <PatientApp
       concierge={<Concierge patientPhn={phn} name={summary.patient.name} />}
-      health={<HealthView summary={summary} />}
+      summary={<SummaryView summary={summary} />}
       record={<RecordView summary={summary} />}
       me={<MeView accessLog={accessLog} />}
     />

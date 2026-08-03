@@ -149,6 +149,59 @@ export function Concierge({ patientPhn, name }: { patientPhn: string; name: stri
     { label: "🔒 Who saw my record?", act: () => whoSaw() },
   ], []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Intent router (mirrors the demo's handleFree): map free text to a scripted
+  // flow; anything off-script goes to the LIVE patient-persona agent.
+  function handleFree(text: string) {
+    const l = text.toLowerCase();
+    if (/result|dengue|explain|lab/.test(l)) return explain();
+    if (/book|appoint|follow|visit|schedule/.test(l)) return book("your follow-up", "Cardiology");
+    if (/refill|medic|drug|prescription|tablet/.test(l)) return refill();
+    if (/due|vaccine|remind|immun|jab/.test(l)) return dueCheck();
+    if (/who|access|saw|privacy|log/.test(l)) return whoSaw();
+    void streamAgent(text);
+  }
+
+  function explain() {
+    me("Explain my dengue result simply");
+    typing(() => {
+      push({ t: "ai", text: "Of course — the short version 👇" });
+      push({ t: "card", data: { tone: "good", kicker: "In plain language", title: "You had dengue — and you're recovering well",
+        text: "Your test confirmed dengue. The reassuring part: platelets are steady and fever is settling.",
+        facts: [
+          { t: "good", x: "Platelets stable — no bleeding risk right now" },
+          { t: "good", x: "Fever coming down over the last 2 days" },
+          { t: "warn", x: "Keep resting and drink plenty of fluids" },
+        ],
+        cite: "Grounded in your record · not a diagnosis",
+        actions: [
+          { kind: "pri", icon: <MessageSquareText className="h-4 w-4" />, label: "What should I avoid?", act: () => avoid() },
+          { kind: "ghost", icon: <Video className="h-4 w-4" />, label: "Message my doctor", act: () => { me("Message my doctor"); typing(() => push({ t: "ai", text: "Sent to Dr. Perera's team. If anything feels worse — severe tummy pain, bleeding, or you can't keep fluids down — go to a hospital straight away." }), 900); } },
+        ] } });
+      setQuicks([{ label: "What should I avoid?", act: () => avoid() }, { label: "Book a check-up", act: () => book("a dengue check-up", "General") }, ...menu()]);
+    }, 1100);
+  }
+  function avoid() {
+    me("What should I avoid?");
+    typing(() => {
+      push({ t: "card", data: { tone: "warn", kicker: "While you recover", title: "A few things to avoid",
+        facts: [
+          { t: "urgent", x: "⚠️ No ibuprofen or aspirin — they raise bleeding risk in dengue. Paracetamol is fine." },
+          { t: "warn", x: "Avoid strenuous activity for now" },
+          { t: "good", x: "Do: rest, fluids, watch for warning signs" },
+        ],
+        cite: "Consistent with your allergy & medication record",
+        actions: [{ kind: "pri", icon: <CalendarDays className="h-4 w-4" />, label: "Book a check-up", act: () => book("a dengue check-up", "General") }] } });
+      setQuicks(menu());
+    }, 950);
+  }
+  function viewResult() {
+    me("View my dengue result");
+    typing(() => {
+      push({ t: "card", data: { tone: "good", kicker: "Lab result", title: "Dengue NS1 — positive → recovering", text: "Platelets stable, fever settling. No warning signs.", cite: "DiagnosticReport · Teaching Hospital" } });
+      setQuicks(menu());
+    }, 900);
+  }
+
   function refill() {
     me("Refill a medicine");
     typing(() => {
@@ -218,7 +271,7 @@ export function Concierge({ patientPhn, name }: { patientPhn: string; name: stri
       actions: [ { kind: "pri", icon: <CalendarDays className="h-4 w-4" />, label: "Book vaccination", act: () => book("Baby's OPV vaccination", "Child health") }, { kind: "ghost", icon: <Bell className="h-4 w-4" />, label: "Remind me", act: () => { me("Remind me tomorrow"); typing(() => push({ t: "ai", text: "Done — I'll nudge you tomorrow morning. 👍" }), 700); } } ] } }), 600);
     const b = window.setTimeout(() => {
       push({ t: "card", data: { tone: "good", kicker: "Result ready", title: "Your latest result is ready", text: "Reviewed by the lab. Want me to explain it in plain language?",
-        actions: [ { kind: "pri", icon: <MessageSquareText className="h-4 w-4" />, label: "Explain it simply", act: () => void streamAgent("Explain my most recent result in simple, reassuring language, and cite it.") }, { kind: "ghost", icon: <FileText className="h-4 w-4" />, label: "View my record", act: () => void streamAgent("Summarise my active problems, medications, allergies and recent results.") } ] } });
+        actions: [ { kind: "pri", icon: <MessageSquareText className="h-4 w-4" />, label: "Explain it simply", act: () => explain() }, { kind: "ghost", icon: <FileText className="h-4 w-4" />, label: "View result", act: () => viewResult() } ] } });
       window.setTimeout(() => { push({ t: "ai", text: "Or tap what you'd like to do 👇" }); push({ t: "services" }); setQuicks(menu()); }, 450);
     }, 1250);
     return () => { window.clearTimeout(a); window.clearTimeout(b); };
@@ -228,7 +281,7 @@ export function Concierge({ patientPhn, name }: { patientPhn: string; name: stri
     { icon: <CalendarDays className="h-[18px] w-[18px]" />, c: "resp", t: "Book a visit", d: "Any specialty", act: () => book("your follow-up", "Cardiology") },
     { icon: <Syringe className="h-[18px] w-[18px]" />, c: "activity", t: "Vaccinations", d: "For Baby", act: () => book("Baby's OPV vaccination", "Child health") },
     { icon: <Sparkles className="h-[18px] w-[18px]" />, c: "nutri", t: "Refill meds", d: "2 active", act: () => refill() },
-    { icon: <FileText className="h-[18px] w-[18px]" />, c: "mind", t: "Explain a result", d: "Latest ready", act: () => void streamAgent("Explain my most recent result in simple, reassuring language, and cite it.") },
+    { icon: <FileText className="h-[18px] w-[18px]" />, c: "mind", t: "Explain a result", d: "Dengue ready", act: () => explain() },
   ];
 
   function renderCard(d: CardData) {
@@ -343,7 +396,7 @@ export function Concierge({ patientPhn, name }: { patientPhn: string; name: stri
 
       <form
         className="mh-composer"
-        onSubmit={(e) => { e.preventDefault(); const v = input.trim(); if (!v) return; setInput(""); void streamAgent(v); }}
+        onSubmit={(e) => { e.preventDefault(); const v = input.trim(); if (!v) return; setInput(""); handleFree(v); }}
       >
         <button type="button" className="mh-circ mic" aria-label="Speak"><Mic className="h-5 w-5" /></button>
         <input value={input} onChange={(e) => setInput(e.target.value)} placeholder="Ask about your health…" aria-label="Ask about your health" />

@@ -22,7 +22,7 @@ export default async function PortalLayout({ children }: { children: ReactNode }
     <div className="mh min-h-screen">
       <SessionGuard />
       <header className="sticky top-0 z-20 border-b border-border bg-[color:var(--mh-bg)]/80 backdrop-blur-md">
-        <div className="mx-auto flex max-w-lg items-center justify-between px-4 py-3">
+        <div className="mx-auto flex max-w-lg items-center justify-between px-4 py-3 lg:max-w-5xl">
           <span className="flex items-center gap-2">
             <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary text-primary-foreground">
               <HeartPulse className="h-4 w-4" />
@@ -32,7 +32,7 @@ export default async function PortalLayout({ children }: { children: ReactNode }
           <SignOutButton label={tn("signOut")} />
         </div>
       </header>
-      <div className="mx-auto max-w-lg px-4 pb-4 pt-3 text-base">{children}</div>
+      <div className="mx-auto max-w-lg px-4 pb-4 pt-3 text-base lg:max-w-5xl">{children}</div>
     </div>
   );
 }

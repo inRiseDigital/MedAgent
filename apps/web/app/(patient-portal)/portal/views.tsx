@@ -4,10 +4,10 @@
  * access log). Server components; fed the patient's own data. Plain-language,
  * low-literacy-first. Theme-token driven.
  */
-import { AlertTriangle, CalendarClock, Download, FlaskConical, HeartPulse, Pill, ShieldCheck } from "lucide-react";
+import { Activity, AlertTriangle, CalendarClock, Download, Droplet, FlaskConical, HeartPulse, Pill, ShieldCheck, Thermometer } from "lucide-react";
 
 import type { AccessLogEntry, PatientSummary } from "@/lib/api";
-import { RangeBar } from "@/components/charts";
+import { RangeBar, Ring } from "@/components/charts";
 import { ConsentToggle } from "./consent-toggle";
 
 const REF: { match: RegExp; low: number; high: number }[] = [
@@ -24,73 +24,121 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
   return <p className="mb-2 ml-1 text-[0.7rem] font-semibold uppercase tracking-wider text-muted-foreground">{children}</p>;
 }
 
-function Gauge({ name, value, unit, when }: { name: string; value: number; unit?: string; when?: string }) {
+// Category colour + icon per metric, so the Favourites tiles read like the demo.
+const CAT: { match: RegExp; c: string; Icon: typeof HeartPulse }[] = [
+  { match: /hba1c|glyc|glucose|sugar/i, c: "nutri", Icon: Droplet },
+  { match: /systolic|diastolic|blood pressure/i, c: "heart", Icon: HeartPulse },
+  { match: /heart rate|pulse/i, c: "heart", Icon: Activity },
+  { match: /temp/i, c: "nutri", Icon: Thermometer },
+  { match: /oxygen|spo2|sat/i, c: "resp", Icon: Activity },
+  { match: /weight/i, c: "body", Icon: Activity },
+  { match: /potassium|sodium|electrolyte/i, c: "body", Icon: Activity },
+];
+
+// Honest metric tile: real current value + status from its reference range, with
+// a reference-range bar (no fabricated trend history for single readings).
+function FavTile({ name, value, unit, when }: { name: string; value: number; unit?: string; when?: string }) {
   const ref = REF.find((r) => r.match.test(name)) ?? null;
-  const outOfRange = ref ? value < ref.low || value > ref.high : false;
-  const color = outOfRange ? "var(--warning)" : "var(--success)";
-  const status = ref ? (value < ref.low ? "Low" : value > ref.high ? "High" : "Normal") : null;
+  const cat = CAT.find((r) => r.match.test(name));
+  const c = cat ? `var(--${cat.c})` : "var(--primary)";
+  const Icon = cat?.Icon ?? Activity;
+  const out = ref ? value < ref.low || value > ref.high : false;
+  const status = ref ? (value < ref.low ? "low" : value > ref.high ? "watch" : "good") : null;
+  const statusColor = status === "good" ? "var(--success)" : "var(--warning)";
   return (
     <div className="rounded-2xl border border-border bg-card p-4 shadow-sm">
       <div className="flex items-center gap-2">
-        <span className="truncate text-[0.78rem] font-semibold text-muted-foreground">{name}</span>
+        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg" style={{ background: `color-mix(in srgb, ${c} 16%, transparent)`, color: c }}>
+          <Icon className="h-4 w-4" />
+        </span>
+        <span className="truncate text-[0.8rem] font-semibold">{name}</span>
         {status ? (
-          <span className="ml-auto rounded-full px-2 py-0.5 text-[0.62rem] font-bold uppercase" style={{ color, background: `color-mix(in srgb, ${color} 15%, transparent)` }}>
+          <span className="ml-auto shrink-0 rounded-full px-2 py-0.5 text-[0.6rem] font-bold uppercase" style={{ color: statusColor, background: `color-mix(in srgb, ${statusColor} 15%, transparent)` }}>
             {status}
           </span>
         ) : null}
       </div>
-      <div className="mt-1.5 text-2xl font-bold tabular-nums tracking-tight">
+      <div className="mt-2 text-2xl font-bold tabular-nums tracking-tight">
         {value}
         {unit ? <span className="ml-1 text-sm font-semibold text-muted-foreground">{unit}</span> : null}
       </div>
-      {ref ? <RangeBar value={value} low={ref.low} high={ref.high} color={color} /> : null}
-      {when ? <div className="mt-2 text-[0.7rem] font-medium text-muted-foreground">{when.slice(0, 10)}</div> : null}
+      {ref ? <RangeBar value={value} low={ref.low} high={ref.high} color={out ? "var(--warning)" : c} /> : null}
+      {when ? <div className="mt-2 text-[0.68rem] font-medium text-muted-foreground">{when.slice(0, 10)}</div> : null}
     </div>
   );
 }
 
-export function HealthView({ summary }: { summary: PatientSummary }) {
+export function SummaryView({ summary }: { summary: PatientSummary }) {
+  const first = summary.patient.name.split(" ")[0] ?? "there";
   const nextAppt = summary.appointments.find((a) => a.start);
   const hasCritical = summary.results.some((r) => r.critical);
-  const vitals = summary.vitals.filter((v) => typeof v.value === "number").slice(0, 4);
+  const vitals = summary.vitals.filter((v) => typeof v.value === "number");
+  const fav = vitals.slice(0, 4);
+  // Honest "on track" score: share of reference-gauged vitals within range.
+  const gauged = fav
+    .map((v) => {
+      const ref = REF.find((r) => r.match.test(v.text));
+      return ref ? (v.value as number) >= ref.low && (v.value as number) <= ref.high : null;
+    })
+    .filter((g): g is boolean => g !== null);
+  const pct = gauged.length ? Math.round((gauged.filter(Boolean).length / gauged.length) * 100) : 100;
+  const ringColor = hasCritical ? "var(--warning)" : "var(--success)";
   return (
-    <div className="space-y-5 pt-2">
-      <div
-        className="rounded-3xl p-5 text-white shadow-lg"
-        style={{ background: "linear-gradient(150deg, var(--primary), color-mix(in srgb, var(--primary) 55%, #063))" }}
-      >
-        <p className="text-xs font-semibold uppercase tracking-wide opacity-80">Good to see you</p>
-        <h2 className="mt-1 text-2xl font-bold tracking-tight">{summary.patient.name.split(" ")[0]}</h2>
-        <p className="mt-2 max-w-[24ch] text-sm font-medium opacity-95">
-          {hasCritical
-            ? "A recent result needs your attention — ask the concierge to explain it."
-            : "Your record looks on track. Tap the concierge anytime for help."}
-        </p>
+    <div className="space-y-6 pt-2">
+      {/* Hero — wellbeing ring */}
+      <div className="rounded-3xl border border-border bg-card p-5 shadow-sm">
+        <div className="flex items-center gap-5">
+          <Ring pct={pct} size={116} thickness={14} color={ringColor}>
+            <div>
+              <div className="text-2xl font-bold tabular-nums leading-none">{pct}%</div>
+              <div className="mt-1 text-[0.58rem] font-semibold uppercase tracking-wide text-muted-foreground">in range</div>
+            </div>
+          </Ring>
+          <div className="min-w-0">
+            <h3 className="text-xl font-bold tracking-tight">
+              {hasCritical ? "Worth a look" : "On track"}
+            </h3>
+            <p className="mt-1.5 max-w-[26ch] text-sm text-muted-foreground">
+              {hasCritical
+                ? `${first}, a recent result needs attention — ask the concierge to explain it in plain language.`
+                : `Nice work, ${first}. Your recent numbers are within range — keep it up.`}
+            </p>
+          </div>
+        </div>
       </div>
 
+      {/* Your care */}
       {nextAppt ? (
-        <div className="flex items-center gap-3 rounded-2xl border border-border bg-card p-4 shadow-sm">
-          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-            <CalendarClock className="h-5 w-5" />
-          </span>
-          <div>
-            <p className="text-[0.7rem] font-semibold uppercase tracking-wider text-muted-foreground">Next appointment</p>
-            <p className="font-semibold">{nextAppt.start ? new Date(nextAppt.start).toLocaleString() : "—"}</p>
+        <div>
+          <SectionLabel>Your care</SectionLabel>
+          <div
+            className="flex items-center gap-3 rounded-2xl p-4 text-white shadow-md"
+            style={{ background: "linear-gradient(150deg, var(--primary), color-mix(in srgb, var(--primary) 55%, #063))" }}
+          >
+            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white/15">
+              <CalendarClock className="h-5 w-5" />
+            </span>
+            <div className="min-w-0">
+              <p className="font-semibold">{nextAppt.start ? new Date(nextAppt.start).toLocaleString([], { weekday: "short", hour: "2-digit", minute: "2-digit" }) : "—"}</p>
+              <p className="text-sm opacity-90">Next appointment · Teaching Hospital</p>
+            </div>
           </div>
         </div>
       ) : null}
 
-      {vitals.length > 0 ? (
+      {/* Favourites */}
+      {fav.length > 0 ? (
         <div>
-          <SectionLabel>Your numbers</SectionLabel>
+          <SectionLabel>Favourites</SectionLabel>
           <div className="grid grid-cols-2 gap-3">
-            {vitals.map((v, i) => (
-              <Gauge key={i} name={v.text} value={v.value as number} unit={v.unit} when={v.when} />
+            {fav.map((v, i) => (
+              <FavTile key={i} name={v.text} value={v.value as number} unit={v.unit} when={v.when} />
             ))}
           </div>
         </div>
       ) : null}
 
+      {/* Recent results */}
       {summary.results.length > 0 ? (
         <div>
           <SectionLabel>Recent results</SectionLabel>
