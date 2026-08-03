@@ -12,6 +12,7 @@ import { SessionGuard } from "@/components/session-guard";
 import { SignOutButton } from "@/components/sign-out-button";
 import { PATIENT, requireRoles } from "@/lib/require-role";
 import { LocaleSwitcher } from "./portal/locale-switcher";
+import { Notifications } from "./portal/notifications";
 import "../mh-theme.css";
 
 export default async function PortalLayout({ children }: { children: ReactNode }) {
@@ -22,6 +23,7 @@ export default async function PortalLayout({ children }: { children: ReactNode }
   return (
     <div className="mh min-h-screen">
       <SessionGuard />
+      <Notifications />
       <header className="sticky top-0 z-20 border-b border-border bg-[color:var(--mh-bg)]/80 backdrop-blur-md">
         <div className="mx-auto flex max-w-lg items-center justify-between px-4 py-3 lg:max-w-6xl 2xl:max-w-[1600px]">
           <span className="flex items-center gap-2">

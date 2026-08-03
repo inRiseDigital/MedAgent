@@ -21,9 +21,12 @@ from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from redis.asyncio import Redis
+
 from app.auth import Principal, require_user
 from app.config import Settings
-from app.deps import get_session, get_settings
+from app.deps import get_redis, get_session, get_settings
+from app.events import publish_user
 from app.fhir_client import FHIRClient
 from app.models import AuditOutbox, PatientMPI
 from app.mpi import phn as phn_mod
@@ -467,6 +470,7 @@ async def request_refill(
     principal: Annotated[Principal, Depends(require_user)],
     session: Annotated[AsyncSession, Depends(get_session)],
     settings: Annotated[Settings, Depends(get_settings)],
+    redis: Annotated[Redis, Depends(get_redis)],
 ) -> dict[str, Any]:
     """Patient-initiated medication refill request → a FHIR Task into the
     prescriber/pharmacy inbox (status=requested). Does NOT dispense; a clinician
@@ -505,6 +509,14 @@ async def request_refill(
             "type": "refill_requested", "actor": principal.subject, "patient_fhir_id": pid,
             "committed": f"Task/{task_id}", "medication": f"MedicationRequest/{med_id}",
         }))
+        try:
+            await publish_user(redis, principal.subject, {
+                "type": "refill_requested", "title": "Refill request sent",
+                "body": f"{med_text} — your prescriber's team will review it.",
+                "ref": f"Task/{task_id}",
+            })
+        except Exception:  # noqa: BLE001 — best-effort notification
+            logger.warning("failed to publish refill notification", exc_info=True)
         return {"task_id": task_id, "status": "requested", "medication": med_text}
     finally:
         await fhir.close()

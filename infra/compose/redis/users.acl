@@ -1,5 +1,5 @@
 user default on nopass ~none +ping
-user core-api on >dev-core-api-redis-pw ~core:* ~queue:* ~rate:* ~consent:* ~authz:* ~face:* &events:checkin:* &events:consent:* +@read +@write +@keyspace +@pubsub +ping -@admin -@dangerous
+user core-api on >dev-core-api-redis-pw ~core:* ~queue:* ~rate:* ~consent:* ~authz:* ~face:* &events:checkin:* &events:consent:* &events:user:* +@read +@write +@keyspace +@pubsub +ping -@admin -@dangerous
 user agent-service on >dev-agent-service-redis-pw ~agent:* ~consent:* &events:consent:* +@read +@write +@keyspace +@pubsub +ping -@admin -@dangerous
 user notify-service on >dev-notify-service-redis-pw ~notify:* ~sse:ticket:* &events:checkin:* &events:user:* &events:consent:* +@read +@write +@keyspace +@pubsub +ping -@admin -@dangerous
 user web on >dev-web-redis-pw ~web:session:* +@read +@write +@keyspace +@connection -@admin -@dangerous

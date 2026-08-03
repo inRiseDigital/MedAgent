@@ -26,9 +26,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from redis.asyncio import Redis
+
 from app.auth import Principal, require_user
 from app.config import Settings
-from app.deps import get_session, get_settings
+from app.deps import get_redis, get_session, get_settings
+from app.events import publish_user
 from app.fhir_client import FHIRClient
 from app.models import AuditOutbox
 
@@ -275,6 +278,7 @@ async def book_slot(
     principal: Annotated[Principal, Depends(require_user)],
     session: Annotated[AsyncSession, Depends(get_session)],
     settings: Annotated[Settings, Depends(get_settings)],
+    redis: Annotated[Redis, Depends(get_redis)],
 ) -> dict[str, Any]:
     """Patient self-service booking: claim a specific free Slot and create a booked
     FHIR Appointment. Fail-closed if the slot was taken (409)."""
@@ -312,6 +316,14 @@ async def book_slot(
             "committed": f"Appointment/{appt_id}", "facility": facility,
             "specialty": specialty, "start": slot.get("start"), "self_service": True,
         }))
+        try:
+            await publish_user(redis, principal.subject, {
+                "type": "appointment_booked", "title": "Appointment confirmed",
+                "body": f"{specialty or 'Your appointment'} — {slot.get('start', '')[:16].replace('T', ' ')}",
+                "ref": f"Appointment/{appt_id}",
+            })
+        except Exception:  # noqa: BLE001 — notification is best-effort, never fails the booking
+            logger.warning("failed to publish booking notification", exc_info=True)
         return {"appointment_id": appt_id, "status": "booked", "start": slot.get("start"),
                 "end": slot.get("end"), "facility": facility, "specialty": specialty}
     finally:
