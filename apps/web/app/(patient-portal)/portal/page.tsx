@@ -73,6 +73,7 @@ export default async function PortalHomePage() {
       ? { text: latest.text, conclusion: latest.conclusion, critical: latest.critical, ref: latest.ref }
       : null,
     medsCount: summary.medications.length,
+    medications: summary.medications.slice(0, 8).map((m) => ({ text: m.text, ref: m.ref })),
     accessRecent: accessLog.slice(0, 5).map(describeAccess),
   };
 

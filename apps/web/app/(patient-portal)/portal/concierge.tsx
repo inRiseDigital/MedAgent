@@ -103,6 +103,7 @@ export type ConciergeSignals = {
   overdueVaccines: string[];
   latestResult: { text: string; conclusion?: string; critical: boolean; ref: string } | null;
   medsCount: number;
+  medications: { text: string; ref: string }[];
   accessRecent: { title: string; when: string }[];
 };
 
@@ -246,22 +247,46 @@ export function Concierge({ patientPhn, name, signals }: { patientPhn: string; n
     }, 700);
   }
 
+  // REAL: list the patient's actual active medications; each requests a real refill.
   function refill() {
     me("Refill a medicine");
+    const meds = signals.medications;
     typing(() => {
-      push({ t: "ai", text: "Which one should I request?" });
-      push({ t: "card", data: { tone: "info", kicker: "Your medicines", title: "Current prescriptions",
-        facts: [{ x: "Metformin 500 mg — twice daily" }, { x: "Paracetamol 500 mg — as needed" }],
-        actions: [ { kind: "pri", label: "Refill Metformin", act: () => doRefill("Metformin") }, { kind: "ghost", label: "Refill Paracetamol", act: () => doRefill("Paracetamol") } ] } });
+      if (!meds.length) {
+        push({ t: "ai", text: "You don't have any active medicines on record to refill right now." });
+        setQuicks(menu());
+        return;
+      }
+      push({ t: "ai", text: "Which one should I request a refill for?" });
+      push({ t: "card", data: { tone: "info", kicker: "Your medicines", title: "Active prescriptions",
+        facts: meds.map((m) => ({ x: m.text })),
+        actions: meds.map((m, i) => ({ kind: i === 0 ? "pri" : "ghost", label: `Refill ${m.text}`, act: () => doRefill(m) } as Action)) } });
     });
   }
-  function doRefill(n: string) {
-    me(`Refill ${n}`);
-    typing(() => {
-      push({ t: "card", data: { tone: "good", kicker: "Request sent", title: `${n} refill requested`, text: "Your clinic pharmacy will confirm when it's ready to collect.", cite: "Sent to Teaching Hospital pharmacy",
-        actions: [{ kind: "ghost", icon: <Bell className="h-4 w-4" />, label: "Notify me", act: () => typing(() => push({ t: "ai", text: "Will do — I'll let you know the moment it's ready. ✅" }), 600) }] } });
-      setQuicks(menu());
-    }, 900);
+  function doRefill(m: { text: string; ref: string }) {
+    me(`Refill ${m.text}`);
+    void (async () => {
+      setMsgs((mm) => [...mm, { t: "typing" }]);
+      down();
+      try {
+        const res = await fetch("/api/portal/refill", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ medication: m.ref }) });
+        setMsgs((mm) => mm.filter((n) => n.t !== "typing"));
+        if (!res.ok) {
+          push({ t: "ai", text: "Sorry — I couldn't send that refill request. Please try again." });
+          setQuicks(menu());
+          return;
+        }
+        push({ t: "card", data: { tone: "good", kicker: "Request sent", title: `${m.text} refill requested`,
+          text: "Sent to your prescriber's team — they'll review and let you know when it's ready to collect.",
+          cite: "Recorded in your record · pharmacy inbox",
+          actions: [{ kind: "ghost", icon: <Bell className="h-4 w-4" />, label: "Notify me", act: () => typing(() => push({ t: "ai", text: "Will do — I'll let you know the moment it's ready. ✅" }), 600) }] } });
+        setQuicks(menu());
+      } catch {
+        setMsgs((mm) => mm.filter((n) => n.t !== "typing"));
+        push({ t: "ai", text: "Sorry — something went wrong sending that request." });
+        setQuicks(menu());
+      }
+    })();
   }
   // REAL: fetch the patient's available slots from the scheduler, then book one.
   function book(reason: string, spec?: string) {

@@ -454,6 +454,62 @@ async def _compute_immunizations(fhir: FHIRClient, patient: dict[str, Any]) -> d
     return {"schedule": rows, "overdue": overdue}
 
 
+class RefillRequest(BaseModel):
+    medication: str = Field(..., description="MedicationRequest/<id> or <id>")
+    note: str | None = None
+
+
+@router.post("/{phn}/refill", status_code=status.HTTP_201_CREATED)
+async def request_refill(
+    phn: str,
+    body: RefillRequest,
+    request: Request,
+    principal: Annotated[Principal, Depends(require_user)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> dict[str, Any]:
+    """Patient-initiated medication refill request → a FHIR Task into the
+    prescriber/pharmacy inbox (status=requested). Does NOT dispense; a clinician
+    or pharmacist actions it. Audited."""
+    auth = request.headers.get("authorization", "")
+    token = auth[7:] if auth.lower().startswith("bearer ") else None
+    med_id = body.medication.split("/", 1)[-1]
+    fhir = FHIRClient(settings.fhir_base_url)
+    try:
+        patient = await _resolve_pid(fhir, phn)
+        if not patient:
+            raise HTTPException(status_code=404, detail=f"no FHIR patient for {phn}")
+        pid = str(patient["id"])
+        try:
+            med = await fhir.read("MedicationRequest", med_id)
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=404, detail=f"no medication {med_id}") from exc
+        # Ensure the medication belongs to this patient (no cross-patient refills).
+        subj = (med.get("subject") or {}).get("reference", "")
+        if subj and subj.split("/", 1)[-1] != pid:
+            raise HTTPException(status_code=403, detail="not your medication")
+        med_text = _cc_text(med.get("medicationCodeableConcept"))
+        now = datetime.now(timezone.utc).isoformat()
+        task = await fhir.create("Task", {
+            "resourceType": "Task", "status": "requested", "intent": "order",
+            "code": {"text": "Medication refill request"},
+            "description": f"Refill request: {med_text}",
+            "authoredOn": now,
+            "for": {"reference": f"Patient/{pid}"},
+            "focus": {"reference": f"MedicationRequest/{med_id}"},
+            "requester": {"reference": f"Patient/{pid}"},
+            "note": [{"text": body.note}] if body.note else [],
+        }, token)
+        task_id = str(task["id"])
+        session.add(AuditOutbox(event={
+            "type": "refill_requested", "actor": principal.subject, "patient_fhir_id": pid,
+            "committed": f"Task/{task_id}", "medication": f"MedicationRequest/{med_id}",
+        }))
+        return {"task_id": task_id, "status": "requested", "medication": med_text}
+    finally:
+        await fhir.close()
+
+
 @router.get("/{phn}/vitals/trends")
 async def vital_trends(
     phn: str,
