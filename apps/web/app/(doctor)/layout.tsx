@@ -12,6 +12,7 @@ import { Activity, LayoutList, Send, Users } from "lucide-react";
 import { SessionGuard } from "@/components/session-guard";
 import { SignOutButton } from "@/components/sign-out-button";
 import { ThemeToggle } from "@/components/theme-toggle";
+import "../mh-theme.css";
 import { CLINICAL, requireRoles, STAFF } from "@/lib/require-role";
 
 export default async function DoctorLayout({ children }: { children: ReactNode }) {
@@ -33,7 +34,7 @@ export default async function DoctorLayout({ children }: { children: ReactNode }
   const roleLabel = isClinician ? "Clinician" : isReceptionist ? "Reception" : "Staff";
 
   return (
-    <div className="flex min-h-screen flex-col bg-background">
+    <div className="mh flex min-h-screen flex-col bg-background">
       <SessionGuard />
       <a
         href="#main"

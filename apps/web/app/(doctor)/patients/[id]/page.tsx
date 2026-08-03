@@ -130,9 +130,10 @@ export default async function PatientSessionPage({ params }: { params: Promise<{
       {/* Clinician cockpit — vitals & lab gauges + imaging gallery */}
       <PatientCockpit summary={summary} labs={labs} imaging={imaging} />
 
-      {/* Two-pane session layout */}
-      <div className="grid gap-4 lg:grid-cols-[minmax(300px,1fr)_1.9fr]">
-        {/* Summary rail */}
+      {/* Organised session — context rail | work surface */}
+      <div className="grid gap-4 lg:grid-cols-[minmax(320px,380px)_1fr]">
+        {/* Context rail */}
+        <aside className="space-y-4 lg:sticky lg:top-4 lg:self-start">
         <Card aria-label={t("summaryTitle")} className="h-fit">
           <CardContent className="space-y-4 p-4">
             {!summary ? (
@@ -227,48 +228,52 @@ export default async function PatientSessionPage({ params }: { params: Promise<{
           </CardContent>
         </Card>
 
-        {/* Chat */}
-        <Card aria-label={t("chatTitle")} className="flex flex-col">
-          <div className="flex items-center gap-2 border-b border-border px-4 py-3">
-            <span className="flex h-6 w-6 items-center justify-center rounded-md bg-primary/10 text-primary">
-              <HeartPulse className="h-3.5 w-3.5" />
-            </span>
-            <h2 className="text-sm font-semibold">{t("chatTitle")}</h2>
+        {/* Child Health Development Record — children only, in the context rail */}
+        {chdr ? <ChildHealthCard chdr={chdr} /> : null}
+        </aside>
+
+        {/* Work surface — AI assistant + clinical write tools */}
+        <main className="space-y-4">
+          <Card aria-label={t("chatTitle")} className="flex flex-col">
+            <div className="flex items-center gap-2 border-b border-border px-4 py-3">
+              <span className="flex h-6 w-6 items-center justify-center rounded-md bg-primary/10 text-primary">
+                <HeartPulse className="h-3.5 w-3.5" />
+              </span>
+              <h2 className="text-sm font-semibold">{t("chatTitle")}</h2>
+            </div>
+            <div className="p-3">
+              <ChatPanel patientId={id} />
+            </div>
+          </Card>
+
+          {/* Clinical actions — document + prescribe, side by side */}
+          <div className="grid gap-4 md:grid-cols-2">
+            <Card aria-label="Clinical entry">
+              <div className="flex items-center gap-2 border-b border-border px-4 py-3">
+                <span className="flex h-6 w-6 items-center justify-center rounded-md bg-primary/10 text-primary">
+                  <ClipboardList className="h-3.5 w-3.5" />
+                </span>
+                <h2 className="text-sm font-semibold">Clinical entry</h2>
+              </div>
+              <CardContent className="p-4">
+                <ClinicalEntry patientId={id} />
+              </CardContent>
+            </Card>
+
+            <Card aria-label={t("proposalTitle")}>
+              <div className="flex items-center gap-2 border-b border-border px-4 py-3">
+                <span className="flex h-6 w-6 items-center justify-center rounded-md bg-primary/10 text-primary">
+                  <Pill className="h-3.5 w-3.5" />
+                </span>
+                <h2 className="text-sm font-semibold">{t("proposalTitle")}</h2>
+              </div>
+              <CardContent className="p-4">
+                <ProposalPanel patientId={id} />
+              </CardContent>
+            </Card>
           </div>
-          <div className="p-3">
-            <ChatPanel patientId={id} />
-          </div>
-        </Card>
+        </main>
       </div>
-
-      {/* Child Health Development Record — children only */}
-      {chdr ? <ChildHealthCard chdr={chdr} /> : null}
-
-      {/* Clinical entry — diagnosis / vital / note / order */}
-      <Card aria-label="Clinical entry">
-        <div className="flex items-center gap-2 border-b border-border px-4 py-3">
-          <span className="flex h-6 w-6 items-center justify-center rounded-md bg-primary/10 text-primary">
-            <ClipboardList className="h-3.5 w-3.5" />
-          </span>
-          <h2 className="text-sm font-semibold">Clinical entry</h2>
-        </div>
-        <CardContent className="p-4">
-          <ClinicalEntry patientId={id} />
-        </CardContent>
-      </Card>
-
-      {/* Prescription sign-off */}
-      <Card aria-label={t("proposalTitle")}>
-        <div className="flex items-center gap-2 border-b border-border px-4 py-3">
-          <span className="flex h-6 w-6 items-center justify-center rounded-md bg-primary/10 text-primary">
-            <Pill className="h-3.5 w-3.5" />
-          </span>
-          <h2 className="text-sm font-semibold">{t("proposalTitle")}</h2>
-        </div>
-        <CardContent className="p-4">
-          <ProposalPanel patientId={id} />
-        </CardContent>
-      </Card>
     </div>
   );
 }
