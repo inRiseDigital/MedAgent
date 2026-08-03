@@ -128,6 +128,15 @@ export async function fetchImmunizations(phn: string): Promise<ImmunizationSched
   return coreApiGet<ImmunizationSchedule>(`/api/v1/patients/${encodeURIComponent(phn)}/immunizations`);
 }
 
+export interface VitalSeries {
+  name: string;
+  unit?: string;
+  points: { value: number; when?: string }[];
+}
+export async function fetchVitalTrends(phn: string): Promise<{ series: VitalSeries[] }> {
+  return coreApiGet<{ series: VitalSeries[] }>(`/api/v1/patients/${encodeURIComponent(phn)}/vitals/trends`);
+}
+
 export interface SafetyFlag {
   severity: "block" | "warn" | string;
   kind: "allergy" | "medication" | "lab" | string;

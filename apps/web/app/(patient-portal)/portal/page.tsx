@@ -8,6 +8,7 @@ import {
   fetchAccessLog,
   fetchImmunizations,
   fetchPatientSummary,
+  fetchVitalTrends,
   type AccessLogEntry,
   type PatientSummary,
 } from "@/lib/api";
@@ -56,6 +57,15 @@ export default async function PortalHomePage() {
       overdueVaccines = [];
     }
   }
+  // Real vital-sign trend series (for the premium line/area tiles). Best-effort.
+  let trends: Record<string, number[]> = {};
+  try {
+    const t = await fetchVitalTrends(phn);
+    for (const s of t.series) trends[s.name] = s.points.map((p) => p.value);
+  } catch {
+    trends = {};
+  }
+
   const latest = summary.results[0] ?? null;
   const signals = {
     overdueVaccines,
@@ -68,10 +78,10 @@ export default async function PortalHomePage() {
   return (
     <PatientApp
       concierge={<Concierge patientPhn={phn} name={summary.patient.name} signals={signals} />}
-      summary={<SummaryView summary={summary} />}
+      summary={<SummaryView summary={summary} trends={trends} />}
       record={<RecordView summary={summary} />}
       me={<MeView accessLog={accessLog} />}
-      rail={<SnapshotRail summary={summary} />}
+      rail={<SnapshotRail summary={summary} trends={trends} />}
     />
   );
 }

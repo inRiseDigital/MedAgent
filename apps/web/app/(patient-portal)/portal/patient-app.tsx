@@ -7,7 +7,7 @@
  * server-rendered panels passed in as props (data fetched on the server, this
  * stays a thin client shell). Theme-token driven, premium `.mh` look.
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { Activity, FileText, MessageSquareText, User } from "lucide-react";
 
@@ -27,6 +27,15 @@ export function PatientApp({
   rail: ReactNode;
 }) {
   const [tab, setTab] = useState<TabKey>("chat");
+  // A record row (server component) can ask to switch tabs via a window event.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const d = (e as CustomEvent).detail;
+      if (d === "chat" || d === "summary" || d === "record" || d === "me") setTab(d);
+    };
+    window.addEventListener("mh:tab", handler);
+    return () => window.removeEventListener("mh:tab", handler);
+  }, []);
   const tabs: { k: TabKey; label: string; Icon: typeof Activity }[] = [
     { k: "chat", label: "Concierge", Icon: MessageSquareText },
     { k: "summary", label: "Summary", Icon: Activity },

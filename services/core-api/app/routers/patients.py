@@ -454,6 +454,43 @@ async def _compute_immunizations(fhir: FHIRClient, patient: dict[str, Any]) -> d
     return {"schedule": rows, "overdue": overdue}
 
 
+@router.get("/{phn}/vitals/trends")
+async def vital_trends(
+    phn: str,
+    principal: Annotated[Principal, Depends(require_user)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> dict[str, Any]:
+    """Recent time-series per vital sign so the app can draw REAL trend charts
+    (no fabricated history). Returns only measurements with >= 2 data points."""
+    fhir = FHIRClient(settings.fhir_base_url)
+    try:
+        patient = await _resolve_pid(fhir, phn)
+        if not patient:
+            raise HTTPException(status_code=404, detail=f"no FHIR patient for {phn}")
+        pid = str(patient["id"])
+        obs = await fhir.search(
+            "Observation",
+            {"patient": pid, "category": "vital-signs", "_sort": "date", "_count": "100"},
+        )
+        series: dict[str, dict[str, Any]] = {}
+        for o in obs:
+            vq = o.get("valueQuantity") or {}
+            val = vq.get("value")
+            if val is None:
+                continue
+            name = _cc_text(o.get("code"))
+            s = series.setdefault(name, {"name": name, "unit": vq.get("unit"), "points": []})
+            s["points"].append({"value": val, "when": o.get("effectiveDateTime")})
+        out = []
+        for s in series.values():
+            s["points"] = s["points"][-8:]  # last 8, already date-ascending
+            if len(s["points"]) >= 2:
+                out.append(s)
+        return {"series": out}
+    finally:
+        await fhir.close()
+
+
 @router.get("/{phn}/immunizations")
 async def immunizations(
     phn: str,

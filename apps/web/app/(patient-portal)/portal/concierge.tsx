@@ -201,6 +201,20 @@ export function Concierge({ patientPhn, name, signals }: { patientPhn: string; n
     void streamAgent(text);
   }
 
+  // Record/Summary rows dispatch "mh:ask" to have the concierge answer about an
+  // item. Keep a ref to the latest handler so the once-registered listener never
+  // goes stale.
+  const askRef = useRef<(q: string) => void>(() => {});
+  askRef.current = handleFree;
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const q = (e as CustomEvent).detail;
+      if (typeof q === "string" && q.trim()) askRef.current(q);
+    };
+    window.addEventListener("mh:ask", handler);
+    return () => window.removeEventListener("mh:ask", handler);
+  }, []);
+
   // REAL: ask the live patient-persona agent to explain the patient's actual
   // most-recent result in plain language, grounded in and citing the record.
   function explainResult() {
