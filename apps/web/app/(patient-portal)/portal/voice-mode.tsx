@@ -43,6 +43,9 @@ export function VoiceMode({ locale, name, ask, onClose }: {
   // listen()'s onend fires handleUtterance, which is declared later — go via a
   // ref so the closure always calls the latest (and avoids use-before-declare).
   const utterRef = useRef<(t: string) => void>(() => {});
+  // Distinguishes a user "stop/pause" tap from a natural end-of-speech pause, so
+  // silence re-arms the mic (keeps the conversation going) but a tap pauses it.
+  const stoppedRef = useRef(false);
 
   const stopMeter = useCallback(() => {
     const m = meterRef.current;
@@ -111,15 +114,18 @@ export function VoiceMode({ locale, name, ask, onClose }: {
     rec.onend = () => {
       stopMeter();
       if (!active.current) return;
+      if (stoppedRef.current) { stoppedRef.current = false; setStatus("idle"); return; }
       const t = finalText.trim();
-      if (t) utterRef.current(t);
-      else setStatus("idle");
+      if (t) { utterRef.current(t); return; }
+      // No speech this window — a natural pause. Keep waiting: re-arm the mic so
+      // the conversation flows hands-free until the user taps Stop or End.
+      window.setTimeout(() => { if (active.current && !stoppedRef.current) listen(); }, 250);
     };
     recRef.current = rec;
     setCaption("");
     setStatus("listening");
     void startMeter();
-    rec.start();
+    try { rec.start(); } catch { /* already starting — ignore */ }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bcp47, startMeter, stopMeter]);
 
@@ -175,10 +181,11 @@ export function VoiceMode({ locale, name, ask, onClose }: {
     onClose();
   }
 
-  // Tap the orb: interrupt speaking / start listening again.
+  // Tap the orb: interrupt speaking / pause listening / resume.
   function tapOrb() {
-    if (status === "speaking") { window.speechSynthesis?.cancel(); listen(); return; }
-    if (status === "listening") { recRef.current?.stop(); return; }
+    if (status === "speaking") { stoppedRef.current = false; window.speechSynthesis?.cancel(); listen(); return; }
+    if (status === "listening") { stoppedRef.current = true; recRef.current?.stop(); return; } // user pause
+    stoppedRef.current = false;
     listen();
   }
 
