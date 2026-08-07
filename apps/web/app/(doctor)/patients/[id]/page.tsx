@@ -210,18 +210,9 @@ export default async function PatientSessionPage({ params }: { params: Promise<{
       {/* Clinician cockpit — vitals & lab graphs + imaging gallery */}
       <PatientCockpit summary={summary} labs={labs} imaging={imaging} trends={trends} />
 
-      {/* Session — collapsible record/tools rail beside the central AI assistant */}
-      <div className="grid gap-4 lg:grid-cols-[minmax(340px,400px)_1fr]">
-        {/* Collapsible rail: safety flags, record detail, and write tools (accordion) */}
-        <aside className="lg:sticky lg:top-4 lg:max-h-[calc(100dvh-2rem)] lg:self-start lg:overflow-y-auto lg:pr-1">
-          {summary ? (
-            <SideAccordion items={items} defaultOpenId={flags.length ? "flags" : "allergies"} />
-          ) : (
-            <p className="text-muted-foreground">{t("summaryUnavailable")}</p>
-          )}
-        </aside>
-
-        {/* Central AI assistant — the primary work surface */}
+      {/* Session — AI assistant on the LEFT, collapsible record/tools cards on the RIGHT */}
+      <div className="grid gap-4 lg:grid-cols-[1fr_minmax(340px,400px)]">
+        {/* AI assistant — the primary work surface, left */}
         <main>
           <Card aria-label={t("chatTitle")} className="flex min-h-[calc(100dvh-3rem)] flex-col">
             <div className="flex items-center gap-2 border-b border-border px-4 py-3">
@@ -236,6 +227,15 @@ export default async function PatientSessionPage({ params }: { params: Promise<{
             </div>
           </Card>
         </main>
+
+        {/* Collapsible cards on the right: safety flags, record detail, write tools */}
+        <aside className="lg:sticky lg:top-4 lg:max-h-[calc(100dvh-2rem)] lg:self-start lg:overflow-y-auto lg:pr-1">
+          {summary ? (
+            <SideAccordion items={items} defaultOpenId={flags.length ? "flags" : "allergies"} />
+          ) : (
+            <p className="text-muted-foreground">{t("summaryUnavailable")}</p>
+          )}
+        </aside>
       </div>
     </div>
   );
