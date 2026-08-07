@@ -35,10 +35,17 @@ export default async function PortalHomePage() {
 
   if (!phn || !summary) {
     return (
-      <div className="rounded-2xl border border-border bg-card p-6 text-center text-muted-foreground">
-        {!phn
-          ? "No linked patient record for this account."
-          : "We couldn't load your record right now. Please try again shortly."}
+      <div className="mx-auto mt-6 max-w-md rounded-2xl border border-border bg-card p-6 text-center">
+        <p className="text-muted-foreground">
+          {!phn
+            ? "No linked patient record for this account."
+            : "We couldn't load your record right now — the service may be starting up."}
+        </p>
+        {phn ? (
+          <a href="/portal" className="mt-4 inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:brightness-110">
+            Try again
+          </a>
+        ) : null}
       </div>
     );
   }
