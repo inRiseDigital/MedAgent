@@ -19,10 +19,13 @@ export const STAFF: Role[] = ["doctor", "nurse", "admin", "receptionist"];
 export const CLINICAL: Role[] = ["doctor", "nurse", "admin"];
 export const PATIENT: Role[] = ["patient", "guardian"];
 
-/** Home route for a session's primary role — where to bounce on a role mismatch. */
+/** Home route for a session's primary role — where to bounce on a role mismatch.
+ * A signed-in user with NO recognised role must go to a neutral, ungated page,
+ * never into a role-gated route (which would bounce them straight back → loop). */
 export function homeFor(roles: Role[]): string {
   if (roles.some((r) => PATIENT.includes(r))) return "/portal";
-  return "/queue";
+  if (roles.some((r) => STAFF.includes(r))) return "/queue";
+  return "/no-access";
 }
 
 /**
