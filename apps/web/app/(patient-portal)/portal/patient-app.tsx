@@ -46,9 +46,9 @@ export function PatientApp({
   ];
 
   return (
-    <div className="lg:flex lg:gap-8">
-      {/* Desktop sidebar rail */}
-      <nav className="hidden lg:sticky lg:top-20 lg:flex lg:h-fit lg:w-52 lg:shrink-0 lg:flex-col lg:gap-1" aria-label="Patient app">
+    <div className="md:flex md:gap-6 lg:gap-8">
+      {/* Sidebar rail — from md up (covers unfolded foldables/tablets/desktop) */}
+      <nav className="hidden md:sticky md:top-20 md:flex md:h-fit md:w-44 md:shrink-0 md:flex-col md:gap-1 lg:w-52" aria-label="Patient app">
         {tabs.map(({ k, label, Icon }) => {
           const on = tab === k;
           return (
@@ -75,10 +75,10 @@ export function PatientApp({
         {/* Chat spans the column so it uses the desktop space; bubbles are capped
             for readability in CSS. Other tabs stay centred at reading width. */}
         <div className={tab === "chat" ? "block" : "hidden"}>{concierge}</div>
-        <div className="mx-auto w-full max-w-2xl lg:mx-0">
-          <div className={tab === "summary" ? "block pb-28 lg:pb-2" : "hidden"}>{summary}</div>
-          <div className={tab === "record" ? "block pb-28 lg:pb-2" : "hidden"}>{record}</div>
-          <div className={tab === "me" ? "block pb-28 lg:pb-2" : "hidden"}>{me}</div>
+        <div className="mx-auto w-full max-w-2xl md:mx-0">
+          <div className={tab === "summary" ? "block pb-28 md:pb-2" : "hidden"}>{summary}</div>
+          <div className={tab === "record" ? "block pb-28 md:pb-2" : "hidden"}>{record}</div>
+          <div className={tab === "me" ? "block pb-28 md:pb-2" : "hidden"}>{me}</div>
         </div>
       </div>
 
@@ -90,7 +90,7 @@ export function PatientApp({
       {/* Mobile bottom tab bar — FIXED to the viewport so it never scrolls away.
           A short gradient masks content passing behind the floating pill. */}
       <nav
-        className="fixed inset-x-0 bottom-0 z-30 bg-gradient-to-t from-[color:var(--mh-bg)] via-[color:var(--mh-bg)]/85 to-transparent pt-4 lg:hidden"
+        className="fixed inset-x-0 bottom-0 z-30 bg-gradient-to-t from-[color:var(--mh-bg)] via-[color:var(--mh-bg)]/85 to-transparent pt-4 md:hidden"
         aria-label="Patient app"
       >
         <div className="mx-auto max-w-lg px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))]">

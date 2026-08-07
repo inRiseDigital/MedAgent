@@ -25,7 +25,7 @@ export default async function PortalLayout({ children }: { children: ReactNode }
       <SessionGuard />
       <Notifications />
       <header className="sticky top-0 z-20 border-b border-border bg-[color:var(--mh-bg)]/80 backdrop-blur-md">
-        <div className="mx-auto flex max-w-lg items-center justify-between px-4 py-3 lg:max-w-6xl 2xl:max-w-[1600px]">
+        <div className="mx-auto flex max-w-lg items-center justify-between px-4 py-3 md:max-w-4xl lg:max-w-6xl 2xl:max-w-[1600px]">
           <span className="flex items-center gap-2">
             <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary text-primary-foreground">
               <HeartPulse className="h-4 w-4" />
@@ -38,7 +38,7 @@ export default async function PortalLayout({ children }: { children: ReactNode }
           </div>
         </div>
       </header>
-      <div className="mx-auto max-w-lg px-4 pb-4 pt-3 text-base lg:max-w-6xl 2xl:max-w-[1600px]">{children}</div>
+      <div className="mx-auto max-w-lg px-4 pb-4 pt-3 text-base md:max-w-4xl lg:max-w-6xl 2xl:max-w-[1600px]">{children}</div>
     </div>
   );
 }
