@@ -168,13 +168,17 @@ async function handleLogout(request: NextRequest): Promise<NextResponse> {
     /* refresh unavailable — fall through to whatever token we have */
   }
   const idToken = await destroySession();
-  // Use the real browser origin (from the gateway's forwarded headers) so the
-  // post-logout redirect matches where the user actually is (https://localhost),
-  // and lands back on the app (which then shows the login screen).
-  const home = `${publicBase(request)}/`;
-  const target = idToken ? await buildLogoutUrl(idToken, home) : home;
+  // Land the user straight on the login flow after Keycloak logout. (Sending them
+  // to "/" is unreliable: in dev, the root redirect degrades to a 1s meta-refresh,
+  // so the browser sits on a blank page instead of the login screen.) /api/auth/login
+  // matches the registered post-logout URI (https://localhost/*) and, since the
+  // Keycloak SSO session is now gone, renders the login page.
+  const loginUrl = `${publicBase(request)}/api/auth/login`;
+  const target = idToken ? await buildLogoutUrl(idToken, loginUrl) : loginUrl;
   const res = NextResponse.redirect(target);
-  res.cookies.delete(SESSION_COOKIE);
+  // Explicitly expire the cookie with the SAME attributes — a __Host- cookie only
+  // clears when the deletion also carries Secure + Path=/ (a bare delete may not).
+  res.cookies.set(SESSION_COOKIE, "", { ...baseCookieOptions(), maxAge: 0 });
   return res;
 }
 

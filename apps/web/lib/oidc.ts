@@ -177,11 +177,13 @@ export async function buildLogoutUrl(idToken: string, postLogoutRedirectUri?: st
   const config = await discover();
   const url = new URL(config.end_session_endpoint);
   url.searchParams.set("id_token_hint", idToken);
-  // Must EXACTLY match a registered post-logout URI (Keycloak silently ignores a
-  // mismatch and parks the user on its logout page). The realm registers
-  // `https://localhost/*`, so a bare origin without the trailing slash fails —
-  // always end with `/`. Prefer the caller's real browser origin.
-  const target = (postLogoutRedirectUri ?? appUrl()).replace(/\/$/, "") + "/";
+  // Must match a registered post-logout URI (the realm registers
+  // `https://localhost/*`; Keycloak silently ignores a mismatch and parks the
+  // user on its own logout page). `new URL().toString()` normalises a bare origin
+  // to end with `/` (so it matches `/*`) while preserving a real path like
+  // `/api/auth/login` unchanged — do NOT blindly append a trailing slash, which
+  // would turn `/api/auth/login` into a non-route `/api/auth/login/`.
+  const target = new URL(postLogoutRedirectUri ?? appUrl()).toString();
   url.searchParams.set("post_logout_redirect_uri", target);
   url.searchParams.set("client_id", clientId());
   return url.toString();
