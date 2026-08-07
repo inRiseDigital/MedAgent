@@ -120,9 +120,14 @@ export function Concierge({ patientPhn, name, signals }: { patientPhn: string; n
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [inVideo, setInVideo] = useState(false);
+  const [listening, setListening] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const ran = useRef(false);
   const videoRoom = `medagent-${patientPhn}`; // deterministic: doctor + patient meet here
+  // Voice layer (free, browser Web Speech API). BCP-47 tag per UI locale.
+  const bcp47 = locale === "si" ? "si-LK" : locale === "ta" ? "ta-LK" : "en-US";
+  const recognitionRef = useRef<{ stop: () => void; start: () => void } | null>(null);
+  const speakNextRef = useRef(false);
 
   const down = useCallback(() => {
     requestAnimationFrame(() => {
@@ -155,6 +160,7 @@ export function Concierge({ patientPhn, name, signals }: { patientPhn: string; n
       down();
       const bump = (fn: (t: Node & { t: "ai" }) => Node) =>
         setMsgs((m) => m.map((n, i) => (i === m.length - 1 && n.t === "ai" ? fn(n) : n)));
+      let full = "";
       try {
         const res = await fetch("/api/chat", {
           method: "POST",
@@ -185,7 +191,7 @@ export function Concierge({ patientPhn, name, signals }: { patientPhn: string; n
             if (!p || p === "[DONE]") continue;
             try {
               const o = JSON.parse(p) as { type?: string; delta?: string; data?: unknown };
-              if (o.type === "text-delta" && o.delta) { bump((n) => ({ ...n, text: n.text + o.delta })); down(); }
+              if (o.type === "text-delta" && o.delta) { full += o.delta; bump((n) => ({ ...n, text: n.text + o.delta })); down(); }
               else if (o.type === "data-citations" && Array.isArray(o.data)) { const cites = o.data as { ref: string; resource_type?: string }[]; bump((n) => ({ ...n, cites })); down(); }
               else if (o.type === "data-cards" && Array.isArray(o.data)) {
                 for (const c of o.data as { tone?: Tone; title?: string; points?: string[] }[]) {
@@ -202,9 +208,10 @@ export function Concierge({ patientPhn, name, signals }: { patientPhn: string; n
         setBusy(false);
         setMsgs((m) => m.map((n, i) => (i === m.length - 1 && n.t === "ai" ? { ...n, streaming: false } : n)));
         down();
+        if (speakNextRef.current) { speakNextRef.current = false; speak(full); }
       }
     },
-    [busy, msgs, patientPhn, down],
+    [busy, msgs, patientPhn, down, locale, bcp47],
   );
 
   // ---- scripted conversational-commerce flows ----
@@ -221,6 +228,47 @@ export function Concierge({ patientPhn, name, signals }: { patientPhn: string; n
   // fire only from explicit card/chip taps (booking, refill, the greeting cards).
   function handleFree(text: string) {
     void streamAgent(text);
+  }
+
+  // --- voice layer (free, browser Web Speech API; locale-aware) ---
+  function speak(text: string) {
+    if (typeof window === "undefined" || !("speechSynthesis" in window) || !text.trim()) return;
+    try {
+      const u = new SpeechSynthesisUtterance(text.replace(/\[source:[^\]]*\]/g, "").slice(0, 600));
+      u.lang = bcp47;
+      const v = window.speechSynthesis.getVoices().find((vo) => vo.lang?.toLowerCase().startsWith(locale));
+      if (v) u.voice = v;
+      window.speechSynthesis.cancel();
+      window.speechSynthesis.speak(u);
+    } catch {
+      /* TTS unavailable — silently ignore */
+    }
+  }
+  function toggleVoice() {
+    if (listening) { recognitionRef.current?.stop(); return; }
+    const SR = (window as unknown as { SpeechRecognition?: new () => unknown; webkitSpeechRecognition?: new () => unknown });
+    const Ctor = SR.SpeechRecognition ?? SR.webkitSpeechRecognition;
+    if (!Ctor) {
+      push({ t: "ai", text: "Voice input isn't supported in this browser — try Chrome, or just type your question." });
+      return;
+    }
+    const rec = new Ctor() as {
+      lang: string; interimResults: boolean; maxAlternatives: number; start: () => void; stop: () => void;
+      onresult: ((e: { results: { 0: { 0: { transcript: string } } } }) => void) | null;
+      onend: (() => void) | null; onerror: (() => void) | null;
+    };
+    rec.lang = bcp47;
+    rec.interimResults = false;
+    rec.maxAlternatives = 1;
+    rec.onresult = (e) => {
+      const t = e.results?.[0]?.[0]?.transcript?.trim();
+      if (t) { setInput(""); speakNextRef.current = true; handleFree(t); }
+    };
+    rec.onend = () => setListening(false);
+    rec.onerror = () => setListening(false);
+    recognitionRef.current = rec;
+    setListening(true);
+    rec.start();
   }
 
   // Record/Summary rows dispatch "mh:ask" to have the concierge answer about an
@@ -552,7 +600,16 @@ export function Concierge({ patientPhn, name, signals }: { patientPhn: string; n
         className="mh-composer"
         onSubmit={(e) => { e.preventDefault(); const v = input.trim(); if (!v) return; setInput(""); handleFree(v); }}
       >
-        <button type="button" className="mh-circ mic" aria-label="Speak"><Mic className="h-5 w-5" /></button>
+        <button
+          type="button"
+          onClick={toggleVoice}
+          aria-pressed={listening}
+          aria-label={listening ? "Stop listening" : "Speak"}
+          className="mh-circ mic"
+          style={listening ? { background: "var(--heart)", color: "#fff", animation: "mh-pulse 1s ease-in-out infinite" } : undefined}
+        >
+          <Mic className="h-5 w-5" />
+        </button>
         <input value={input} onChange={(e) => setInput(e.target.value)} placeholder={tnav("ask")} aria-label={tnav("ask")} />
         <button type="submit" className="mh-circ send" disabled={busy || !input.trim()} aria-label="Send"><Send className="h-5 w-5" /></button>
       </form>
