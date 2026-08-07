@@ -369,16 +369,19 @@ authenticationFlows:
         requirement: REQUIRED
         priority: 10
         autheticatorFlow: false
-      # Staff MFA: conditional TOTP bound to staff roles, NOT global — kiosk and
-      # patient flows untouched (02 §4). Patients: password + OTP-on-new-device
-      # via SMS authenticator, added S3 with the SMS gateway adapter.
+      # Staff MFA + LoA2 step-up: DISABLED for the demo (no forced authenticator
+      # setup). The subflows lack the `conditional-user-configured` guard when
+      # imported by keycloak-config-cli, so CONDITIONAL forced a CONFIGURE_TOTP
+      # setup screen on staff login. To RE-ENABLE MFA in production: set these
+      # back to CONDITIONAL and ensure medagent-staff-otp contains a
+      # conditional-user-configured execution BEFORE the OTP form (so unenrolled
+      # users are skipped, enrolled users are challenged).
       - flowAlias: medagent-staff-otp
-        requirement: CONDITIONAL
+        requirement: DISABLED
         priority: 20
         autheticatorFlow: true
-      # Step-up: runs ONLY when the client requests acr loa2 (claims / acr_values).
       - flowAlias: medagent-loa2-stepup
-        requirement: CONDITIONAL
+        requirement: DISABLED
         priority: 30
         autheticatorFlow: true
 
