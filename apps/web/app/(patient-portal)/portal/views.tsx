@@ -181,13 +181,14 @@ export function SummaryView({ summary, trends = {} }: { summary: PatientSummary;
   );
 }
 
-// Desktop-only right rail beside the concierge chat — compact at-a-glance.
+// Desktop right rail beside the concierge chat — the full card column: alerts,
+// next appointment, favourite metrics (with graphs), and recent results.
 export function SnapshotRail({ summary, trends = {} }: { summary: PatientSummary; trends?: Record<string, number[]> }) {
   const nextAppt = summary.appointments.find((a) => a.start);
-  const vitals = dedupeVitals(summary.vitals).slice(0, 2);
+  const vitals = dedupeVitals(summary.vitals).slice(0, 4);
   const critical = summary.results.filter((r) => r.critical);
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 lg:sticky lg:top-4 lg:max-h-[calc(100dvh-6rem)] lg:overflow-y-auto lg:pr-1">
       <SectionLabel>At a glance</SectionLabel>
       {critical.length > 0 ? (
         <Ask
@@ -212,10 +213,33 @@ export function SnapshotRail({ summary, trends = {} }: { summary: PatientSummary
           </div>
         </div>
       ) : null}
-      {vitals.map((v, i) => (
-        <FavTile key={i} name={v.text} value={v.value as number} unit={v.unit} when={v.when} series={trends[v.text]} gradientId={`rail-${i}`} />
-      ))}
-      <p className="px-1 text-xs text-muted-foreground">Open the <span className="font-semibold text-foreground">Summary</span> tab for your full picture.</p>
+      {vitals.length > 0 ? (
+        <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+          {vitals.map((v, i) => (
+            <FavTile key={i} name={v.text} value={v.value as number} unit={v.unit} when={v.when} series={trends[v.text]} gradientId={`rail-${i}`} />
+          ))}
+        </div>
+      ) : null}
+      {summary.results.length > 0 ? (
+        <div>
+          <SectionLabel>Recent results — tap to explain</SectionLabel>
+          <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
+            {summary.results.slice(0, 4).map((r) => (
+              <Ask
+                key={r.ref}
+                question={`Explain my "${r.text}" result (${r.ref}) in simple, reassuring plain language. Say what it means for me and what to do next, and cite it.`}
+                className="flex w-full items-center gap-3 border-b border-border/60 p-3 text-left transition-colors last:border-0 hover:bg-muted"
+              >
+                <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${r.critical ? "bg-destructive-surface text-destructive" : "bg-success-surface text-success"}`}>
+                  <FlaskConical className="h-4 w-4" />
+                </span>
+                <span className="min-w-0 flex-1 truncate text-sm font-semibold">{r.text}</span>
+                {r.critical ? <span className="shrink-0 rounded-full bg-destructive-surface px-2 py-0.5 text-[0.58rem] font-bold uppercase text-destructive">Critical</span> : null}
+              </Ask>
+            ))}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

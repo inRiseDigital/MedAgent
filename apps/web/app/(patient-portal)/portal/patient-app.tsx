@@ -30,10 +30,9 @@ export function PatientApp({
   const [tab, setTab] = useState<TabKey>("chat");
   // Sidebar collapses by default on tighter widths (unfolded foldables/tablets),
   // stays open on wide desktops; a button toggles it either way.
-  const [navOpen, setNavOpen] = useState(false);
+  const [navOpen, setNavOpen] = useState(false); // collapsed by default → chat sits left
   // A record row (server component) can ask to switch tabs via a window event.
   useEffect(() => {
-    setNavOpen(window.matchMedia("(min-width: 1024px)").matches);
     const handler = (e: Event) => {
       const d = (e as CustomEvent).detail;
       if (d === "chat" || d === "summary" || d === "record" || d === "me") setTab(d);
@@ -102,9 +101,9 @@ export function PatientApp({
         </div>
       </div>
 
-      {/* Desktop right rail — at-a-glance context beside the chat (chat tab only) */}
+      {/* Desktop right rail — the cards beside the chat (chat tab only) */}
       {tab === "chat" ? (
-        <aside className="hidden xl:block xl:w-80 xl:shrink-0 2xl:w-96">{rail}</aside>
+        <aside className="hidden lg:block lg:w-[340px] lg:shrink-0 xl:w-[380px]">{rail}</aside>
       ) : null}
 
       {/* Mobile bottom tab bar — FIXED to the viewport so it never scrolls away.
