@@ -7,7 +7,7 @@
 import { AlertTriangle, Scan } from "lucide-react";
 
 import type { ImagingReport, LabReport, PatientSummary } from "@/lib/api";
-import { RangeBar } from "@/components/charts";
+import { LineFade, RangeBar } from "@/components/charts";
 
 // Curated reference ranges (clinician-owned in prod). Keyed by substring match on
 // the measurement name/unit; used only to place the value on its normal band.
@@ -36,10 +36,11 @@ function statusColor(v: number, low: number, high: number, critical?: boolean): 
   return "var(--success)";
 }
 
-function GaugeTile({ name, value, unit, when, critical }: { name: string; value: number; unit?: string; when?: string; critical?: boolean }) {
+function GaugeTile({ name, value, unit, when, critical, series, gradientId }: { name: string; value: number; unit?: string; when?: string; critical?: boolean; series?: number[]; gradientId?: string }) {
   const ref = refFor(name);
   const color = ref ? statusColor(value, ref.low, ref.high, critical) : "var(--primary)";
   const status = critical ? "Critical" : ref ? (value < ref.low ? "Low" : value > ref.high ? "High" : "Normal") : null;
+  const trend = series && series.length >= 2 ? series : null;
   return (
     <div className="rounded-2xl border border-border bg-card p-4 shadow-sm">
       <div className="flex items-center gap-2">
@@ -57,8 +58,12 @@ function GaugeTile({ name, value, unit, when, critical }: { name: string; value:
         {value}
         {unit ? <span className="ml-1 text-sm font-semibold text-muted-foreground">{unit}</span> : null}
       </div>
-      {ref ? <RangeBar value={value} low={ref.low} high={ref.high} color={color} /> : null}
-      {when ? <div className="mt-2 text-[0.7rem] font-medium text-muted-foreground">{when.slice(0, 10)}</div> : null}
+      {trend ? (
+        <div className="mt-2"><LineFade data={trend} color={color} height={52} gradientId={gradientId ?? `g-${name.replace(/\W+/g, "")}`} /></div>
+      ) : ref ? (
+        <RangeBar value={value} low={ref.low} high={ref.high} color={color} />
+      ) : null}
+      {when ? <div className="mt-2 text-[0.7rem] font-medium text-muted-foreground">{trend ? "Trend over recent visits" : when.slice(0, 10)}</div> : null}
     </div>
   );
 }
@@ -107,14 +112,23 @@ export function PatientCockpit({
   summary,
   labs,
   imaging,
+  trends = {},
 }: {
   summary: PatientSummary | null;
   labs: LabReport[];
   imaging: ImagingReport[];
+  trends?: Record<string, number[]>;
 }) {
-  // Combine latest vitals + released labs into gauge tiles (cap for a clean grid).
-  const vitalTiles = (summary?.vitals ?? []).filter((v) => typeof v.value === "number").slice(0, 4);
-  const labTiles = labs.filter((l) => typeof l.value === "number").slice(0, 4);
+  // Latest reading per measurement (FHIR returns duplicates across visits) → one
+  // tile each; a real trend line where history exists, else a reference-range bar.
+  const seenV = new Set<string>();
+  const vitalTiles = (summary?.vitals ?? [])
+    .filter((v) => typeof v.value === "number" && !seenV.has(v.text) && seenV.add(v.text))
+    .slice(0, 4);
+  const seenL = new Set<string>();
+  const labTiles = labs
+    .filter((l) => typeof l.value === "number" && !!l.test && !seenL.has(l.test) && seenL.add(l.test))
+    .slice(0, 4);
   const hasGauges = vitalTiles.length + labTiles.length > 0;
 
   return (
@@ -124,10 +138,10 @@ export function PatientCockpit({
           <p className="mb-2 ml-1 text-[0.7rem] font-semibold uppercase tracking-wider text-muted-foreground">Vitals &amp; labs</p>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
             {vitalTiles.map((v, i) => (
-              <GaugeTile key={`v${i}`} name={v.text} value={v.value as number} unit={v.unit} when={v.when} />
+              <GaugeTile key={`v${i}`} name={v.text} value={v.value as number} unit={v.unit} when={v.when} series={trends[v.text]} gradientId={`ck-v${i}`} />
             ))}
             {labTiles.map((l) => (
-              <GaugeTile key={l.id} name={l.test ?? "Lab"} value={l.value as number} unit={l.unit} when={l.issued} critical={l.critical} />
+              <GaugeTile key={l.id} name={l.test ?? "Lab"} value={l.value as number} unit={l.unit} when={l.issued} critical={l.critical} series={l.test ? trends[l.test] : undefined} gradientId={`ck-l${l.id}`} />
             ))}
           </div>
         </div>

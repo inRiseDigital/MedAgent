@@ -6,8 +6,8 @@
  * Theme-aware; PHN addresses the patient in URL state (06 §5).
  */
 import { getTranslations } from "next-intl/server";
-import { AlertTriangle, ClipboardList, HeartPulse, Pill, ShieldAlert, Siren } from "lucide-react";
-import { Badge, Card, CardContent } from "@medagent/ui";
+import { AlertTriangle, ClipboardList, HeartPulse, Pill, ShieldAlert, Siren, Sparkles } from "lucide-react";
+import { Badge, Card } from "@medagent/ui";
 
 import {
   fetchChildHealth,
@@ -15,6 +15,7 @@ import {
   fetchLabReports,
   fetchPatientBrief,
   fetchPatientSummary,
+  fetchVitalTrends,
   type ChildHealthRecord,
   type ImagingReport,
   type LabReport,
@@ -26,6 +27,7 @@ import { ChatPanel } from "./chat-panel";
 import { ChildHealthCard } from "./child-health";
 import { ClinicalEntry } from "./clinical-entry";
 import { PatientCockpit } from "./cockpit";
+import { SideAccordion, type AccordionItem } from "./side-accordion";
 import { VideoButton } from "./video-button";
 import { ProposalPanel } from "./proposal-panel";
 
@@ -46,10 +48,6 @@ function initials(name: string): string {
 
 function formatPhn(phn: string): string {
   return phn.length === 11 ? `${phn.slice(0, 3)} ${phn.slice(3, 6)} ${phn.slice(6, 9)} ${phn.slice(9)}` : phn;
-}
-
-function SectionLabel({ children }: { children: React.ReactNode }) {
-  return <p className="mb-1.5 text-[0.7rem] font-semibold uppercase tracking-wider text-muted-foreground">{children}</p>;
 }
 
 export default async function PatientSessionPage({ params }: { params: Promise<{ id: string }> }) {
@@ -97,6 +95,84 @@ export default async function PatientSessionPage({ params }: { params: Promise<{
 
   const highAllergies = summary?.allergies.filter((a) => a.criticality === "high") ?? [];
 
+  // Real vital-sign trend series for the cockpit graphs. Best-effort.
+  let trends: Record<string, number[]> = {};
+  try {
+    const tr = await fetchVitalTrends(id);
+    for (const s of tr.series) trends[s.name] = s.points.map((p) => p.value);
+  } catch {
+    trends = {};
+  }
+
+  const flags = brief?.flags ?? [];
+  const items: AccordionItem[] = [];
+  if (summary) {
+    if (flags.length) {
+      items.push({
+        id: "flags",
+        title: "Safety flags",
+        icon: <Siren className="h-3.5 w-3.5" />,
+        badge: { text: String(flags.length), tone: flags.some((f) => f.severity === "block") ? "destructive" : "warning" },
+        content: (
+          <ul className="space-y-1.5">
+            {flags.map((f, i) => (
+              <li key={i} className="flex items-start gap-2 text-xs">
+                <span aria-hidden className={`mt-1 h-1.5 w-1.5 shrink-0 rounded-full ${f.severity === "block" ? "bg-destructive" : f.severity === "warn" ? "bg-warning" : "bg-muted-foreground"}`} />
+                <span className={f.severity === "block" ? "text-destructive" : f.severity === "warn" ? "text-warning" : "text-foreground"}>{f.text}</span>
+              </li>
+            ))}
+          </ul>
+        ),
+      });
+    }
+    items.push({
+      id: "allergies",
+      title: t("allergiesLabel"),
+      icon: <AlertTriangle className="h-3.5 w-3.5" />,
+      badge: highAllergies.length ? { text: "High risk", tone: "destructive" } : undefined,
+      content: summary.allergies.length ? (
+        <div className="flex flex-wrap gap-1.5">
+          {summary.allergies.map((a) => (
+            <Badge key={a.ref} variant={a.criticality === "high" ? "block" : "warn"}>{a.text}</Badge>
+          ))}
+        </div>
+      ) : (
+        <p className="text-xs text-muted-foreground">{t("noAllergiesLabel")}</p>
+      ),
+    });
+    items.push({
+      id: "problems",
+      title: t("problemsLabel"),
+      icon: <HeartPulse className="h-3.5 w-3.5" />,
+      content: summary.problems.length ? (
+        <ul className="space-y-1 text-sm">
+          {summary.problems.map((p) => (
+            <li key={p.ref} className="flex gap-2"><span aria-hidden className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-muted-foreground" /><span>{p.text}</span></li>
+          ))}
+        </ul>
+      ) : (
+        <p className="text-xs text-muted-foreground">{t("none")}</p>
+      ),
+    });
+    items.push({
+      id: "meds",
+      title: t("medsLabel"),
+      icon: <Pill className="h-3.5 w-3.5" />,
+      content: summary.medications.length ? (
+        <ul className="space-y-1 text-sm">
+          {summary.medications.map((m) => (
+            <li key={m.ref} className="flex gap-2"><span aria-hidden className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-muted-foreground" /><span>{m.text}</span></li>
+          ))}
+        </ul>
+      ) : (
+        <p className="text-xs text-muted-foreground">{t("none")}</p>
+      ),
+    });
+  }
+  if (chdr) items.push({ id: "chdr", title: "Child health record", icon: <HeartPulse className="h-3.5 w-3.5" />, content: <ChildHealthCard chdr={chdr} /> });
+  items.push({ id: "entry", title: "Clinical entry", icon: <ClipboardList className="h-3.5 w-3.5" />, content: <ClinicalEntry patientId={id} /> });
+  items.push({ id: "rx", title: t("proposalTitle"), icon: <Pill className="h-3.5 w-3.5" />, content: <ProposalPanel patientId={id} /> });
+
   return (
     <div className="mx-auto max-w-[1400px] space-y-4">
       {/* Patient banner */}
@@ -131,151 +207,34 @@ export default async function PatientSessionPage({ params }: { params: Promise<{
         </div>
       </div>
 
-      {/* Clinician cockpit — vitals & lab gauges + imaging gallery */}
-      <PatientCockpit summary={summary} labs={labs} imaging={imaging} />
+      {/* Clinician cockpit — vitals & lab graphs + imaging gallery */}
+      <PatientCockpit summary={summary} labs={labs} imaging={imaging} trends={trends} />
 
-      {/* Organised session — context rail | work surface */}
-      <div className="grid gap-4 lg:grid-cols-[minmax(320px,380px)_1fr]">
-        {/* Context rail */}
-        <aside className="space-y-4 lg:sticky lg:top-4 lg:self-start">
-        <Card aria-label={t("summaryTitle")} className="h-fit">
-          <CardContent className="space-y-4 p-4">
-            {!summary ? (
-              <p className="text-muted-foreground">{t("summaryUnavailable")}</p>
-            ) : (
-              <>
-                {brief && brief.flags.length > 0 ? (
-                  <div className="rounded-lg border border-border bg-muted/40 p-3">
-                    <SectionLabel>
-                      <span className="inline-flex items-center gap-1.5">
-                        <Siren className="h-3.5 w-3.5" /> Safety flags
-                      </span>
-                    </SectionLabel>
-                    <ul className="space-y-1.5">
-                      {brief.flags.map((f, i) => (
-                        <li key={i} className="flex items-start gap-2 text-xs">
-                          <span
-                            aria-hidden
-                            className={`mt-1 h-1.5 w-1.5 shrink-0 rounded-full ${
-                              f.severity === "block" ? "bg-destructive" : f.severity === "warn" ? "bg-warning" : "bg-muted-foreground"
-                            }`}
-                          />
-                          <span className={f.severity === "block" ? "text-destructive" : f.severity === "warn" ? "text-warning" : "text-foreground"}>
-                            {f.text}
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                ) : null}
-
-                <div>
-                  <SectionLabel>
-                    <span className="inline-flex items-center gap-1.5">
-                      <AlertTriangle className="h-3.5 w-3.5" /> {t("allergiesLabel")}
-                    </span>
-                  </SectionLabel>
-                  {summary.allergies.length > 0 ? (
-                    <div className="flex flex-wrap gap-1.5">
-                      {summary.allergies.map((a) => (
-                        <Badge key={a.ref} variant={a.criticality === "high" ? "block" : "warn"}>
-                          {a.text}
-                        </Badge>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="text-xs text-muted-foreground">{t("noAllergiesLabel")}</p>
-                  )}
-                </div>
-
-                <div className="border-t border-border pt-3">
-                  <SectionLabel>
-                    <span className="inline-flex items-center gap-1.5">
-                      <HeartPulse className="h-3.5 w-3.5" /> {t("problemsLabel")}
-                    </span>
-                  </SectionLabel>
-                  {summary.problems.length ? (
-                    <ul className="space-y-1 text-sm">
-                      {summary.problems.map((p) => (
-                        <li key={p.ref} className="flex gap-2">
-                          <span aria-hidden className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-muted-foreground" />
-                          <span>{p.text}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <p className="text-xs text-muted-foreground">{t("none")}</p>
-                  )}
-                </div>
-
-                <div className="border-t border-border pt-3">
-                  <SectionLabel>
-                    <span className="inline-flex items-center gap-1.5">
-                      <Pill className="h-3.5 w-3.5" /> {t("medsLabel")}
-                    </span>
-                  </SectionLabel>
-                  {summary.medications.length ? (
-                    <ul className="space-y-1 text-sm">
-                      {summary.medications.map((m) => (
-                        <li key={m.ref} className="flex gap-2">
-                          <span aria-hidden className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-muted-foreground" />
-                          <span>{m.text}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <p className="text-xs text-muted-foreground">{t("none")}</p>
-                  )}
-                </div>
-              </>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Child Health Development Record — children only, in the context rail */}
-        {chdr ? <ChildHealthCard chdr={chdr} /> : null}
+      {/* Session — collapsible record/tools rail beside the central AI assistant */}
+      <div className="grid gap-4 lg:grid-cols-[minmax(340px,400px)_1fr]">
+        {/* Collapsible rail: safety flags, record detail, and write tools (accordion) */}
+        <aside className="lg:sticky lg:top-4 lg:max-h-[calc(100dvh-2rem)] lg:self-start lg:overflow-y-auto lg:pr-1">
+          {summary ? (
+            <SideAccordion items={items} defaultOpenId={flags.length ? "flags" : "allergies"} />
+          ) : (
+            <p className="text-muted-foreground">{t("summaryUnavailable")}</p>
+          )}
         </aside>
 
-        {/* Work surface — AI assistant + clinical write tools */}
-        <main className="space-y-4">
-          <Card aria-label={t("chatTitle")} className="flex flex-col">
+        {/* Central AI assistant — the primary work surface */}
+        <main>
+          <Card aria-label={t("chatTitle")} className="flex min-h-[calc(100dvh-3rem)] flex-col">
             <div className="flex items-center gap-2 border-b border-border px-4 py-3">
               <span className="flex h-6 w-6 items-center justify-center rounded-md bg-primary/10 text-primary">
-                <HeartPulse className="h-3.5 w-3.5" />
+                <Sparkles className="h-3.5 w-3.5" />
               </span>
               <h2 className="text-sm font-semibold">{t("chatTitle")}</h2>
+              <span className="ml-auto text-xs text-muted-foreground">Grounded in the FHIR chart · cited</span>
             </div>
-            <div className="p-3">
+            <div className="flex-1 p-3">
               <ChatPanel patientId={id} />
             </div>
           </Card>
-
-          {/* Clinical actions — document + prescribe, side by side */}
-          <div className="grid gap-4 md:grid-cols-2">
-            <Card aria-label="Clinical entry">
-              <div className="flex items-center gap-2 border-b border-border px-4 py-3">
-                <span className="flex h-6 w-6 items-center justify-center rounded-md bg-primary/10 text-primary">
-                  <ClipboardList className="h-3.5 w-3.5" />
-                </span>
-                <h2 className="text-sm font-semibold">Clinical entry</h2>
-              </div>
-              <CardContent className="p-4">
-                <ClinicalEntry patientId={id} />
-              </CardContent>
-            </Card>
-
-            <Card aria-label={t("proposalTitle")}>
-              <div className="flex items-center gap-2 border-b border-border px-4 py-3">
-                <span className="flex h-6 w-6 items-center justify-center rounded-md bg-primary/10 text-primary">
-                  <Pill className="h-3.5 w-3.5" />
-                </span>
-                <h2 className="text-sm font-semibold">{t("proposalTitle")}</h2>
-              </div>
-              <CardContent className="p-4">
-                <ProposalPanel patientId={id} />
-              </CardContent>
-            </Card>
-          </div>
         </main>
       </div>
     </div>
