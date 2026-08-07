@@ -470,7 +470,7 @@ export function Concierge({ patientPhn, name, signals }: { patientPhn: string; n
   }
 
   return (
-    <div className="mh flex h-[calc(100dvh-9rem)] flex-col overflow-hidden md:h-[calc(100dvh-7rem)]">
+    <div className="mh flex h-[calc(100dvh-9rem)] flex-col overflow-hidden md:h-[calc(100dvh-5.5rem)]">
       {inVideo ? <VideoRoom room={videoRoom} displayName={name} onClose={() => setInVideo(false)} /> : null}
       <div ref={scrollRef} className="flex flex-1 flex-col gap-3 overflow-y-auto p-3.5">
         {msgs.map((n, i) => {

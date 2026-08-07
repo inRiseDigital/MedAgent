@@ -10,7 +10,7 @@
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { useTranslations } from "next-intl";
-import { Activity, FileText, MessageSquareText, User } from "lucide-react";
+import { Activity, FileText, MessageSquareText, PanelLeft, User } from "lucide-react";
 
 type TabKey = "chat" | "summary" | "record" | "me";
 
@@ -28,8 +28,12 @@ export function PatientApp({
   rail: ReactNode;
 }) {
   const [tab, setTab] = useState<TabKey>("chat");
+  // Sidebar collapses by default on tighter widths (unfolded foldables/tablets),
+  // stays open on wide desktops; a button toggles it either way.
+  const [navOpen, setNavOpen] = useState(false);
   // A record row (server component) can ask to switch tabs via a window event.
   useEffect(() => {
+    setNavOpen(window.matchMedia("(min-width: 1024px)").matches);
     const handler = (e: Event) => {
       const d = (e as CustomEvent).detail;
       if (d === "chat" || d === "summary" || d === "record" || d === "me") setTab(d);
@@ -46,27 +50,43 @@ export function PatientApp({
   ];
 
   return (
-    <div className="md:flex md:gap-6 lg:gap-8">
-      {/* Sidebar rail — from md up (covers unfolded foldables/tablets/desktop) */}
-      <nav className="hidden md:sticky md:top-20 md:flex md:h-fit md:w-44 md:shrink-0 md:flex-col md:gap-1 lg:w-52" aria-label="Patient app">
-        {tabs.map(({ k, label, Icon }) => {
-          const on = tab === k;
-          return (
-            <button
-              key={k}
-              type="button"
-              onClick={() => setTab(k)}
-              aria-current={on ? "page" : undefined}
-              className={`flex items-center gap-3 rounded-xl px-3.5 py-3 text-sm font-semibold transition-colors ${
-                on ? "bg-primary/12 text-primary" : "text-muted-foreground hover:bg-muted hover:text-foreground"
-              }`}
-            >
-              <Icon className="h-5 w-5 shrink-0" />
-              {label}
-            </button>
-          );
-        })}
-      </nav>
+    <div className="md:flex md:gap-4 lg:gap-6">
+      {/* Sidebar column (md+): a persistent toggle button + a collapsible rail.
+          Auto-collapsed on tighter widths, expandable on demand. */}
+      <div className="hidden md:block md:shrink-0">
+        <div className="sticky top-20 flex flex-col gap-2">
+          <button
+            type="button"
+            onClick={() => setNavOpen((o) => !o)}
+            aria-expanded={navOpen}
+            aria-label={navOpen ? "Hide menu" : "Show menu"}
+            className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-border bg-card text-muted-foreground transition-colors hover:text-foreground"
+          >
+            <PanelLeft className="h-5 w-5" />
+          </button>
+          {navOpen ? (
+            <nav className="flex w-44 flex-col gap-1 lg:w-52" aria-label="Patient app">
+              {tabs.map(({ k, label, Icon }) => {
+                const on = tab === k;
+                return (
+                  <button
+                    key={k}
+                    type="button"
+                    onClick={() => setTab(k)}
+                    aria-current={on ? "page" : undefined}
+                    className={`flex items-center gap-3 rounded-xl px-3.5 py-3 text-sm font-semibold transition-colors ${
+                      on ? "bg-primary/12 text-primary" : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                    }`}
+                  >
+                    <Icon className="h-5 w-5 shrink-0" />
+                    {label}
+                  </button>
+                );
+              })}
+            </nav>
+          ) : null}
+        </div>
+      </div>
 
       {/* Content column. Chat fills the width; reading-oriented tabs stay at a
           comfortable measure. Non-chat tabs get bottom padding to clear the
