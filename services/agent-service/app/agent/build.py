@@ -74,6 +74,21 @@ Showing a summary card: when you explain something important — a result, a med
 
 PROMPTS: dict[str, str] = {"clinician": SYSTEM_PROMPT, "patient": PATIENT_SYSTEM_PROMPT}
 
+# Reply-language directive appended to the system prompt (FR-7, Si/Ta/En).
+_LANG_NAME = {"si": "Sinhala (සිංහල)", "ta": "Tamil (தமிழ்)", "en": "English"}
+
+
+def _language_directive(locale: str) -> str:
+    name = _LANG_NAME.get(locale)
+    if not name or locale == "en":
+        return ""
+    return (
+        f"\n\nLANGUAGE: Write your entire reply in {name}. Use clear, everyday "
+        f"{name} a layperson understands. You may keep a medical term's English "
+        f"word in brackets after the {name} term when it aids understanding. "
+        f"Citations like [source: Type/id] stay as-is."
+    )
+
 
 async def resolve_patient_fhir_id(fhir_base_url: str, patient_ref: str) -> str | None:
     """Resolve a request patient id to a FHIR Patient logical id.
@@ -109,12 +124,13 @@ def build_agent(
     proposals: list[dict[str, Any]] | None = None,
     audience: str = "clinician",
     cards: list[dict[str, Any]] | None = None,
+    locale: str = "en",
 ) -> CompiledStateGraph:
     """Compile a patient-scoped ReAct agent. `sources` accumulates citations;
     `proposals` accumulates write-intent drafts (sign-off cards). `audience`
     selects the persona: "clinician" (briefs the doctor) or "patient" (talks
     directly to the patient/guardian in plain, reassuring language)."""
-    system_prompt = PROMPTS.get(audience, SYSTEM_PROMPT)
+    system_prompt = PROMPTS.get(audience, SYSTEM_PROMPT) + _language_directive(locale)
     # Offline/stub mode (backlog 0.3): deterministic model, no API calls — for CI
     # load tests and demos when the provider is unavailable / quota-capped.
     if settings.agent_llm_mode == "stub":

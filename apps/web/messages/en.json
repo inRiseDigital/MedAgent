@@ -6,6 +6,28 @@
     "me": "Me",
     "ask": "Ask about your health…"
   },
+  "concierge": {
+    "greetActionable": "Good morning, {name} 🌿  I've checked your record — here's what needs you today.",
+    "greetClear": "Good morning, {name} 🌿  I've checked your record — everything looks up to date. How can I help?",
+    "orTap": "Or tap what you'd like to do 👇",
+    "resultReadyKicker": "Result ready",
+    "resultReadyTitle": "Your latest result is ready",
+    "explainSimply": "Explain it simply",
+    "viewResult": "View result",
+    "chipRefill": "💊 Refill a medicine",
+    "chipBook": "📅 Book a follow-up",
+    "chipDue": "🩺 Am I due for anything?",
+    "chipWho": "🔒 Who saw my record?",
+    "chipVideo": "🎥 Start a video visit",
+    "svcBook": "Book a visit",
+    "svcBookSub": "Any specialty",
+    "svcVacc": "Vaccinations",
+    "svcVaccSub": "Child Health",
+    "svcRefill": "Refill meds",
+    "svcExplain": "Explain a result",
+    "svcExplainReady": "Latest ready",
+    "svcExplainAsk": "Ask anything"
+  },
   "session": {
     "expiredTitle": "Session expired",
     "expiredBody": "For your security you've been signed out. Please sign in again to continue.",

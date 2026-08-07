@@ -8,7 +8,7 @@
  * comes from the `.mh` premium theme.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import {
   Bell,
   CalendarDays,
@@ -112,7 +112,9 @@ export type ConciergeSignals = {
 
 export function Concierge({ patientPhn, name, signals }: { patientPhn: string; name: string; signals: ConciergeSignals }) {
   const first = name.split(" ")[0] ?? "there";
+  const locale = useLocale();
   const tnav = useTranslations("patientNav");
+  const tc = useTranslations("concierge");
   const [msgs, setMsgs] = useState<Node[]>([]);
   const [quicks, setQuicks] = useState<Quick[]>([]);
   const [input, setInput] = useState("");
@@ -160,6 +162,7 @@ export function Concierge({ patientPhn, name, signals }: { patientPhn: string; n
           body: JSON.stringify({
             patient_id: patientPhn,
             audience: "patient",
+            locale,
             messages: history.map((t) => ({ role: t.t === "me" ? "user" : "assistant", content: t.text })),
           }),
         });
@@ -206,11 +209,11 @@ export function Concierge({ patientPhn, name, signals }: { patientPhn: string; n
 
   // ---- scripted conversational-commerce flows ----
   const menu = useCallback((): Quick[] => [
-    { label: "💊 Refill a medicine", act: () => refill() },
-    { label: "📅 Book a follow-up", act: () => book("a follow-up") },
-    { label: "🩺 Am I due for anything?", act: () => dueCheck() },
-    { label: "🎥 Start a video visit", act: () => startVideo() },
-    { label: "🔒 Who saw my record?", act: () => whoSaw() },
+    { label: tc("chipRefill"), act: () => refill() },
+    { label: tc("chipBook"), act: () => book("a follow-up") },
+    { label: tc("chipDue"), act: () => dueCheck() },
+    { label: tc("chipVideo"), act: () => startVideo() },
+    { label: tc("chipWho"), act: () => whoSaw() },
   ], []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Agent-first: every typed question goes to the LIVE patient-persona agent,
@@ -401,12 +404,7 @@ export function Concierge({ patientPhn, name, signals }: { patientPhn: string; n
     ran.current = true;
     const { overdueVaccines, latestResult } = signals;
     const actionable = overdueVaccines.length > 0 || !!latestResult;
-    push({
-      t: "ai",
-      text: actionable
-        ? `Good morning, ${first} 🌿  I've checked your record — here's what needs you today.`
-        : `Good morning, ${first} 🌿  I've checked your record — everything looks up to date. How can I help?`,
-    });
+    push({ t: "ai", text: tc(actionable ? "greetActionable" : "greetClear", { name: first }) });
     // NOTE: no cleanup clearing these timeouts — StrictMode's dev double-invoke
     // would fire it and the `ran` guard would then block re-scheduling, so the
     // cards would never appear. `ran` already makes this run exactly once.
@@ -423,22 +421,22 @@ export function Concierge({ patientPhn, name, signals }: { patientPhn: string; n
     }
     if (latestResult) {
       const d = delay; delay += 650;
-      window.setTimeout(() => push({ t: "card", data: { tone: latestResult.critical ? "urgent" : "good", kicker: "Result ready",
-        title: latestResult.critical ? `Your ${latestResult.text} needs attention` : "Your latest result is ready",
-        text: latestResult.critical ? "This one is flagged — let me explain what it means and what to do." : `${latestResult.text} — reviewed and on file. Want it in plain language?`,
+      window.setTimeout(() => push({ t: "card", data: { tone: latestResult.critical ? "urgent" : "good", kicker: tc("resultReadyKicker"),
+        title: latestResult.critical ? `${latestResult.text} ⚠️` : tc("resultReadyTitle"),
+        text: `${latestResult.text}`,
         actions: [
-          { kind: "pri", icon: <MessageSquareText className="h-4 w-4" />, label: "Explain it simply", act: () => explainResult() },
-          { kind: "ghost", icon: <FileText className="h-4 w-4" />, label: "View result", act: () => viewResult() },
+          { kind: "pri", icon: <MessageSquareText className="h-4 w-4" />, label: tc("explainSimply"), act: () => explainResult() },
+          { kind: "ghost", icon: <FileText className="h-4 w-4" />, label: tc("viewResult"), act: () => viewResult() },
         ] } }), d);
     }
-    window.setTimeout(() => { push({ t: "ai", text: "Or tap what you'd like to do 👇" }); push({ t: "services" }); setQuicks(menu()); }, delay + 200);
+    window.setTimeout(() => { push({ t: "ai", text: tc("orTap") }); push({ t: "services" }); setQuicks(menu()); }, delay + 200);
   }, [first, signals, push, me, typing, streamAgent, menu]);
 
   const services: { icon: React.ReactNode; c: string; t: string; d: string; act: () => void }[] = [
-    { icon: <CalendarDays className="h-[18px] w-[18px]" />, c: "resp", t: "Book a visit", d: "Any specialty", act: () => book("a visit") },
-    { icon: <Syringe className="h-[18px] w-[18px]" />, c: "activity", t: "Vaccinations", d: "Child Health", act: () => book("a vaccination", "Child Health") },
-    { icon: <Sparkles className="h-[18px] w-[18px]" />, c: "nutri", t: "Refill meds", d: signals.medsCount ? `${signals.medsCount} active` : "Request", act: () => refill() },
-    { icon: <FileText className="h-[18px] w-[18px]" />, c: "mind", t: "Explain a result", d: signals.latestResult ? "Latest ready" : "Ask anything", act: () => (signals.latestResult ? explainResult() : void streamAgent("Summarise my recent results in plain language.")) },
+    { icon: <CalendarDays className="h-[18px] w-[18px]" />, c: "resp", t: tc("svcBook"), d: tc("svcBookSub"), act: () => book("a visit") },
+    { icon: <Syringe className="h-[18px] w-[18px]" />, c: "activity", t: tc("svcVacc"), d: tc("svcVaccSub"), act: () => book("a vaccination", "Child Health") },
+    { icon: <Sparkles className="h-[18px] w-[18px]" />, c: "nutri", t: tc("svcRefill"), d: signals.medsCount ? `${signals.medsCount} active` : tc("svcExplainAsk"), act: () => refill() },
+    { icon: <FileText className="h-[18px] w-[18px]" />, c: "mind", t: tc("svcExplain"), d: signals.latestResult ? tc("svcExplainReady") : tc("svcExplainAsk"), act: () => (signals.latestResult ? explainResult() : void streamAgent("Summarise my recent results in plain language.")) },
   ];
 
   function renderCard(d: CardData) {

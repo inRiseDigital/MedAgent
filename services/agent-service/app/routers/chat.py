@@ -35,6 +35,8 @@ class ChatRequest(BaseModel):
     # clinician briefing. Not a security boundary — data access is patient-scoped
     # by fhir_id regardless — only the tone/framing of the narration changes.
     audience: str = "clinician"
+    # UI locale: the assistant replies in this language (en | si | ta).
+    locale: str = "en"
 
 
 def _sse(payload: dict[str, Any]) -> str:
@@ -113,7 +115,7 @@ async def chat(
         sources: list[dict[str, Any]] = []
         proposals: list[dict[str, Any]] = []
         cards: list[dict[str, Any]] = []
-        agent = build_agent(settings, fhir_id, sources, proposals, audience=body.audience, cards=cards)
+        agent = build_agent(settings, fhir_id, sources, proposals, audience=body.audience, cards=cards, locale=body.locale)
         try:
             # Provider-agnostic streaming. We ask for BOTH "messages" (token stream)
             # and "values" (full state per step). Anthropic streams the answer token
