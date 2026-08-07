@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 
 import { VideoRoom } from "@/components/video-room";
+import { VoiceMode } from "./voice-mode";
 
 type Tone = "urgent" | "good" | "warn" | "info";
 type Action = { label: string; kind?: "pri" | "ghost"; icon?: React.ReactNode; act: () => void };
@@ -120,15 +121,10 @@ export function Concierge({ patientPhn, name, signals }: { patientPhn: string; n
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [inVideo, setInVideo] = useState(false);
-  const [listening, setListening] = useState(false);
+  const [voiceOpen, setVoiceOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const ran = useRef(false);
   const videoRoom = `medagent-${patientPhn}`; // deterministic: doctor + patient meet here
-  // Voice layer (free, browser Web Speech API). BCP-47 tag per UI locale.
-  const bcp47 = locale === "si" ? "si-LK" : locale === "ta" ? "ta-LK" : "en-US";
-  const recognitionRef = useRef<{ stop: () => void; start: () => void } | null>(null);
-  const speakNextRef = useRef(false);
-  const voicesRef = useRef<SpeechSynthesisVoice[]>([]);
 
   const down = useCallback(() => {
     requestAnimationFrame(() => {
@@ -153,7 +149,7 @@ export function Concierge({ patientPhn, name, signals }: { patientPhn: string; n
   // ---- live agent (real, cited) for explain + free text ----
   const streamAgent = useCallback(
     async (question: string) => {
-      if (busy) return;
+      if (busy) return "";
       setBusy(true);
       const prior = msgs.filter((n): n is Extract<Node, { t: "ai" | "me" }> => n.t === "ai" || n.t === "me");
       const history = [...prior, { t: "me" as const, text: question }];
@@ -175,7 +171,7 @@ export function Concierge({ patientPhn, name, signals }: { patientPhn: string; n
         });
         if (!res.ok || !res.body) {
           bump((n) => ({ ...n, text: "Sorry — the assistant is unavailable right now.", streaming: false }));
-          return;
+          return full;
         }
         const reader = res.body.getReader();
         const dec = new TextDecoder();
@@ -209,10 +205,10 @@ export function Concierge({ patientPhn, name, signals }: { patientPhn: string; n
         setBusy(false);
         setMsgs((m) => m.map((n, i) => (i === m.length - 1 && n.t === "ai" ? { ...n, streaming: false } : n)));
         down();
-        if (speakNextRef.current) { speakNextRef.current = false; speak(full); }
       }
+      return full;
     },
-    [busy, msgs, patientPhn, down, locale, bcp47],
+    [busy, msgs, patientPhn, down, locale],
   );
 
   // ---- scripted conversational-commerce flows ----
@@ -231,60 +227,6 @@ export function Concierge({ patientPhn, name, signals }: { patientPhn: string; n
     void streamAgent(text);
   }
 
-  // --- voice layer (free, browser Web Speech API; locale-aware) ---
-  // Prefer a natural/neural voice for the locale — the default synthesizer voice
-  // is the robotic one. Quality neural voices (Edge "…Natural", Google, Apple
-  // premium) carry these keywords.
-  function pickVoice(): SpeechSynthesisVoice | undefined {
-    const vs = voicesRef.current;
-    if (!vs.length) return undefined;
-    const want = [bcp47.toLowerCase(), locale.toLowerCase()];
-    const matches = vs.filter((v) => want.some((w) => v.lang?.toLowerCase().startsWith(w)));
-    const pool = matches.length ? matches : locale === "en" ? vs.filter((v) => v.lang?.toLowerCase().startsWith("en")) : [];
-    const nice = /natural|neural|online|enhanced|premium|google|siri|aria|jenny|libby|sonia|nova|emma/i;
-    return pool.find((v) => nice.test(v.name)) ?? pool[0] ?? vs.find((v) => nice.test(v.name));
-  }
-  function speak(text: string) {
-    if (typeof window === "undefined" || !("speechSynthesis" in window) || !text.trim()) return;
-    try {
-      const u = new SpeechSynthesisUtterance(text.replace(/\[source:[^\]]*\]/g, "").replace(/[*_`#]/g, "").slice(0, 600));
-      const v = pickVoice();
-      if (v) { u.voice = v; u.lang = v.lang; } else { u.lang = bcp47; }
-      u.rate = 0.97; // a touch slower = smoother, less clipped
-      u.pitch = 1.0;
-      window.speechSynthesis.cancel();
-      window.speechSynthesis.speak(u);
-    } catch {
-      /* TTS unavailable — silently ignore */
-    }
-  }
-  function toggleVoice() {
-    if (listening) { recognitionRef.current?.stop(); return; }
-    const SR = (window as unknown as { SpeechRecognition?: new () => unknown; webkitSpeechRecognition?: new () => unknown });
-    const Ctor = SR.SpeechRecognition ?? SR.webkitSpeechRecognition;
-    if (!Ctor) {
-      push({ t: "ai", text: "Voice input isn't supported in this browser — try Chrome, or just type your question." });
-      return;
-    }
-    const rec = new Ctor() as {
-      lang: string; interimResults: boolean; maxAlternatives: number; start: () => void; stop: () => void;
-      onresult: ((e: { results: { 0: { 0: { transcript: string } } } }) => void) | null;
-      onend: (() => void) | null; onerror: (() => void) | null;
-    };
-    rec.lang = bcp47;
-    rec.interimResults = false;
-    rec.maxAlternatives = 1;
-    rec.onresult = (e) => {
-      const t = e.results?.[0]?.[0]?.transcript?.trim();
-      if (t) { setInput(""); speakNextRef.current = true; handleFree(t); }
-    };
-    rec.onend = () => setListening(false);
-    rec.onerror = () => setListening(false);
-    recognitionRef.current = rec;
-    setListening(true);
-    rec.start();
-  }
-
   // Record/Summary rows dispatch "mh:ask" to have the concierge answer about an
   // item. Keep a ref to the latest handler so the once-registered listener never
   // goes stale.
@@ -297,16 +239,6 @@ export function Concierge({ patientPhn, name, signals }: { patientPhn: string; n
     };
     window.addEventListener("mh:ask", handler);
     return () => window.removeEventListener("mh:ask", handler);
-  }, []);
-
-  // Speech-synthesis voices load asynchronously; cache them so `speak` can pick
-  // the best neural voice rather than falling back to the robotic default.
-  useEffect(() => {
-    if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
-    const load = () => { voicesRef.current = window.speechSynthesis.getVoices(); };
-    load();
-    window.speechSynthesis.addEventListener?.("voiceschanged", load);
-    return () => window.speechSynthesis.removeEventListener?.("voiceschanged", load);
   }, []);
 
   // REAL: ask the live patient-persona agent to explain the patient's actual
@@ -542,6 +474,7 @@ export function Concierge({ patientPhn, name, signals }: { patientPhn: string; n
   return (
     <div className="mh flex h-[calc(100dvh-9rem)] flex-col overflow-hidden md:h-[calc(100dvh-5.5rem)]">
       {inVideo ? <VideoRoom room={videoRoom} displayName={name} onClose={() => setInVideo(false)} /> : null}
+      {voiceOpen ? <VoiceMode locale={locale} name={name} ask={(t) => streamAgent(t)} onClose={() => setVoiceOpen(false)} /> : null}
       <div ref={scrollRef} className="flex flex-1 flex-col gap-3 overflow-y-auto p-3.5">
         {msgs.map((n, i) => {
           if (n.t === "me") return <div key={i} className="mh-msg me"><div className="mh-bubble">{n.text}</div></div>;
@@ -624,14 +557,7 @@ export function Concierge({ patientPhn, name, signals }: { patientPhn: string; n
         className="mh-composer"
         onSubmit={(e) => { e.preventDefault(); const v = input.trim(); if (!v) return; setInput(""); handleFree(v); }}
       >
-        <button
-          type="button"
-          onClick={toggleVoice}
-          aria-pressed={listening}
-          aria-label={listening ? "Stop listening" : "Speak"}
-          className="mh-circ mic"
-          style={listening ? { background: "var(--heart)", color: "#fff", animation: "mh-pulse 1s ease-in-out infinite" } : undefined}
-        >
+        <button type="button" onClick={() => setVoiceOpen(true)} aria-label="Voice mode" className="mh-circ mic">
           <Mic className="h-5 w-5" />
         </button>
         <input value={input} onChange={(e) => setInput(e.target.value)} placeholder={tnav("ask")} aria-label={tnav("ask")} />

@@ -149,6 +149,11 @@
 @keyframes mh-pop { 0% { transform: scale(0.5); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
 @keyframes mh-draw { to { stroke-dashoffset: 0; } }
 @keyframes mh-pulse { 0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 color-mix(in srgb, var(--heart) 55%, transparent); } 50% { transform: scale(1.08); box-shadow: 0 0 0 8px transparent; } }
+/* voice-mode orb states */
+@keyframes vo-breathe { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.05); } }
+@keyframes vo-speak { 0%, 100% { transform: scale(1); filter: blur(2px); } 50% { transform: scale(1.12); filter: blur(4px); } }
+@keyframes vo-think { 0%, 100% { transform: scale(0.98); opacity: 0.85; } 50% { transform: scale(1.04); opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { @keyframes vo-breathe {} @keyframes vo-speak {} @keyframes vo-think {} }
 .mh-rline { display: flex; justify-content: space-between; gap: 12px; font-size: 13.5px; padding: 9px 0; border-bottom: 1px solid var(--mh-line); }
 .mh-rline:last-child { border-bottom: none; }
 .mh-rline .l { color: var(--mh-ink-3); font-weight: 600; }
