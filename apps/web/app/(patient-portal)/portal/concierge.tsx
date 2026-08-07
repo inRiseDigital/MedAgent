@@ -128,6 +128,7 @@ export function Concierge({ patientPhn, name, signals }: { patientPhn: string; n
   const bcp47 = locale === "si" ? "si-LK" : locale === "ta" ? "ta-LK" : "en-US";
   const recognitionRef = useRef<{ stop: () => void; start: () => void } | null>(null);
   const speakNextRef = useRef(false);
+  const voicesRef = useRef<SpeechSynthesisVoice[]>([]);
 
   const down = useCallback(() => {
     requestAnimationFrame(() => {
@@ -231,13 +232,26 @@ export function Concierge({ patientPhn, name, signals }: { patientPhn: string; n
   }
 
   // --- voice layer (free, browser Web Speech API; locale-aware) ---
+  // Prefer a natural/neural voice for the locale — the default synthesizer voice
+  // is the robotic one. Quality neural voices (Edge "…Natural", Google, Apple
+  // premium) carry these keywords.
+  function pickVoice(): SpeechSynthesisVoice | undefined {
+    const vs = voicesRef.current;
+    if (!vs.length) return undefined;
+    const want = [bcp47.toLowerCase(), locale.toLowerCase()];
+    const matches = vs.filter((v) => want.some((w) => v.lang?.toLowerCase().startsWith(w)));
+    const pool = matches.length ? matches : locale === "en" ? vs.filter((v) => v.lang?.toLowerCase().startsWith("en")) : [];
+    const nice = /natural|neural|online|enhanced|premium|google|siri|aria|jenny|libby|sonia|nova|emma/i;
+    return pool.find((v) => nice.test(v.name)) ?? pool[0] ?? vs.find((v) => nice.test(v.name));
+  }
   function speak(text: string) {
     if (typeof window === "undefined" || !("speechSynthesis" in window) || !text.trim()) return;
     try {
-      const u = new SpeechSynthesisUtterance(text.replace(/\[source:[^\]]*\]/g, "").slice(0, 600));
-      u.lang = bcp47;
-      const v = window.speechSynthesis.getVoices().find((vo) => vo.lang?.toLowerCase().startsWith(locale));
-      if (v) u.voice = v;
+      const u = new SpeechSynthesisUtterance(text.replace(/\[source:[^\]]*\]/g, "").replace(/[*_`#]/g, "").slice(0, 600));
+      const v = pickVoice();
+      if (v) { u.voice = v; u.lang = v.lang; } else { u.lang = bcp47; }
+      u.rate = 0.97; // a touch slower = smoother, less clipped
+      u.pitch = 1.0;
       window.speechSynthesis.cancel();
       window.speechSynthesis.speak(u);
     } catch {
@@ -283,6 +297,16 @@ export function Concierge({ patientPhn, name, signals }: { patientPhn: string; n
     };
     window.addEventListener("mh:ask", handler);
     return () => window.removeEventListener("mh:ask", handler);
+  }, []);
+
+  // Speech-synthesis voices load asynchronously; cache them so `speak` can pick
+  // the best neural voice rather than falling back to the robotic default.
+  useEffect(() => {
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+    const load = () => { voicesRef.current = window.speechSynthesis.getVoices(); };
+    load();
+    window.speechSynthesis.addEventListener?.("voiceschanged", load);
+    return () => window.speechSynthesis.removeEventListener?.("voiceschanged", load);
   }, []);
 
   // REAL: ask the live patient-persona agent to explain the patient's actual
