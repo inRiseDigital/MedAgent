@@ -29,7 +29,13 @@ export default function proxy(request: NextRequest): NextResponse {
   // via lib/require-role.ts (STAFF for (doctor), CLINICAL for clinical pages,
   // PATIENT for (patient-portal)), and the gateway re-validates the bearer token
   // on every API call (01 §1).
-  return NextResponse.next();
+  //
+  // i18n scope: the patient portal honours the NEXT_LOCALE switch (Si/Ta/En); the
+  // clinician workspace is standardised to English. Tag the request so the
+  // next-intl config (i18n/request.ts) only applies the cookie under /portal.
+  const headers = new Headers(request.headers);
+  headers.set("x-mh-i18n", request.nextUrl.pathname.startsWith("/portal") ? "patient" : "clinician");
+  return NextResponse.next({ request: { headers } });
 }
 
 export const config = {
