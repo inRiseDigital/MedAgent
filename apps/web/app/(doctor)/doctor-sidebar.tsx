@@ -9,7 +9,7 @@
  */
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Activity,
   LayoutList,
@@ -59,25 +59,39 @@ export function DoctorSidebar({
   const [open, setOpen] = useState(true);
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [ready, setReady] = useState(false);
+  // The user's saved preference — only honoured on wide screens. Below the
+  // desktop breakpoint the rail always auto-collapses to icons so the content
+  // (chat + record) gets the width it needs (e.g. a folded phone / small split).
+  const prefRef = useRef(true);
 
   useEffect(() => {
     try {
       const nav = localStorage.getItem("medagent-nav");
-      if (nav) setOpen(nav === "open");
+      if (nav) prefRef.current = nav === "open";
     } catch {
       /* private mode — non-fatal */
     }
+    const wide = window.matchMedia("(min-width: 1024px)");
+    const apply = () => setOpen(wide.matches ? prefRef.current : false);
+    apply();
+    wide.addEventListener("change", apply);
     setTheme(((document.documentElement.getAttribute("data-theme") as "light" | "dark") || "light"));
     setReady(true);
+    return () => wide.removeEventListener("change", apply);
   }, []);
 
   function toggleNav() {
     setOpen((o) => {
       const next = !o;
-      try {
-        localStorage.setItem("medagent-nav", next ? "open" : "closed");
-      } catch {
-        /* non-fatal */
+      // Persist as the preference only on wide screens — a narrow-screen toggle
+      // is a transient peek, not a new default.
+      if (window.matchMedia("(min-width: 1024px)").matches) {
+        prefRef.current = next;
+        try {
+          localStorage.setItem("medagent-nav", next ? "open" : "closed");
+        } catch {
+          /* non-fatal */
+        }
       }
       return next;
     });
@@ -94,8 +108,9 @@ export function DoctorSidebar({
     }
   }
 
-  // Avoid a first-paint flash of the wrong width before the persisted state loads.
-  const width = !ready ? "w-16 sm:w-60" : open ? "w-60" : "w-16";
+  // Avoid a first-paint flash: pre-hydration, mirror the responsive default —
+  // collapsed below the desktop breakpoint, expanded at lg+.
+  const width = !ready ? "w-16 lg:w-60" : open ? "w-60" : "w-16";
 
   return (
     <nav

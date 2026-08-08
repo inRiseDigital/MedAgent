@@ -195,7 +195,7 @@ export default async function PatientSessionPage({ params }: { params: Promise<{
       {/* Session — copilot (left) · record (right); fills the viewport on desktop */}
       <div className="grid gap-4 lg:min-h-0 lg:flex-1 lg:grid-cols-[1fr_minmax(360px,420px)] lg:grid-rows-1">
         {/* Ask — clinical copilot */}
-        <main className="flex min-h-0 flex-col">
+        <main className="flex min-h-0 min-w-0 flex-col">
           <PSec title="Ask — clinical copilot" hint="grounded in the chart · cited · safety-screened" />
           <Card aria-label={t("chatTitle")} className="flex h-[70vh] flex-col overflow-hidden lg:h-auto lg:min-h-0 lg:flex-1">
             <div className="flex items-center gap-2 border-b border-border px-4 py-3">
@@ -203,14 +203,14 @@ export default async function PatientSessionPage({ params }: { params: Promise<{
               <h2 className="text-sm font-semibold">Copilot</h2>
               {summary ? <span className="ml-auto truncate text-xs text-muted-foreground">{summary.patient.name} · Patient/{id}</span> : null}
             </div>
-            <div className="flex min-h-0 flex-1 flex-col">
+            <div className="flex min-h-0 min-w-0 flex-1 flex-col">
               <ChatPanel patientId={id} opening={opening} />
             </div>
           </Card>
         </main>
 
         {/* Clinical record — tabbed panel (Vitals body map, Labs graphs, …) */}
-        <aside className="flex min-h-0 flex-col">
+        <aside className="flex min-h-0 min-w-0 flex-col">
           <PSec title="Clinical record" hint="switch tabs" />
           <div className="min-h-0 flex-1 lg:overflow-y-auto lg:pr-1">
             {summary ? (

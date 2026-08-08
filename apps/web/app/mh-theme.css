@@ -112,7 +112,7 @@
 
 .mh-composer { flex: none; display: flex; align-items: center; gap: 8px; padding: 10px 12px 12px; border-top: 1px solid var(--mh-line);
   background: color-mix(in srgb, var(--mh-bg) 82%, transparent); backdrop-filter: saturate(1.6) blur(16px); }
-.mh-composer input { flex: 1; border: none; background: var(--mh-fill); color: var(--mh-ink); border-radius: 999px; padding: 12px 16px; font-size: 15px; }
+.mh-composer input { flex: 1; min-width: 0; border: none; background: var(--mh-fill); color: var(--mh-ink); border-radius: 999px; padding: 12px 16px; font-size: 15px; }
 .mh-composer input::placeholder { color: var(--mh-ink-3); }
 .mh-circ { width: 44px; height: 44px; border-radius: 50%; border: none; flex: none; cursor: pointer; display: grid; place-items: center; transition: transform 0.12s; }
 .mh-circ.send { background: var(--mh-tint-2); color: #fff; }
