@@ -199,7 +199,7 @@ export default async function PatientSessionPage({ params }: { params: Promise<{
         {/* 3 · Ask — clinical copilot */}
         <main>
           <PSec n="3" title="Ask — clinical copilot" hint="grounded in the chart · cited · safety-screened" />
-          <Card aria-label={t("chatTitle")} className="flex min-h-[calc(100dvh-4.5rem)] flex-col overflow-hidden">
+          <Card aria-label={t("chatTitle")} className="flex h-[calc(100dvh-11rem)] min-h-[26rem] flex-col overflow-hidden">
             <div className="flex items-center gap-2 border-b border-border px-4 py-3">
               <span className="flex h-6 w-6 items-center justify-center rounded-md bg-primary/10 text-primary"><Sparkles className="h-3.5 w-3.5" /></span>
               <h2 className="text-sm font-semibold">Copilot</h2>

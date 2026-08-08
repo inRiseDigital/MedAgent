@@ -172,7 +172,7 @@ export function ChatPanel({ patientId, opening }: { patientId: string; opening?:
         : "border-border bg-muted text-foreground";
 
   return (
-    <div className="flex h-full min-h-[32rem] flex-col bg-background">
+    <div className="flex min-h-[24rem] flex-1 flex-col bg-background">
       <div ref={logRef} role="log" aria-live="polite" className="flex flex-1 flex-col gap-3 overflow-y-auto p-3.5">
         {/* Copilot opening — proactive safety brief (real flags + ambient summary) */}
         {opening ? (
