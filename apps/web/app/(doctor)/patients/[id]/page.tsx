@@ -6,7 +6,7 @@
  * Theme-aware; PHN addresses the patient in URL state (06 §5).
  */
 import { getTranslations } from "next-intl/server";
-import { AlertTriangle, ClipboardList, HeartPulse, Pill, ShieldAlert, Siren, Sparkles } from "lucide-react";
+import { Activity, AlertTriangle, ClipboardList, HeartPulse, Pill, ShieldAlert, Siren, Sparkles } from "lucide-react";
 import { Badge, Card } from "@medagent/ui";
 
 import {
@@ -26,6 +26,7 @@ import { CLINICAL, requireRoles } from "@/lib/require-role";
 import { ChatPanel } from "./chat-panel";
 import { ChildHealthCard } from "./child-health";
 import { ClinicalEntry } from "./clinical-entry";
+import { BodyMap } from "./body-map";
 import { PatientCockpit } from "./cockpit";
 import { SideAccordion, type AccordionItem } from "./side-accordion";
 import { VideoButton } from "./video-button";
@@ -107,6 +108,12 @@ export default async function PatientSessionPage({ params }: { params: Promise<{
   const flags = brief?.flags ?? [];
   const items: AccordionItem[] = [];
   if (summary) {
+    items.push({
+      id: "bodymap",
+      title: "Vitals — body map",
+      icon: <Activity className="h-3.5 w-3.5" />,
+      content: <BodyMap vitals={summary.vitals} />,
+    });
     if (flags.length) {
       items.push({
         id: "flags",
@@ -170,6 +177,22 @@ export default async function PatientSessionPage({ params }: { params: Promise<{
     });
   }
   if (chdr) items.push({ id: "chdr", title: "Child health record", icon: <HeartPulse className="h-3.5 w-3.5" />, content: <ChildHealthCard chdr={chdr} /> });
+
+  // Copilot opening brief — proactive safety-first summary from REAL data.
+  const opening = summary
+    ? {
+        greeting: `I've reviewed ${summary.patient.name.split(" ")[0] ?? "this patient"}'s chart — here's what matters before you start.`,
+        flags: flags.map((f) => ({ severity: f.severity, text: f.text })),
+        ambient:
+          `${age(summary.patient.birthDate)}y ${summary.patient.gender ?? ""}`.trim() +
+          (summary.problems.length ? `, ${summary.problems.slice(0, 2).map((p) => p.text).join(", ")}` : "") +
+          "." +
+          (summary.results.some((r) => r.critical)
+            ? ` Flagging ${summary.results.filter((r) => r.critical).map((r) => r.text).join(", ")} (critical) — review before prescribing.`
+            : " No critical results flagged.") +
+          (highAllergies.length ? ` ${highAllergies.map((a) => a.text).join(", ")} allergy on file.` : ""),
+      }
+    : undefined;
   items.push({ id: "entry", title: "Clinical entry", icon: <ClipboardList className="h-3.5 w-3.5" />, content: <ClinicalEntry patientId={id} /> });
   items.push({ id: "rx", title: t("proposalTitle"), icon: <Pill className="h-3.5 w-3.5" />, content: <ProposalPanel patientId={id} /> });
 
@@ -214,7 +237,7 @@ export default async function PatientSessionPage({ params }: { params: Promise<{
       <div className="grid gap-4 lg:grid-cols-[1fr_minmax(340px,400px)]">
         {/* AI assistant — the primary work surface, left */}
         <main>
-          <Card aria-label={t("chatTitle")} className="flex min-h-[calc(100dvh-3rem)] flex-col">
+          <Card aria-label={t("chatTitle")} className="flex min-h-[calc(100dvh-3rem)] flex-col overflow-hidden">
             <div className="flex items-center gap-2 border-b border-border px-4 py-3">
               <span className="flex h-6 w-6 items-center justify-center rounded-md bg-primary/10 text-primary">
                 <Sparkles className="h-3.5 w-3.5" />
@@ -222,8 +245,8 @@ export default async function PatientSessionPage({ params }: { params: Promise<{
               <h2 className="text-sm font-semibold">{t("chatTitle")}</h2>
               <span className="ml-auto text-xs text-muted-foreground">Grounded in the FHIR chart · cited</span>
             </div>
-            <div className="flex-1 p-3">
-              <ChatPanel patientId={id} />
+            <div className="flex min-h-0 flex-1 flex-col">
+              <ChatPanel patientId={id} opening={opening} />
             </div>
           </Card>
         </main>
@@ -231,7 +254,7 @@ export default async function PatientSessionPage({ params }: { params: Promise<{
         {/* Collapsible cards on the right: safety flags, record detail, write tools */}
         <aside className="lg:sticky lg:top-4 lg:max-h-[calc(100dvh-2rem)] lg:self-start lg:overflow-y-auto lg:pr-1">
           {summary ? (
-            <SideAccordion items={items} defaultOpenId={flags.length ? "flags" : "allergies"} />
+            <SideAccordion items={items} defaultOpenId="bodymap" />
           ) : (
             <p className="text-muted-foreground">{t("summaryUnavailable")}</p>
           )}
