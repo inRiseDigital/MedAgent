@@ -45,13 +45,12 @@ function formatPhn(phn: string): string {
   return phn.length === 11 ? `${phn.slice(0, 3)} ${phn.slice(3, 6)} ${phn.slice(6, 9)} ${phn.slice(9)}` : phn;
 }
 
-/** Numbered priority-section header — encodes the clinician's assessment order. */
-function PSec({ n, title, hint }: { n: string; title: string; hint?: string }) {
+/** Quiet section eyebrow — orients the clinician without numbering the layout. */
+function PSec({ title, hint }: { title: string; hint?: string }) {
   return (
-    <div className="mb-2 mt-1 flex items-center gap-2">
-      <span className="flex h-5 w-5 items-center justify-center rounded-md bg-muted text-[0.7rem] font-bold text-primary">{n}</span>
-      <h2 className="text-[0.8rem] font-bold uppercase tracking-wide text-muted-foreground">{title}</h2>
-      {hint ? <span className="ml-auto text-[0.7rem] text-muted-foreground">{hint}</span> : null}
+    <div className="mb-2 flex items-center gap-2">
+      <h2 className="text-[0.72rem] font-bold uppercase tracking-widest text-muted-foreground">{title}</h2>
+      {hint ? <span className="ml-auto truncate text-[0.7rem] text-muted-foreground">{hint}</span> : null}
     </div>
   );
 }
@@ -165,10 +164,9 @@ export default async function PatientSessionPage({ params }: { params: Promise<{
     : undefined;
 
   return (
-    <div className="mx-auto max-w-[1500px] space-y-3">
-      {/* 1 · Patient */}
-      <PSec n="1" title="Patient" hint="the copilot opens with the safety brief below ↓" />
-      <div className="flex flex-wrap items-center gap-4 rounded-2xl border border-border bg-card p-4">
+    <div className="mx-auto flex max-w-[1500px] flex-col gap-3 lg:h-full">
+      {/* Patient banner */}
+      <div className="flex shrink-0 flex-wrap items-center gap-4 rounded-2xl border border-border bg-card p-4">
         <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-primary/10 text-base font-semibold text-primary">
           {summary ? initials(summary.patient.name) : "?"}
         </div>
@@ -194,16 +192,16 @@ export default async function PatientSessionPage({ params }: { params: Promise<{
         <div className="ml-auto">{summary ? <ClinicianActions patientId={id} videoPhn={summary.patient.phn} /> : null}</div>
       </div>
 
-      {/* Session — copilot (left) · status + record (right) */}
-      <div className="grid gap-4 lg:grid-cols-[1fr_minmax(360px,420px)]">
-        {/* 3 · Ask — clinical copilot */}
-        <main>
-          <PSec n="3" title="Ask — clinical copilot" hint="grounded in the chart · cited · safety-screened" />
-          <Card aria-label={t("chatTitle")} className="flex h-[calc(100dvh-11rem)] min-h-[26rem] flex-col overflow-hidden">
+      {/* Session — copilot (left) · record (right); fills the viewport on desktop */}
+      <div className="grid gap-4 lg:min-h-0 lg:flex-1 lg:grid-cols-[1fr_minmax(360px,420px)] lg:grid-rows-1">
+        {/* Ask — clinical copilot */}
+        <main className="flex min-h-0 flex-col">
+          <PSec title="Ask — clinical copilot" hint="grounded in the chart · cited · safety-screened" />
+          <Card aria-label={t("chatTitle")} className="flex h-[70vh] flex-col overflow-hidden lg:h-auto lg:min-h-0 lg:flex-1">
             <div className="flex items-center gap-2 border-b border-border px-4 py-3">
               <span className="flex h-6 w-6 items-center justify-center rounded-md bg-primary/10 text-primary"><Sparkles className="h-3.5 w-3.5" /></span>
               <h2 className="text-sm font-semibold">Copilot</h2>
-              {summary ? <span className="ml-auto text-xs text-muted-foreground">{summary.patient.name} · Patient/{id}</span> : null}
+              {summary ? <span className="ml-auto truncate text-xs text-muted-foreground">{summary.patient.name} · Patient/{id}</span> : null}
             </div>
             <div className="flex min-h-0 flex-1 flex-col">
               <ChatPanel patientId={id} opening={opening} />
@@ -211,24 +209,26 @@ export default async function PatientSessionPage({ params }: { params: Promise<{
           </Card>
         </main>
 
-        {/* 2 · Clinical record — tabbed panel (Vitals body map, Labs graphs, …) */}
-        <aside className="lg:sticky lg:top-4 lg:max-h-[calc(100dvh-2rem)] lg:self-start lg:overflow-y-auto lg:pr-1">
-          <PSec n="2" title="Clinical record" hint="switch tabs" />
-          {summary ? (
-            <RecordTabs
-              vitals={<BodyMap vitals={summary.vitals} />}
-              labs={labsPanel}
-              imaging={imagingPanel}
-              meds={medsPanel}
-              problems={problemsPanel}
-              enc={encPanel}
-              labsCritical={labsCritical}
-              imagingUrgent={imagingUrgent}
-              medsCount={summary.medications.length}
-            />
-          ) : (
-            <p className="text-muted-foreground">{t("summaryUnavailable")}</p>
-          )}
+        {/* Clinical record — tabbed panel (Vitals body map, Labs graphs, …) */}
+        <aside className="flex min-h-0 flex-col">
+          <PSec title="Clinical record" hint="switch tabs" />
+          <div className="min-h-0 flex-1 lg:overflow-y-auto lg:pr-1">
+            {summary ? (
+              <RecordTabs
+                vitals={<BodyMap vitals={summary.vitals} />}
+                labs={labsPanel}
+                imaging={imagingPanel}
+                meds={medsPanel}
+                problems={problemsPanel}
+                enc={encPanel}
+                labsCritical={labsCritical}
+                imagingUrgent={imagingUrgent}
+                medsCount={summary.medications.length}
+              />
+            ) : (
+              <p className="text-muted-foreground">{t("summaryUnavailable")}</p>
+            )}
+          </div>
         </aside>
       </div>
     </div>
