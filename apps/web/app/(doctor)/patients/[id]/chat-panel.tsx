@@ -10,8 +10,8 @@
 import { useCallback, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { useTranslations } from "next-intl";
-import { Sparkles, User } from "lucide-react";
-import { Badge, Button, Spinner, type BadgeProps } from "@medagent/ui";
+import { Send, Sparkles } from "lucide-react";
+import { Badge, Button, type BadgeProps } from "@medagent/ui";
 
 import { VoiceButton } from "@/components/voice-button";
 
@@ -172,96 +172,49 @@ export function ChatPanel({ patientId, opening }: { patientId: string; opening?:
         : "border-border bg-muted text-foreground";
 
   return (
-    <div className="flex h-full min-h-[32rem] flex-col gap-3 bg-background p-3">
-      <div ref={logRef} role="log" aria-live="polite" className="flex-1 space-y-4 overflow-y-auto pr-1">
+    <div className="flex h-full min-h-[32rem] flex-col bg-background">
+      <div ref={logRef} role="log" aria-live="polite" className="flex flex-1 flex-col gap-3 overflow-y-auto p-3.5">
         {/* Copilot opening — proactive safety brief (real flags + ambient summary) */}
         {opening ? (
-          <div className="space-y-3">
-            <div className="flex gap-2">
-              <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary"><Sparkles className="h-4 w-4" /></span>
-              <div className="min-w-0 flex-1 rounded-2xl rounded-tl-sm bg-card px-3.5 py-2.5 text-sm shadow-sm">{opening.greeting}</div>
-            </div>
+          <>
+            <div className="mh-msg ai"><div className="mh-ai-row"><span className="mh-av"><Sparkles className="h-4 w-4" /></span><div className="mh-bubble">{opening.greeting}</div></div></div>
             {opening.flags.length > 0 ? (
-              <div className="flex gap-2">
-                <span className="mt-0.5 h-7 w-7 shrink-0" />
-                <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-                  {opening.flags.map((f, i) => (
-                    <div key={i} className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold ${flagCls(f.severity)}`}>
-                      <span aria-hidden>⚠</span>
-                      <span>{f.text}</span>
-                    </div>
-                  ))}
+              <div className="mh-msg ai" style={{ maxWidth: "94%" }}>
+                <div className="mh-ai-row">
+                  <span className="mh-av" />
+                  <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+                    {opening.flags.map((f, i) => (
+                      <div key={i} className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-semibold ${flagCls(f.severity)}`}><span aria-hidden>⚠</span><span>{f.text}</span></div>
+                    ))}
+                  </div>
                 </div>
               </div>
             ) : null}
-            <div className="flex gap-2">
-              <span className="mt-0.5 h-7 w-7 shrink-0" />
-              <div className="min-w-0 flex-1 rounded-2xl rounded-tl-sm bg-card px-3.5 py-2.5 text-sm text-muted-foreground shadow-sm">{opening.ambient}</div>
-            </div>
+            <div className="mh-msg ai"><div className="mh-ai-row"><span className="mh-av"><Sparkles className="h-4 w-4" /></span><div className="mh-bubble" style={{ color: "var(--mh-ink-2)" }}>{opening.ambient}</div></div></div>
+          </>
+        ) : null}
+
+        {turns.length === 0 && !opening ? (
+          <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
+            <span className="mh-av" style={{ width: 40, height: 40 }}><Sparkles className="h-5 w-5" /></span>
+            <p className="max-w-sm text-sm text-muted-foreground">{t("chatIntro")}</p>
           </div>
         ) : null}
 
-        {turns.length === 0 ? (
-          <div className={`flex flex-col gap-3 ${opening ? "" : "h-full items-center justify-center text-center"}`}>
-            {opening ? (
-              <span className="ml-9 text-[0.7rem] font-semibold uppercase tracking-wider text-muted-foreground">Ask about this patient</span>
-            ) : (
-              <>
-                <span className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-primary"><Sparkles className="h-5 w-5" /></span>
-                <p className="max-w-sm text-sm text-muted-foreground">{t("chatIntro")}</p>
-              </>
-            )}
-            <div className={`flex flex-wrap gap-2 ${opening ? "ml-9" : "justify-center"}`}>
-              {QUICK_PROMPTS.map((p) => (
-                <button
-                  key={p}
-                  onClick={() => void send(p)}
-                  className="rounded-full border border-border bg-card px-3 py-1.5 text-xs text-foreground transition-colors hover:border-primary hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                >
-                  {p}
-                </button>
-              ))}
-            </div>
-          </div>
-        ) : (
-          turns.map((turn, i) =>
-            turn.role === "user" ? (
-              <div key={i} className="flex justify-end gap-2">
-                <div className="max-w-[85%] rounded-2xl rounded-br-sm bg-primary px-3.5 py-2 text-sm text-primary-foreground">
-                  {turn.text}
-                </div>
-                <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">
-                  <User className="h-4 w-4" />
-                </span>
-              </div>
-            ) : (
-              <div key={i} className="flex gap-2">
-                <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
-                  <Sparkles className="h-4 w-4" />
-                </span>
+        {turns.map((turn, i) =>
+          turn.role === "user" ? (
+            <div key={i} className="mh-msg me"><div className="mh-bubble">{turn.text}</div></div>
+          ) : (
+            <div key={i} className="mh-msg ai" style={{ maxWidth: turn.proposals && turn.proposals.length ? "96%" : undefined }}>
+              <div className="mh-ai-row">
+                <span className="mh-av"><Sparkles className="h-4 w-4" /></span>
                 <div className="min-w-0 flex-1">
-                  <div className="rounded-2xl rounded-tl-sm border border-border bg-card px-3.5 py-2.5">
-                    {turn.text ? (
-                      <AssistantMarkdown text={turn.text} />
-                    ) : turn.streaming ? (
-                      <span className="inline-flex items-center gap-2 text-sm text-muted-foreground">
-                        <Spinner label={t("chatSending")} size="sm" /> {t("chatSending")}
-                      </span>
-                    ) : null}
-                    {turn.streaming && turn.text ? (
-                      <span className="ml-0.5 inline-block h-4 w-1.5 animate-pulse bg-primary align-text-bottom" />
-                    ) : null}
+                  <div className="mh-bubble">
+                    {turn.text ? <AssistantMarkdown text={turn.text} /> : turn.streaming ? <span className="mh-typing"><i /><i /><i /></span> : null}
                     {turn.citations && turn.citations.length > 0 ? (
-                      <div className="mt-2.5 flex flex-wrap items-center gap-1 border-t border-border pt-2">
-                        <span className="mr-0.5 text-[0.7rem] font-medium text-muted-foreground">Sources</span>
-                        {turn.citations.map((c) => (
-                          <span
-                            key={c.ref}
-                            className="rounded border border-border bg-muted px-1.5 py-0.5 text-[0.7rem] font-medium text-muted-foreground"
-                          >
-                            {c.ref}
-                          </span>
-                        ))}
+                      <div className="mh-srcs">
+                        <span className="mh-srcs-lbl">✓ Grounded in the chart</span>
+                        {turn.citations.map((c) => (<span key={c.ref} className="mh-src">{c.resource_type ?? c.ref}</span>))}
                       </div>
                     ) : null}
                   </div>
@@ -274,43 +227,20 @@ export function ChatPanel({ patientId, opening }: { patientId: string; opening?:
                         const committed = state?.startsWith("committed:");
                         const blocked = p.verdict === "block";
                         return (
-                          <div
-                            key={key}
-                            className={`rounded-lg border p-3 text-sm ${
-                              blocked ? "border-destructive/40 bg-destructive-surface" : "border-border bg-card"
-                            }`}
-                          >
+                          <div key={key} className={`rounded-2xl border p-3 text-sm shadow-sm ${blocked ? "border-destructive/40 bg-destructive-surface" : "border-border bg-card"}`}>
                             <div className="flex items-center justify-between gap-2">
-                              <span className="font-medium">
-                                {t("proposalTitle")}: {p.drug} {p.dose_text}
-                              </span>
+                              <span className="font-semibold">{t("proposalTitle")}: {p.drug} {p.dose_text}</span>
                               <Badge variant={VERDICT_VARIANT[p.verdict]}>{p.verdict}</Badge>
                             </div>
-                            {p.codes.length > 0 ? (
-                              <p className="mt-1 text-xs text-muted-foreground">{p.codes.join(" · ")}</p>
-                            ) : null}
+                            {p.codes.length > 0 ? <p className="mt-1 text-xs text-muted-foreground">{p.codes.join(" · ")}</p> : null}
                             <div className="mt-2.5 flex flex-wrap items-center gap-2">
-                              <Button
-                                size="sm"
-                                onClick={() => void signProposal(key, p)}
-                                disabled={blocked || state === "signing" || committed}
-                              >
+                              <Button size="sm" onClick={() => void signProposal(key, p)} disabled={blocked || state === "signing" || committed}>
                                 {state === "signing" ? t("chatSending") : t("proposalSign")}
                               </Button>
-                              {committed ? (
-                                <span className="text-xs font-medium text-success">
-                                  {t("proposalSigned", { ref: state!.slice("committed:".length) })}
-                                </span>
-                              ) : null}
-                              {blocked ? (
-                                <span className="text-xs font-medium text-destructive">{t("proposalBlocked")}</span>
-                              ) : null}
-                              {state === "override" ? (
-                                <span className="text-xs text-warning">{t("proposalOverride")}</span>
-                              ) : null}
-                              {state === "error" ? (
-                                <span className="text-xs text-destructive">{t("proposalSignError")}</span>
-                              ) : null}
+                              {committed ? <span className="text-xs font-medium text-success">{t("proposalSigned", { ref: state!.slice("committed:".length) })}</span> : null}
+                              {blocked ? <span className="text-xs font-medium text-destructive">{t("proposalBlocked")}</span> : null}
+                              {state === "override" ? <span className="text-xs text-warning">{t("proposalOverride")}</span> : null}
+                              {state === "error" ? <span className="text-xs text-destructive">{t("proposalSignError")}</span> : null}
                             </div>
                           </div>
                         );
@@ -319,42 +249,31 @@ export function ChatPanel({ patientId, opening }: { patientId: string; opening?:
                   ) : null}
                 </div>
               </div>
-            ),
-          )
+            </div>
+          ),
         )}
       </div>
 
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          void send(input);
-        }}
-        className="flex gap-2 border-t border-border pt-3"
-      >
-        <input
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          placeholder={t("chatPrompt")}
-          aria-label={t("chatPrompt")}
-          className="flex-1 rounded-lg border border-border bg-background px-3.5 py-2.5 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        />
+      {/* quick-reply chips (conversational-commerce style) — before any turn */}
+      {turns.length === 0 ? (
+        <div className="mh-quick">
+          {QUICK_PROMPTS.map((p) => (<button key={p} type="button" className="mh-chip" onClick={() => void send(p)}>{p}</button>))}
+        </div>
+      ) : null}
+
+      <form className="mh-composer" onSubmit={(e) => { e.preventDefault(); void send(input); }}>
         <VoiceButton
           title="Voice command — say 'give summary'"
           onTranscript={(tx) => {
-            // FR-3.3: a spoken "summary"/"brief" command triggers the summary;
-            // anything else is dictated into the input for review before sending.
             if (/\b(summary|brief)\b/i.test(tx)) {
-              void send(
-                "Give me a concise, cited summary of this patient — active problems, current medications, allergies, and recent results.",
-              );
+              void send("Give me a concise, cited summary of this patient — active problems, current medications, allergies, and recent results.");
             } else {
               setInput((prev) => (prev ? `${prev} ${tx}` : tx));
             }
           }}
         />
-        <Button type="submit" disabled={busy || !input.trim()}>
-          {busy ? t("chatSending") : t("chatSend")}
-        </Button>
+        <input value={input} onChange={(e) => setInput(e.target.value)} placeholder={t("chatPrompt")} aria-label={t("chatPrompt")} />
+        <button type="submit" className="mh-circ send" disabled={busy || !input.trim()} aria-label={t("chatSend")}><Send className="h-5 w-5" /></button>
       </form>
     </div>
   );
