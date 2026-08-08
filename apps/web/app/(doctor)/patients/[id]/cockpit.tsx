@@ -36,7 +36,7 @@ function statusColor(v: number, low: number, high: number, critical?: boolean): 
   return "var(--success)";
 }
 
-function GaugeTile({ name, value, unit, when, critical, series, gradientId }: { name: string; value: number; unit?: string; when?: string; critical?: boolean; series?: number[]; gradientId?: string }) {
+export function GaugeTile({ name, value, unit, when, critical, series, gradientId }: { name: string; value: number; unit?: string; when?: string; critical?: boolean; series?: number[]; gradientId?: string }) {
   const ref = refFor(name);
   const color = ref ? statusColor(value, ref.low, ref.high, critical) : "var(--primary)";
   const status = critical ? "Critical" : ref ? (value < ref.low ? "Low" : value > ref.high ? "High" : "Normal") : null;
@@ -69,7 +69,7 @@ function GaugeTile({ name, value, unit, when, critical, series, gradientId }: { 
 }
 
 /** Stylised radiograph thumbnail (no real image — a clean imaging placeholder). */
-function FilmThumb({ report }: { report: ImagingReport }) {
+export function FilmThumb({ report }: { report: ImagingReport }) {
   const urgent = report.flag === "urgent";
   const chip = urgent
     ? { t: "Urgent", c: "var(--destructive)" }

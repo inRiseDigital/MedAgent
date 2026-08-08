@@ -6,16 +6,14 @@
  * Theme-aware; PHN addresses the patient in URL state (06 §5).
  */
 import { getTranslations } from "next-intl/server";
-import { Clock, FlaskConical, HeartPulse, Pill, Scan, Sparkles } from "lucide-react";
+import { FlaskConical, Sparkles } from "lucide-react";
 import { Card } from "@medagent/ui";
 
 import {
-  fetchChildHealth,
   fetchImagingReports,
   fetchLabReports,
   fetchPatientBrief,
   fetchPatientSummary,
-  type ChildHealthRecord,
   type ImagingReport,
   type LabReport,
   type PatientBrief,
@@ -24,10 +22,9 @@ import {
 import { CLINICAL, requireRoles } from "@/lib/require-role";
 import { BodyMap } from "./body-map";
 import { ChatPanel } from "./chat-panel";
-import { ChildHealthCard } from "./child-health";
 import { ClinicianActions } from "./clinician-actions";
-import { SideAccordion, type AccordionItem } from "./side-accordion";
-import { StatusPanel } from "./status-panel";
+import { FilmThumb, GaugeTile } from "./cockpit";
+import { RecordTabs } from "./record-tabs";
 
 function age(birthDate?: string): string {
   if (!birthDate) return "?";
@@ -77,17 +74,6 @@ export default async function PatientSessionPage({ params }: { params: Promise<{
     brief = null;
   }
 
-  // Child Health Development Record — only for children (under 5). Best-effort.
-  const isChild = summary?.patient.birthDate ? Number(age(summary.patient.birthDate)) < 5 : false;
-  let chdr: ChildHealthRecord | null = null;
-  if (isChild) {
-    try {
-      chdr = await fetchChildHealth(id);
-    } catch {
-      chdr = null;
-    }
-  }
-
   // Diagnostics (patient-scoped worklists) — best-effort.
   let imaging: ImagingReport[] = [];
   let labs: LabReport[] = [];
@@ -106,86 +92,61 @@ export default async function PatientSessionPage({ params }: { params: Promise<{
 
   const flags = brief?.flags ?? [];
 
-  // Record accordion — Labs, Imaging, Medications, Problems, Encounters (real data).
-  const items: AccordionItem[] = [];
-  if (summary) {
-    const labRows = [
-      ...labs.filter((l) => typeof l.value === "number").map((l) => ({ name: l.test ?? "Lab", val: `${l.value}${l.unit ? " " + l.unit : ""}`, crit: l.critical })),
-      ...summary.results.map((r) => ({ name: r.text, val: r.conclusion ?? "", crit: r.critical })),
-    ];
-    items.push({
-      id: "labs",
-      title: "Labs & results",
-      icon: <FlaskConical className="h-3.5 w-3.5" />,
-      badge: labRows.some((r) => r.crit) ? { text: "critical", tone: "destructive" } : undefined,
-      content: labRows.length ? (
-        <div className="space-y-0.5">
-          {labRows.map((r, i) => (
-            <div key={i} className="flex items-center gap-2 border-b border-border/60 py-1.5 text-sm last:border-0">
-              <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${r.crit ? "bg-destructive-surface text-destructive" : "bg-success-surface text-success"}`}><FlaskConical className="h-3.5 w-3.5" /></span>
-              <div className="min-w-0"><div className="truncate font-medium">{r.name}</div>{r.val ? <div className="truncate text-xs text-muted-foreground">{r.val}</div> : null}</div>
-              {r.crit ? <span className="ml-auto rounded-full bg-destructive-surface px-2 py-0.5 text-[0.58rem] font-bold uppercase text-destructive">critical</span> : null}
+  // Tabbed clinical panel content — all real data.
+  const labsNumeric = labs.filter((l) => typeof l.value === "number");
+  const labsCritical = labsNumeric.some((l) => l.critical) || (summary?.results.some((r) => r.critical) ?? false);
+  const imagingUrgent = imaging.some((r) => r.flag === "urgent");
+  const problems = summary ? [...new Map(summary.problems.map((p) => [p.text.toLowerCase(), p])).values()] : [];
+  const appts = summary ? summary.appointments.filter((a) => a.start) : [];
+
+  const labsPanel = labsNumeric.length || (summary?.results.length ?? 0) ? (
+    <div className="space-y-3">
+      {labsNumeric.length ? (
+        <div className="grid grid-cols-2 gap-3">
+          {labsNumeric.map((l) => (
+            <GaugeTile key={l.id} name={l.test ?? "Lab"} value={l.value as number} unit={l.unit} when={l.issued} critical={l.critical} />
+          ))}
+        </div>
+      ) : null}
+      {summary && summary.results.length ? (
+        <div className="overflow-hidden rounded-xl border border-border">
+          {summary.results.map((r) => (
+            <div key={r.ref} className="flex items-center gap-2 border-b border-border/60 p-2.5 text-sm last:border-0">
+              <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${r.critical ? "bg-destructive-surface text-destructive" : "bg-success-surface text-success"}`}><FlaskConical className="h-3.5 w-3.5" /></span>
+              <div className="min-w-0"><div className="truncate font-medium">{r.text}</div>{r.conclusion ? <div className="truncate text-xs text-muted-foreground">{r.conclusion}</div> : null}</div>
+              {r.critical ? <span className="ml-auto rounded-full bg-destructive-surface px-2 py-0.5 text-[0.56rem] font-bold uppercase text-destructive">critical</span> : null}
             </div>
           ))}
         </div>
-      ) : (
-        <p className="text-xs text-muted-foreground">No results on file.</p>
-      ),
-    });
-    items.push({
-      id: "imaging",
-      title: "Imaging",
-      icon: <Scan className="h-3.5 w-3.5" />,
-      badge: imaging.some((r) => r.flag === "urgent") ? { text: "urgent", tone: "destructive" } : undefined,
-      content: imaging.length ? (
-        <div className="space-y-2">
-          {imaging.map((r) => (
-            <div key={r.ref} className="flex items-center gap-2 text-sm">
-              <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${r.flag === "urgent" ? "bg-destructive-surface text-destructive" : r.flag === "abnormal" ? "bg-warning-surface text-warning" : "bg-success-surface text-success"}`}><Scan className="h-3.5 w-3.5" /></span>
-              <div className="min-w-0"><div className="truncate font-medium">{r.code ?? "Imaging"}</div><div className="truncate text-xs text-muted-foreground">{r.issued?.slice(0, 10) ?? ""}</div></div>
-              <span className="ml-auto text-[0.58rem] font-bold uppercase text-muted-foreground">{r.flag ?? "reported"}</span>
-            </div>
-          ))}
-        </div>
-      ) : (
-        <p className="text-xs text-muted-foreground">No imaging on file.</p>
-      ),
-    });
-    items.push({
-      id: "meds",
-      title: t("medsLabel"),
-      icon: <Pill className="h-3.5 w-3.5" />,
-      badge: summary.medications.length ? { text: String(summary.medications.length), tone: "muted" } : undefined,
-      content: summary.medications.length ? (
-        <ul className="space-y-1 text-sm">{summary.medications.map((m) => (<li key={m.ref} className="flex gap-2"><span aria-hidden className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-muted-foreground" /><span>{m.text}</span></li>))}</ul>
-      ) : (
-        <p className="text-xs text-muted-foreground">{t("none")}</p>
-      ),
-    });
-    const problems = [...new Map(summary.problems.map((p) => [p.text.toLowerCase(), p])).values()];
-    items.push({
-      id: "problems",
-      title: t("problemsLabel"),
-      icon: <HeartPulse className="h-3.5 w-3.5" />,
-      content: problems.length ? (
-        <ul className="space-y-1 text-sm">{problems.map((p) => (<li key={p.ref} className="flex gap-2"><span aria-hidden className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-muted-foreground" /><span>{p.text}</span></li>))}</ul>
-      ) : (
-        <p className="text-xs text-muted-foreground">{t("none")}</p>
-      ),
-    });
-    const appts = summary.appointments.filter((a) => a.start);
-    items.push({
-      id: "enc",
-      title: "Encounters & timeline",
-      icon: <Clock className="h-3.5 w-3.5" />,
-      content: appts.length ? (
-        <div className="space-y-0.5 text-sm">{appts.map((a, i) => (<div key={i} className="flex items-center gap-2 border-b border-border/60 py-1.5 last:border-0"><span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-muted text-xs font-bold text-primary">{i + 1}</span><span className="tabular-nums">{a.start ? new Date(a.start).toLocaleString([], { dateStyle: "medium", timeStyle: "short" }) : ""}</span><span className="ml-auto text-xs text-muted-foreground">{a.status ?? ""}</span></div>))}</div>
-      ) : (
-        <p className="text-xs text-muted-foreground">No encounters on file.</p>
-      ),
-    });
-    if (chdr) items.push({ id: "chdr", title: "Child health record", icon: <HeartPulse className="h-3.5 w-3.5" />, content: <ChildHealthCard chdr={chdr} /> });
-  }
+      ) : null}
+    </div>
+  ) : (
+    <p className="text-sm text-muted-foreground">No results on file.</p>
+  );
+
+  const imagingPanel = imaging.length ? (
+    <div className="flex flex-wrap gap-3">{imaging.map((r) => <FilmThumb key={r.ref} report={r} />)}</div>
+  ) : (
+    <p className="text-sm text-muted-foreground">No imaging on file.</p>
+  );
+
+  const medsPanel = summary && summary.medications.length ? (
+    <ul className="space-y-2 text-sm">{summary.medications.map((m) => (<li key={m.ref} className="flex gap-2.5"><span aria-hidden className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-primary" /><span className="capitalize">{m.text}</span></li>))}</ul>
+  ) : (
+    <p className="text-sm text-muted-foreground">{t("none")}</p>
+  );
+
+  const problemsPanel = problems.length ? (
+    <ul className="space-y-2 text-sm">{problems.map((p) => (<li key={p.ref} className="flex gap-2.5"><span aria-hidden className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-muted-foreground" /><span>{p.text}</span></li>))}</ul>
+  ) : (
+    <p className="text-sm text-muted-foreground">{t("none")}</p>
+  );
+
+  const encPanel = appts.length ? (
+    <div className="space-y-0.5 text-sm">{appts.map((a, i) => (<div key={i} className="flex items-center gap-2 border-b border-border/60 py-2 last:border-0"><span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-muted text-xs font-bold text-primary">{i + 1}</span><span className="tabular-nums">{a.start ? new Date(a.start).toLocaleString([], { dateStyle: "medium", timeStyle: "short" }) : ""}</span><span className="ml-auto text-xs text-muted-foreground">{a.status ?? ""}</span></div>))}</div>
+  ) : (
+    <p className="text-sm text-muted-foreground">No encounters on file.</p>
+  );
 
   // Copilot opening brief — proactive safety-first summary from REAL data.
   const opening = summary
@@ -250,17 +211,21 @@ export default async function PatientSessionPage({ params }: { params: Promise<{
           </Card>
         </main>
 
-        {/* 2 · Status (body map) + 5 · Record (accordion) */}
+        {/* 2 · Clinical record — tabbed panel (Vitals body map, Labs graphs, …) */}
         <aside className="lg:sticky lg:top-4 lg:max-h-[calc(100dvh-2rem)] lg:self-start lg:overflow-y-auto lg:pr-1">
+          <PSec n="2" title="Clinical record" hint="switch tabs" />
           {summary ? (
-            <>
-              <PSec n="2" title="Status — vitals at a glance" hint="hover a reading" />
-              <StatusPanel><BodyMap vitals={summary.vitals} /></StatusPanel>
-              <div className="mt-4">
-                <PSec n="5" title="Record" hint="open one at a time" />
-                <SideAccordion items={items} defaultOpenId="labs" />
-              </div>
-            </>
+            <RecordTabs
+              vitals={<BodyMap vitals={summary.vitals} />}
+              labs={labsPanel}
+              imaging={imagingPanel}
+              meds={medsPanel}
+              problems={problemsPanel}
+              enc={encPanel}
+              labsCritical={labsCritical}
+              imagingUrgent={imagingUrgent}
+              medsCount={summary.medications.length}
+            />
           ) : (
             <p className="text-muted-foreground">{t("summaryUnavailable")}</p>
           )}
