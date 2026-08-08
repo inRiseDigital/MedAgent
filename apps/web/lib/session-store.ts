@@ -16,7 +16,7 @@ import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 import { cookies } from "next/headers";
 import { createClient } from "redis";
 
-import { decodeJwtPayload, refreshTokens, type TokenSet } from "@/lib/oidc";
+import { backchannelLogout, decodeJwtPayload, refreshTokens, type TokenSet } from "@/lib/oidc";
 import { SESSION_COOKIE, type Role, type Session } from "@/lib/session";
 
 // Idle + absolute lifetimes for staff sessions (02 §4 / §11: 12 h max, 30 min
@@ -178,11 +178,24 @@ export async function getAccessToken(): Promise<string | null> {
   }
 }
 
-/** Delete the server-side record; returns the id_token for RP-initiated logout. */
+/**
+ * Delete the server-side record and terminate the Keycloak SSO session over the
+ * back channel (so the browser doesn't hit Keycloak's logout consent page).
+ * Returns the id_token (kept for callers that still want RP-initiated logout).
+ */
 export async function destroySession(): Promise<string | null> {
   const sessionId = await currentSessionId();
   if (!sessionId) return null;
   const record = await readRecord(sessionId);
+  if (record?.tokens.refresh_token) {
+    // Best-effort: kill the Keycloak session server-side. If it fails (expired
+    // refresh token, Keycloak unreachable), we still clear the local session.
+    try {
+      await backchannelLogout(record.tokens.refresh_token);
+    } catch {
+      /* non-fatal — local logout proceeds regardless */
+    }
+  }
   const r = await redis();
   await r.del(KEY_PREFIX + sessionId);
   return record?.tokens.id_token ?? null;

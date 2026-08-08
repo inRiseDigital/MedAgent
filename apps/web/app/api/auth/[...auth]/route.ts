@@ -18,7 +18,6 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import {
   buildAuthorizeUrl,
-  buildLogoutUrl,
   exchangeCode,
   pkceChallenge,
   randomToken,
@@ -157,27 +156,28 @@ async function handleCallback(request: NextRequest): Promise<NextResponse> {
 }
 
 async function handleLogout(request: NextRequest): Promise<NextResponse> {
-  // Refresh first so the id_token_hint we hand Keycloak is CURRENT. Keycloak
-  // rejects an expired id_token_hint (can't resolve the client to validate the
-  // redirect) and shows "Logout failed" — which is exactly the idle-then-logout
-  // case, since the login-time id_token may have expired while the session cookie
-  // is still valid. getAccessToken silently refreshes + persists a fresh id_token.
+  // Refresh first so the refresh_token used for the back-channel logout is
+  // current (a rotated/expired one would fail to terminate the session).
   try {
     await getAccessToken();
   } catch {
-    /* refresh unavailable — fall through to whatever token we have */
+    /* refresh unavailable — destroySession is still best-effort below */
   }
-  const idToken = await destroySession();
-  // Land the user straight on the login flow after Keycloak logout. (Sending them
-  // to "/" is unreliable: in dev, the root redirect degrades to a 1s meta-refresh,
-  // so the browser sits on a blank page instead of the login screen.) /api/auth/login
-  // matches the registered post-logout URI (https://localhost/*) and, since the
-  // Keycloak SSO session is now gone, renders the login page.
-  const loginUrl = `${publicBase(request)}/api/auth/login`;
-  const target = idToken ? await buildLogoutUrl(idToken, loginUrl) : loginUrl;
-  const res = NextResponse.redirect(target);
-  // Explicitly expire the cookie with the SAME attributes — a __Host- cookie only
-  // clears when the deletion also carries Secure + Path=/ (a bare delete may not).
+  // destroySession terminates the Keycloak SSO session over the BACK CHANNEL and
+  // deletes the local record. We deliberately do NOT redirect the browser to
+  // Keycloak's end_session endpoint: Keycloak 26 shows a "Do you want to log
+  // out?" consent page for a browser-initiated logout even with a valid
+  // id_token_hint, which strands the user instead of returning them to login.
+  await destroySession();
+  // The Keycloak session is already gone, so /api/auth/login → authorize renders
+  // the login page rather than silently re-authenticating. (Going to "/" is
+  // unreliable in dev — the root redirect degrades to a 1s meta-refresh.)
+  // 303 See Other: this handler runs for a POST (the sign-out form), and the
+  // default 307 preserves the method — the browser would POST /api/auth/login,
+  // which is GET-only (404). 303 forces the follow-up to be a GET.
+  const res = NextResponse.redirect(`${publicBase(request)}/api/auth/login`, 303);
+  // Expire the cookie with the SAME attributes — a __Host- cookie only clears
+  // when the deletion also carries Secure + Path=/ (a bare delete may not).
   res.cookies.set(SESSION_COOKIE, "", { ...baseCookieOptions(), maxAge: 0 });
   return res;
 }

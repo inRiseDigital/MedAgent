@@ -173,6 +173,26 @@ export async function refreshTokens(refreshToken: string): Promise<TokenSet> {
   return toTokenSet((await res.json()) as TokenEndpointResponse);
 }
 
+/**
+ * Terminate the Keycloak SSO session over the BACK CHANNEL (server-to-server),
+ * so the browser never visits Keycloak's logout endpoint — and therefore never
+ * hits its "Do you want to log out?" consent page, which Keycloak 26 shows for
+ * a browser-initiated logout even when a valid id_token_hint is supplied.
+ * Best-effort: a failure here still lets the caller clear the local session.
+ */
+export async function backchannelLogout(refreshToken: string): Promise<void> {
+  await fetch(`${internalBase()}/protocol/openid-connect/logout`, {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    cache: "no-store",
+    body: new URLSearchParams({
+      client_id: clientId(),
+      client_secret: clientSecret(),
+      refresh_token: refreshToken,
+    }),
+  });
+}
+
 export async function buildLogoutUrl(idToken: string, postLogoutRedirectUri?: string): Promise<string> {
   const config = await discover();
   const url = new URL(config.end_session_endpoint);
