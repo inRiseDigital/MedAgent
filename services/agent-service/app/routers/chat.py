@@ -20,6 +20,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.agent.build import build_agent, resolve_patient_fhir_id
+from app.agent.context import build_patient_context
 from app.auth import Principal, require_user
 from app.config import Settings
 
@@ -142,7 +143,15 @@ async def chat(
         sources: list[dict[str, Any]] = []
         proposals: list[dict[str, Any]] = []
         cards: list[dict[str, Any]] = []
-        agent = build_agent(settings, fhir_id, sources, proposals, audience=body.audience, cards=cards, locale=body.locale)
+        # Grounding by construction: pre-load a compact, cited context snapshot via
+        # core-api (best-effort — falls back to on-demand tools if unavailable).
+        context_text = await build_patient_context(
+            settings.core_api_base_url, request.headers.get("authorization"), body.patient_id
+        )
+        agent = build_agent(
+            settings, fhir_id, sources, proposals,
+            audience=body.audience, cards=cards, locale=body.locale, context_text=context_text,
+        )
 
         # State tracked across the run so we can GUARANTEE an answer floor: every
         # 200 stream must carry at least one text-delta. A tool-heavy request (e.g.

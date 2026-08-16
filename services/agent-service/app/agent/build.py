@@ -125,12 +125,17 @@ def build_agent(
     audience: str = "clinician",
     cards: list[dict[str, Any]] | None = None,
     locale: str = "en",
+    context_text: str = "",
 ) -> CompiledStateGraph:
     """Compile a patient-scoped ReAct agent. `sources` accumulates citations;
     `proposals` accumulates write-intent drafts (sign-off cards). `audience`
     selects the persona: "clinician" (briefs the doctor) or "patient" (talks
-    directly to the patient/guardian in plain, reassuring language)."""
+    directly to the patient/guardian in plain, reassuring language). `context_text`
+    is a pre-loaded, cited snapshot of the record (grounding by construction) — it
+    is appended to the system prompt so the agent starts from the chart."""
     system_prompt = PROMPTS.get(audience, SYSTEM_PROMPT) + _language_directive(locale)
+    if context_text:
+        system_prompt += "\n\n" + context_text
     # Offline/stub mode (backlog 0.3): deterministic model, no API calls — for CI
     # load tests and demos when the provider is unavailable / quota-capped.
     if settings.agent_llm_mode == "stub":
