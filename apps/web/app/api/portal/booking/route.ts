@@ -6,13 +6,10 @@
  */
 import { NextResponse } from "next/server";
 
+import { proxyToCore } from "@/lib/bff";
 import { getAccessToken, getSession } from "@/lib/session-store";
 
 export const runtime = "nodejs";
-
-function coreBase(): string {
-  return (process.env.CORE_API_URL ?? "http://localhost:8001").replace(/\/$/, "");
-}
 
 async function auth(): Promise<{ token: string; phn: string } | null> {
   const session = await getSession();
@@ -30,11 +27,7 @@ export async function GET(request: Request): Promise<NextResponse> {
   const facility = qs.get("facility");
   if (specialty) params.set("specialty", specialty);
   if (facility) params.set("facility", facility);
-  const res = await fetch(`${coreBase()}/api/v1/schedule/slots?${params.toString()}`, {
-    headers: { authorization: `Bearer ${a.token}` },
-    cache: "no-store",
-  });
-  return new NextResponse(await res.text(), { status: res.status, headers: { "content-type": "application/json" } });
+  return proxyToCore(`/api/v1/schedule/slots?${params.toString()}`, { token: a.token });
 }
 
 export async function POST(request: Request): Promise<NextResponse> {
@@ -42,11 +35,9 @@ export async function POST(request: Request): Promise<NextResponse> {
   if (!a) return NextResponse.json({ error: "no_patient" }, { status: 401 });
   const body = (await request.json().catch(() => ({}))) as { slot?: string; reason?: string };
   if (!body.slot) return NextResponse.json({ error: "slot_required" }, { status: 422 });
-  const res = await fetch(`${coreBase()}/api/v1/schedule/book`, {
+  return proxyToCore(`/api/v1/schedule/book`, {
     method: "POST",
-    headers: { authorization: `Bearer ${a.token}`, "content-type": "application/json" },
+    token: a.token,
     body: JSON.stringify({ slot: body.slot, patient: a.phn, reason: body.reason }),
-    cache: "no-store",
   });
-  return new NextResponse(await res.text(), { status: res.status, headers: { "content-type": "application/json" } });
 }
