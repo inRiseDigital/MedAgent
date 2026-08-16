@@ -155,9 +155,23 @@ export function Concierge({ patientPhn, name, signals }: { patientPhn: string; n
       const history = [...prior, { t: "me" as const, text: question }];
       setMsgs((m) => [...m, { t: "me", text: question }, { t: "ai", text: "", streaming: true }]);
       down();
+      // Target THIS turn's AI node by finding the last "ai" node — not "the last
+      // message" — because data-cards push card nodes after it. Otherwise the
+      // streaming indicator ("…") never clears and a no-text turn stays blank.
+      const lastAiIndex = (list: Node[]): number => {
+        for (let i = list.length - 1; i >= 0; i--) if (list[i]!.t === "ai") return i;
+        return -1;
+      };
       const bump = (fn: (t: Node & { t: "ai" }) => Node) =>
-        setMsgs((m) => m.map((n, i) => (i === m.length - 1 && n.t === "ai" ? fn(n) : n)));
+        setMsgs((m) => {
+          const idx = lastAiIndex(m);
+          return idx < 0 ? m : m.map((n, i) => (i === idx && n.t === "ai" ? fn(n) : n));
+        });
       let full = "";
+      // Client-side safety timeout: the server bounds a run (~90s), but a stalled
+      // network shouldn't leave the "…" indicator spinning forever.
+      const ctrl = new AbortController();
+      const timer = window.setTimeout(() => ctrl.abort(), 120_000);
       try {
         const res = await fetch("/api/chat", {
           method: "POST",
@@ -168,6 +182,7 @@ export function Concierge({ patientPhn, name, signals }: { patientPhn: string; n
             locale,
             messages: history.map((t) => ({ role: t.t === "me" ? "user" : "assistant", content: t.text })),
           }),
+          signal: ctrl.signal,
         });
         if (!res.ok || !res.body) {
           bump((n) => ({ ...n, text: "Sorry — the assistant is unavailable right now.", streaming: false }));
@@ -202,8 +217,19 @@ export function Concierge({ patientPhn, name, signals }: { patientPhn: string; n
       } catch {
         bump((n) => ({ ...n, text: "Sorry — something went wrong. Please try again.", streaming: false }));
       } finally {
+        window.clearTimeout(timer);
         setBusy(false);
-        setMsgs((m) => m.map((n, i) => (i === m.length - 1 && n.t === "ai" ? { ...n, streaming: false } : n)));
+        // Always settle THIS turn's AI node: clear the "…" indicator, and if the
+        // stream produced no text at all (should not happen — the server floors an
+        // answer — but never leave a silent blank bubble), show a retry line.
+        setMsgs((m) => {
+          const idx = lastAiIndex(m);
+          if (idx < 0) return m;
+          return m.map((n, i) => {
+            if (i !== idx || n.t !== "ai") return n;
+            return { ...n, streaming: false, text: n.text || "Sorry — I couldn't answer that just now. Please try again." };
+          });
+        });
         down();
       }
       return full;

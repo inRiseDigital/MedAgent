@@ -150,7 +150,9 @@ def build_agent(
             api_key=settings.llm_openai_api_key,
             base_url=settings.llm_openai_base_url,
             temperature=0,
-            max_tokens=2048,
+            max_tokens=settings.agent_max_tokens,
+            max_retries=settings.llm_max_retries,
+            request_timeout=settings.llm_timeout_seconds,
             # streaming OFF: some OpenAI-compatible providers (Groq) emit streamed
             # tool-call deltas that don't reconstruct in LangChain, truncating the
             # ReAct loop before the final answer. With streaming off the tool calls
@@ -166,7 +168,9 @@ def build_agent(
         llm = ChatAnthropic(
             model=settings.anthropic_model,
             api_key=settings.anthropic_api_key,
-            max_tokens=2048,
+            max_tokens=settings.agent_max_tokens,
+            max_retries=settings.llm_max_retries,
+            default_request_timeout=settings.llm_timeout_seconds,
             # Extended thinking is disabled: with tool-calling round-trips the
             # thinking blocks must be echoed back intact, which the LangChain
             # adapter mishandles ("thinking.thinking: Field required"). The clinical

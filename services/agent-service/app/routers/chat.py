@@ -8,6 +8,7 @@ consumes with `useChat`. Citations gathered by the read tools are emitted as a
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import uuid
@@ -116,6 +117,16 @@ async def chat(
         proposals: list[dict[str, Any]] = []
         cards: list[dict[str, Any]] = []
         agent = build_agent(settings, fhir_id, sources, proposals, audience=body.audience, cards=cards, locale=body.locale)
+
+        # State tracked across the run so we can GUARANTEE an answer floor: every
+        # 200 stream must carry at least one text-delta. A tool-heavy request (e.g.
+        # "give me a full 360 profile") can otherwise finish with an empty final
+        # assistant turn (recursion cap / token truncation / a trailing tool or
+        # present_card call) and render a silent blank bubble.
+        streamed = False  # at least one token was streamed to the client
+        final_answer = ""  # last non-empty AI message content (non-streaming providers)
+        errored = False  # an error note was already emitted as the reply
+        timed_out = False
         try:
             # Provider-agnostic streaming. We ask for BOTH "messages" (token stream)
             # and "values" (full state per step). Anthropic streams the answer token
@@ -123,28 +134,28 @@ async def chat(
             # stream the post-tool-call answer through langgraph, so those token
             # chunks are empty — for them we fall back to the final message content
             # from "values". `streamed` guards against emitting both (no duplication).
-            streamed = False
-            final_answer = ""
-            async for mode, data in agent.astream(
-                {"messages": [{"role": "user", "content": question}]},
-                stream_mode=["messages", "values"],
-            ):
-                if mode == "messages":
-                    token = data[0]
-                    if token.__class__.__name__ == "AIMessageChunk":
-                        delta = _delta_text(token)
-                        if delta:
-                            streamed = True
-                            yield _sse({"type": "text-delta", "id": text_id, "delta": delta})
-                elif mode == "values":
-                    msgs = data.get("messages", []) if isinstance(data, dict) else []
-                    if msgs and getattr(msgs[-1], "type", "") == "ai":
-                        text = _delta_text(msgs[-1])
-                        if text:
-                            final_answer = text
-            # Fallback for providers that didn't stream tokens: emit the answer once.
-            if not streamed and final_answer:
-                yield _sse({"type": "text-delta", "id": text_id, "delta": final_answer})
+            async with asyncio.timeout(settings.agent_run_timeout_seconds):
+                async for mode, data in agent.astream(
+                    {"messages": [{"role": "user", "content": question}]},
+                    stream_mode=["messages", "values"],
+                    config={"recursion_limit": settings.agent_recursion_limit},
+                ):
+                    if mode == "messages":
+                        token = data[0]
+                        if token.__class__.__name__ == "AIMessageChunk":
+                            delta = _delta_text(token)
+                            if delta:
+                                streamed = True
+                                yield _sse({"type": "text-delta", "id": text_id, "delta": delta})
+                    elif mode == "values":
+                        msgs = data.get("messages", []) if isinstance(data, dict) else []
+                        if msgs and getattr(msgs[-1], "type", "") == "ai":
+                            text = _delta_text(msgs[-1])
+                            if text:
+                                final_answer = text
+        except (TimeoutError, asyncio.TimeoutError):
+            timed_out = True
+            logger.warning("agent run exceeded %ss", settings.agent_run_timeout_seconds)
         except Exception as exc:  # noqa: BLE001 — never leak a stack trace to the UI
             logger.exception("agent run failed")
             m = str(exc).lower()
@@ -159,7 +170,31 @@ async def chat(
                 )
             else:
                 note = "\n\n[The assistant hit an error. Please retry.]"
+            errored = True
             yield _sse({"type": "text-delta", "id": text_id, "delta": note})
+
+        # ANSWER FLOOR — the stream must never be silent. Priority: streamed tokens
+        # (nothing to do) → non-streaming provider's final answer → a graceful
+        # message so the user always sees something actionable.
+        if not streamed and not errored:
+            if final_answer:
+                yield _sse({"type": "text-delta", "id": text_id, "delta": final_answer})
+            else:
+                if timed_out:
+                    floor = (
+                        "This is taking longer than expected. Please try again, or ask "
+                        "about one thing at a time (for example your medications, "
+                        "allergies, or latest results)."
+                    )
+                else:
+                    floor = (
+                        "I looked into the record but couldn't put together a full answer "
+                        "in one go. Please try again, or ask about one area at a time — "
+                        "medications, allergies, or recent results."
+                    )
+                if sources:
+                    floor += f"\n\n(Reviewed {len(sources)} record source(s).)"
+                yield _sse({"type": "text-delta", "id": text_id, "delta": floor})
 
         yield _sse({"type": "text-end", "id": text_id})
         if sources:  # citation chips (FR-3.4): resources the tools read

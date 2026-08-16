@@ -42,6 +42,23 @@ class Settings(BaseSettings):
     anthropic_model: str = "claude-sonnet-5"
     anthropic_temperature: float = 0.2
 
+    # --- Agent reliability knobs (04 §2; hardening so a slow/looping run can never
+    # hang the SSE stream or return a silent blank bubble). ---
+    # Per-LLM-call request timeout + retry budget.
+    llm_timeout_seconds: float = 60.0
+    llm_max_retries: int = 2
+    # Hard output cap per model turn. Raised from the prototype's 2048 so a
+    # tool-heavy answer (e.g. a full record summary) isn't silently truncated.
+    agent_max_tokens: int = 4096
+    # ReAct super-step cap. The LangGraph default (25) let a broad request chain so
+    # many tool calls it exhausted the budget with an empty final turn; a tighter
+    # cap forces the model to answer sooner.
+    agent_recursion_limit: int = 14
+    # Per-FHIR-tool-call timeout (seconds) — a slow HAPI read can't stall the loop.
+    tool_timeout_seconds: float = 8.0
+    # Whole-run wall-clock ceiling; on breach we emit a graceful floor message.
+    agent_run_timeout_seconds: float = 90.0
+
     # LLM mode: "live" (real Claude), "stub" (deterministic offline model — no API
     # calls), or "openai" (any OpenAI-compatible provider — Groq / OpenRouter /
     # Cerebras / Together — for a free key when the Anthropic quota is capped).

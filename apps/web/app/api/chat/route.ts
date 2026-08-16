@@ -38,9 +38,17 @@ export async function POST(request: NextRequest): Promise<Response> {
     return new Response("agent unreachable", { status: 502 });
   }
 
+  // Surface a real upstream failure as a non-200 (the client shows a graceful
+  // fallback on !res.ok) instead of relaying an empty body as a "successful"
+  // event-stream — which would render a silent blank bubble.
+  if (!upstream.ok || !upstream.body) {
+    const detail = await upstream.text().catch(() => "");
+    return new Response(detail || "agent error", { status: upstream.status || 502 });
+  }
+
   // Pass the SSE stream straight through, preserving the AI SDK protocol header.
   return new Response(upstream.body, {
-    status: upstream.status,
+    status: 200,
     headers: {
       "content-type": "text/event-stream",
       "x-vercel-ai-ui-message-stream": "v1",

@@ -154,7 +154,9 @@ export function ChatPanel({ patientId, opening }: { patientId: string; opening?:
             }
           }
         }
-        patch((a) => ({ ...a, streaming: false }));
+        // Never settle on a silent blank bubble: the server floors an answer, but
+        // if no text arrived at all, show a retry line instead of rendering null.
+        patch((a) => ({ ...a, streaming: false, text: a.text || t("chatError") }));
       } catch {
         patch((a) => ({ ...a, text: t("chatError"), streaming: false }));
       } finally {
