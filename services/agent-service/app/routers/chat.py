@@ -62,6 +62,31 @@ def _latest_user_text(messages: list[dict[str, Any]]) -> str:
     return ""
 
 
+def _to_agent_messages(messages: list[dict[str, Any]]) -> list[dict[str, str]]:
+    """Map the client's message array to the agent's input, PRESERVING history.
+
+    The web client already sends the whole conversation; forwarding only the
+    latest turn (the old behaviour) made the agent single-turn and stateless —
+    it forgot everything said earlier. Keep user/assistant turns with real text;
+    the system persona is supplied by the agent itself.
+    """
+    out: list[dict[str, str]] = []
+    for msg in messages:
+        role = msg.get("role")
+        if role not in ("user", "assistant"):
+            continue
+        content = msg.get("content")
+        if not isinstance(content, str) or not content.strip():
+            content = "".join(
+                p.get("text", "")
+                for p in msg.get("parts", [])
+                if isinstance(p, dict) and p.get("type") == "text"
+            )
+        if content.strip():
+            out.append({"role": role, "content": content})
+    return out
+
+
 def _delta_text(chunk: Any) -> str:
     """Pull text from an AIMessageChunk whose content may be a str or a block list."""
     content = getattr(chunk, "content", "")
@@ -83,7 +108,8 @@ async def chat(
     settings: Settings = request.app.state.settings
     message_id = f"msg_{uuid.uuid4().hex}"
     text_id = f"txt_{uuid.uuid4().hex}"
-    question = _latest_user_text(body.messages)
+    question = _latest_user_text(body.messages)  # for the "no record found" message
+    agent_messages = _to_agent_messages(body.messages)
 
     async def stream() -> AsyncIterator[str]:
         yield _sse({"type": "start", "messageId": message_id})
@@ -136,7 +162,7 @@ async def chat(
             # from "values". `streamed` guards against emitting both (no duplication).
             async with asyncio.timeout(settings.agent_run_timeout_seconds):
                 async for mode, data in agent.astream(
-                    {"messages": [{"role": "user", "content": question}]},
+                    {"messages": agent_messages or [{"role": "user", "content": question}]},
                     stream_mode=["messages", "values"],
                     config={"recursion_limit": settings.agent_recursion_limit},
                 ):
