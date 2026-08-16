@@ -96,11 +96,17 @@ def build_patient_tools(
     sources: list[dict[str, Any]],
     proposals: list[dict[str, Any]] | None = None,
     cards: list[dict[str, Any]] | None = None,
+    audience: str = "clinician",
 ) -> list[BaseTool]:
-    """Build the full read + screening tool belt for one patient. `proposals`, if
-    given, accumulates write-intent drafts (e.g. draft_prescription) that the chat
-    layer surfaces as sign-off cards. `cards`, if given, accumulates generative-UI
-    summary cards (present_card) the chat layer renders alongside the answer."""
+    """Build the read + screening tool belt for one patient, PERSONA-SCOPED.
+
+    `proposals` accumulates write-intent drafts (draft_prescription) the chat layer
+    surfaces as sign-off cards; `cards` accumulates generative-UI summary cards
+    (present_card). Tool exposure is scoped by `audience`: a patient session gets
+    read tools + present_card only (never medication screening or prescription
+    drafting), a clinician session gets read tools + screen_medication +
+    draft_prescription. This is a defence-in-depth boundary, not the only one —
+    data access is patient-scoped by fhir_id regardless."""
     fhir = FhirClient(fhir_base_url, patient_fhir_id, sources)
     pid = patient_fhir_id
     drafts = proposals if proposals is not None else []
@@ -361,6 +367,18 @@ def build_patient_tools(
             [_cc(m.get("medicationCodeableConcept")) for m in meds],
             [{"substance": _cc(a.get("code")), "criticality": a.get("criticality", "unknown")} for a in allergies],
         )
+        # STRUCTURAL SAFETY: a `block` verdict is a hard stop. It is NEVER staged
+        # as a signable proposal — the sign-off card only exists for pass/warn.
+        # This makes "a blocked drug cannot be signed" a property of the code path,
+        # not of the prompt (which a model could be talked around). core-api's
+        # /proposals/commit re-screens as a second, independent backstop.
+        if v.verdict == "block":
+            return (
+                f"BLOCKED: '{drug}' cannot be prescribed for this patient — the deterministic "
+                f"Rx-safety engine returned BLOCK ({', '.join(v.codes) or 'safety rule'}). No sign-off "
+                f"card was staged (a block is not overridable). Tell the clinician clearly and offer a "
+                f"safer alternative."
+            )
         drafts.append({
             "kind": "prescription",
             "drug": drug,
@@ -372,8 +390,8 @@ def build_patient_tools(
         return (
             f"Drafted prescription: {drug} {dose_text}. Deterministic safety verdict: "
             f"{v.verdict.upper()} ({', '.join(v.codes) or 'no issues'}). A sign-off card has been "
-            f"staged for the clinician. Present the verdict; if BLOCK, state it cannot be prescribed "
-            f"and offer alternatives. Do NOT claim it is prescribed — the clinician must review and sign."
+            f"staged for the clinician to review and sign. Present the verdict (a WARN needs an explicit "
+            f"override reason at sign-off). Do NOT claim it is prescribed — the clinician must sign."
         )
 
     @tool
@@ -388,7 +406,7 @@ def build_patient_tools(
         card_sink.append({"kind": "summary", "tone": t, "title": title.strip()[:120], "points": pts})
         return "Summary card shown to the patient. Continue your plain-language reply."
 
-    return [
+    read_tools: list[BaseTool] = [
         get_patient_summary,
         get_record_overview,
         get_conditions,
@@ -403,7 +421,9 @@ def build_patient_tools(
         get_appointments,
         get_family_history,
         get_social_history,
-        screen_medication,
-        draft_prescription,
-        present_card,
     ]
+    # Persona scoping: patients never receive medication-screening or prescription
+    # tools; clinicians never receive the patient-facing summary-card tool.
+    if audience == "patient":
+        return [*read_tools, present_card]
+    return [*read_tools, screen_medication, draft_prescription]

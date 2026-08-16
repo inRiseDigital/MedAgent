@@ -235,7 +235,11 @@ async def chat(
         if sources:  # citation chips (FR-3.4): resources the tools read
             yield _sse({"type": "data-citations", "data": sources})
         if proposals:  # write-intent drafts → sign-off cards (04 §2.2)
-            yield _sse({"type": "data-proposals", "data": proposals})
+            # Defence-in-depth: never forward a `block` verdict as a signable card,
+            # even if one somehow reached the sink (the tool no longer stages them).
+            safe = [p for p in proposals if p.get("verdict") != "block"]
+            if safe:
+                yield _sse({"type": "data-proposals", "data": safe})
         if cards:  # generative-UI summary cards (present_card) rendered by the client
             yield _sse({"type": "data-cards", "data": cards})
         yield _sse({"type": "finish"})

@@ -182,5 +182,7 @@ def build_agent(
             # agent does not need model-side reasoning traces.
             thinking={"type": "disabled"},
         )
-    tools = build_patient_tools(settings.fhir_base_url, patient_fhir_id, sources, proposals, cards)
+    tools = build_patient_tools(
+        settings.fhir_base_url, patient_fhir_id, sources, proposals, cards, audience=audience
+    )
     return create_react_agent(llm, tools, prompt=SystemMessage(content=system_prompt))
