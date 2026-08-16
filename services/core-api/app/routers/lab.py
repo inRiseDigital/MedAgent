@@ -27,12 +27,17 @@ from app.auth import Principal, require_user
 from app.config import Settings
 from app.deps import get_session, get_settings
 from app.fhir_client import FHIRClient
+from app.fhir.helpers import (
+    PHN_SYSTEM,
+    bearer as _bearer,
+    cc_text as _cc_text,
+    resolve_patient_id as _resolve_patient,
+)
 from app.models import AuditOutbox
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/lab", tags=["lab"])
 
-PHN_SYSTEM = "https://fhir.medagent.health.lk/id/phn"
 LAB_CATEGORY_CODE = "108252007"  # SNOMED "Laboratory procedure" (set by write-back)
 LAB_STATE_EXT = "https://fhir.medagent.health.lk/ext/lab-state"
 ACCESSION_SYSTEM = "https://fhir.medagent.health.lk/id/lab-accession"
@@ -82,21 +87,6 @@ def _classify(loinc: str | None, value: float) -> str:
     return "normal"
 
 
-def _bearer(request: Request) -> str | None:
-    h = request.headers.get("authorization", "")
-    return h[7:] if h.lower().startswith("bearer ") else None
-
-
-def _cc_text(cc: dict[str, Any] | None) -> str:
-    if not cc:
-        return ""
-    if cc.get("text"):
-        return cc["text"]
-    for c in cc.get("coding", []):
-        return c.get("display") or c.get("code") or ""
-    return ""
-
-
 def _is_lab(sr: dict[str, Any]) -> bool:
     return any(
         c.get("code") == LAB_CATEGORY_CODE
@@ -116,17 +106,6 @@ def _with_state(sr: dict[str, Any], state: str) -> dict[str, Any]:
     exts = [e for e in sr.get("extension", []) if e.get("url") != LAB_STATE_EXT]
     exts.append({"url": LAB_STATE_EXT, "valueString": state})
     return {**sr, "extension": exts}
-
-
-async def _resolve_patient(fhir: FHIRClient, ref: str) -> str | None:
-    if ref.isdigit():
-        rows = await fhir.search("Patient", {"identifier": f"{PHN_SYSTEM}|{ref}"})
-        if rows:
-            return str(rows[0]["id"])
-    try:
-        return str((await fhir.read("Patient", ref))["id"])
-    except Exception:  # noqa: BLE001
-        return None
 
 
 def _target_lab(sr: dict[str, Any]) -> str | None:

@@ -29,26 +29,18 @@ from app.auth import Principal, require_user
 from app.config import Settings
 from app.deps import get_redis, get_session, get_settings
 from app.fhir_client import FHIRClient
+from app.fhir.helpers import PHN_SYSTEM, resolve_pid as _resolve_pid
 from app.models import AuditOutbox
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/telemedicine", tags=["telemedicine"])
 
-PHN_SYSTEM = "https://fhir.medagent.health.lk/id/phn"
 VIRTUAL = "http://terminology.hl7.org/CodeSystem/v3-ActCode"  # code VR = virtual
 # Namespaced under `core:` to fit core-api's least-privilege Redis ACL grant
 # (infra/compose/redis/users.acl: core-api may access ~core:*).
 _JOIN_KEY = "core:tele:join:{token}"
 
 
-async def _resolve_pid(fhir: FHIRClient, phn: str) -> dict[str, Any] | None:
-    if not phn.isdigit():
-        try:
-            return await fhir.read("Patient", phn)
-        except Exception:  # noqa: BLE001
-            return None
-    rows = await fhir.search("Patient", {"identifier": f"{PHN_SYSTEM}|{phn}"})
-    return rows[0] if rows else None
 
 
 def _display(res: dict[str, Any]) -> str:

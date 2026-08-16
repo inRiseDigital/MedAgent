@@ -24,13 +24,13 @@ from app.auth import Principal, require_user
 from app.config import Settings
 from app.deps import get_redis, get_session, get_settings
 from app.fhir_client import FHIRClient
+from app.fhir.helpers import PHN_SYSTEM
 from app.models import AuditOutbox, PatientMPI
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/patients", tags=["consent"])
 
-PHN_SYSTEM = "https://fhir.medagent.health.lk/id/phn"
 CONSENT_CATEGORY_SYSTEM = "https://fhir.medagent.health.lk/cs/consent-category"
 
 

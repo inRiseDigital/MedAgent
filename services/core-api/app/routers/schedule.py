@@ -34,25 +34,15 @@ from app.deps import get_redis, get_session, get_settings
 from app.events import publish_user
 from app.fhir_client import FHIRClient
 from app.models import AuditOutbox
+from app.fhir.helpers import PHN_SYSTEM, resolve_pid as _resolve_pid
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/schedule", tags=["schedule"])
 
-PHN_SYSTEM = "https://fhir.medagent.health.lk/id/phn"
 FACILITY_TAG = "https://fhir.medagent.health.lk/cs/schedule-facility"
 SCHEDULE_ID = "https://fhir.medagent.health.lk/id/schedule"
 _URGENCY = {"asap": 1, "urgent": 2, "routine": 3}
 _URGENCY_LABEL = {1: "asap", 2: "urgent", 3: "routine"}
-
-
-async def _resolve_pid(fhir: FHIRClient, phn: str) -> dict[str, Any] | None:
-    if not phn.isdigit():
-        try:
-            return await fhir.read("Patient", phn)
-        except Exception:  # noqa: BLE001
-            return None
-    rows = await fhir.search("Patient", {"identifier": f"{PHN_SYSTEM}|{phn}"})
-    return rows[0] if rows else None
 
 
 def _facility_of(res: dict[str, Any]) -> str | None:

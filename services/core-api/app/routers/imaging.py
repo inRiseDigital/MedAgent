@@ -27,13 +27,13 @@ from app.auth import Principal, require_user
 from app.config import Settings
 from app.deps import get_session, get_settings
 from app.fhir_client import FHIRClient
+from app.fhir.helpers import PHN_SYSTEM, resolve_pid as _resolve_pid
 from app.models import AuditOutbox
 from app.routers.referrals import REFERRAL_CATEGORY_CODE, REFERRAL_FACILITY_SYSTEM
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/imaging", tags=["imaging"])
 
-PHN_SYSTEM = "https://fhir.medagent.health.lk/id/phn"
 IMAGING_CATEGORY_CODE = "363679005"  # SNOMED "Imaging" (set by the imaging write-back)
 TRIAGE_EXT = "https://fhir.medagent.health.lk/ext/imaging-triage"
 _CONFIDENCE_FLOOR = 0.50  # below this, force a radiologist review
@@ -55,16 +55,6 @@ _ROUTE = {
     "cxr": "Respiratory", "chest": "Respiratory",
     "abdomen": "General surgery", "spine": "Orthopaedics",
 }
-
-
-async def _resolve_pid(fhir: FHIRClient, phn: str) -> dict[str, Any] | None:
-    if not phn.isdigit():
-        try:
-            return await fhir.read("Patient", phn)
-        except Exception:  # noqa: BLE001
-            return None
-    rows = await fhir.search("Patient", {"identifier": f"{PHN_SYSTEM}|{phn}"})
-    return rows[0] if rows else None
 
 
 def _classify(findings: list[str], impression: str, min_confidence: float) -> tuple[str, list[str], bool]:

@@ -30,18 +30,7 @@ from app.events import publish_user
 from app.fhir_client import FHIRClient
 from app.models import AuditOutbox, PatientMPI
 from app.mpi import phn as phn_mod
-
-PHN_SYSTEM = "https://fhir.medagent.health.lk/id/phn"
-
-
-def _cc_text(cc: dict[str, Any] | None) -> str:
-    if not cc:
-        return ""
-    if cc.get("text"):
-        return cc["text"]
-    for c in cc.get("coding", []):
-        return c.get("display") or c.get("code") or ""
-    return ""
+from app.fhir.helpers import PHN_SYSTEM, cc_text as _cc_text, resolve_pid as _resolve_pid
 
 logger = logging.getLogger(__name__)
 
@@ -419,11 +408,6 @@ def _add_months(d: date, months: int) -> date:
     leap = y % 4 == 0 and (y % 100 != 0 or y % 400 == 0)
     last = [31, 29 if leap else 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][mo - 1]
     return date(y, mo, min(d.day, last))
-
-
-async def _resolve_pid(fhir: FHIRClient, phn: str) -> dict[str, Any] | None:
-    rows = await fhir.search("Patient", {"identifier": f"{PHN_SYSTEM}|{phn}"})
-    return rows[0] if rows else None
 
 
 async def _compute_immunizations(fhir: FHIRClient, patient: dict[str, Any]) -> dict[str, Any]:

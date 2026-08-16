@@ -28,13 +28,13 @@ from app.auth import Principal, require_user
 from app.config import Settings
 from app.deps import get_session, get_settings
 from app.fhir_client import FHIRClient
+from app.fhir.helpers import PHN_SYSTEM, resolve_pid as _resolve_pid
 from app.models import AuditOutbox
 from app.routers.referrals import REFERRAL_FACILITY_SYSTEM
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/registry", tags=["registry"])
 
-PHN_SYSTEM = "https://fhir.medagent.health.lk/id/phn"
 DISEASE_TAG = "https://fhir.medagent.health.lk/cs/notifiable-disease"
 REGISTRY_TAG = "https://fhir.medagent.health.lk/cs/registry"
 EPI_UNIT = "moh-epi-unit"  # surveillance inbox (via the referral Task machinery)
@@ -80,14 +80,6 @@ def classify_notifiable(icd10: str | None, text: str) -> tuple[str, str, bool] |
     return None
 
 
-async def _resolve_pid(fhir: FHIRClient, phn: str) -> dict[str, Any] | None:
-    if not phn.isdigit():
-        try:
-            return await fhir.read("Patient", phn)
-        except Exception:  # noqa: BLE001
-            return None
-    rows = await fhir.search("Patient", {"identifier": f"{PHN_SYSTEM}|{phn}"})
-    return rows[0] if rows else None
 
 
 class ReportRequest(BaseModel):

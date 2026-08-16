@@ -15,8 +15,7 @@ from app.auth import Principal, require_user
 from app.config import Settings
 from app.deps import get_settings
 from app.fhir_client import FHIRClient
-
-PHN_SYSTEM = "https://fhir.medagent.health.lk/id/phn"
+from app.fhir.helpers import PHN_SYSTEM
 
 internal_router = APIRouter(prefix="/internal/audit", tags=["audit-internal"])
 public_router = APIRouter(prefix="/audit", tags=["audit"])

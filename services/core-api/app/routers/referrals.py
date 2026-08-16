@@ -31,12 +31,12 @@ from app.auth import Principal, require_user
 from app.config import Settings
 from app.deps import get_session, get_settings
 from app.fhir_client import FHIRClient
+from app.fhir.helpers import PHN_SYSTEM
 from app.models import AuditOutbox
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/referrals", tags=["referrals"])
 
-PHN_SYSTEM = "https://fhir.medagent.health.lk/id/phn"
 REFERRAL_CATEGORY_CODE = "3457005"  # SNOMED "Patient referral"
 REFERRAL_FACILITY_SYSTEM = "https://fhir.medagent.health.lk/cs/referral-facility"
 

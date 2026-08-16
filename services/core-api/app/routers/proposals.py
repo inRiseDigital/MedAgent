@@ -22,13 +22,18 @@ from app.auth import Principal, require_user
 from app.config import Settings
 from app.deps import get_session, get_settings
 from app.fhir_client import FHIRClient
+from app.fhir.helpers import (
+    PHN_SYSTEM,
+    bearer as _bearer,
+    cc_text as _cc_text,
+    resolve_patient_id as _resolve_patient,
+)
 from app.models import AuditOutbox
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/proposals", tags=["write-back"])
 
-PHN_SYSTEM = "https://fhir.medagent.health.lk/id/phn"
 RX_VERDICT_EXT = "https://fhir.medagent.health.lk/ext/rx-safety-verdict"
 
 
@@ -38,33 +43,6 @@ class CommitRequest(BaseModel):
     encounter_id: str | None = None
     payload: dict[str, Any]
     override_reason: str | None = None  # required to commit a `warn` prescription
-
-
-def _bearer(request: Request) -> str | None:
-    h = request.headers.get("authorization", "")
-    return h[7:] if h.lower().startswith("bearer ") else None
-
-
-def _cc_text(cc: dict[str, Any] | None) -> str:
-    if not cc:
-        return ""
-    if cc.get("text"):
-        return cc["text"]
-    for c in cc.get("coding", []):
-        return c.get("display") or c.get("code") or ""
-    return ""
-
-
-async def _resolve_patient(fhir: FHIRClient, ref: str) -> str | None:
-    if ref.isdigit():
-        rows = await fhir.search("Patient", {"identifier": f"{PHN_SYSTEM}|{ref}"})
-        if rows:
-            return str(rows[0]["id"])
-    try:
-        p = await fhir.read("Patient", ref)
-        return str(p["id"])
-    except httpx.HTTPStatusError:
-        return None
 
 
 async def _screen_rx(
