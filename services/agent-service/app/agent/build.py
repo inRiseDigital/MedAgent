@@ -117,6 +117,60 @@ async def resolve_patient_fhir_id(fhir_base_url: str, patient_ref: str) -> str |
     return None
 
 
+def build_system_prompt(audience: str, locale: str, context_text: str = "") -> str:
+    """Persona prompt + reply-language directive + (optional) the pre-loaded cited
+    context. Shared by the ReAct agent and the direct-synthesis fast path."""
+    prompt = PROMPTS.get(audience, SYSTEM_PROMPT) + _language_directive(locale)
+    if context_text:
+        prompt += "\n\n" + context_text
+    return prompt
+
+
+def build_chat_llm(settings: Settings, streaming: bool = False) -> Any:
+    """Construct the configured chat model (stub / OpenAI-compatible / Anthropic).
+
+    `streaming` is OFF for the ReAct loop: some OpenAI-compatible providers (Groq)
+    emit streamed tool-call deltas that don't reconstruct in LangChain, truncating
+    the loop before the final answer — with it off, tool calls arrive complete and
+    chat.py emits the final answer via the "values" fallback. The tool-free direct
+    synthesis path turns streaming ON so its answer streams token by token.
+    """
+    if settings.agent_llm_mode == "stub":
+        from app.agent.stub import StubChatModel
+
+        return StubChatModel()
+    if settings.agent_llm_mode == "openai":
+        from langchain_openai import ChatOpenAI
+
+        return ChatOpenAI(
+            model=settings.llm_openai_model,
+            api_key=settings.llm_openai_api_key,
+            base_url=settings.llm_openai_base_url,
+            temperature=0,
+            max_tokens=settings.agent_max_tokens,
+            max_retries=settings.llm_max_retries,
+            request_timeout=settings.llm_timeout_seconds,
+            streaming=streaming,
+            # Reasoning models (Qwen, gpt-oss) otherwise emit their chain-of-thought
+            # inline as <think>…</think>; Groq's reasoning_format=hidden returns only
+            # the final answer. Passed via extra_body (a raw request-body field) —
+            # the OpenAI SDK rejects it as a top-level arg. Ignored by providers that
+            # don't know it.
+            extra_body={"reasoning_format": "hidden"},
+        )
+    # NOTE: newer Claude models reject `temperature`; determinism for the safety
+    # paths comes from the deterministic Rx engine (04 ADR AG-2), not temperature.
+    # ChatAnthropic streams via astream natively; no streaming flag needed.
+    return ChatAnthropic(
+        model=settings.anthropic_model,
+        api_key=settings.anthropic_api_key,
+        max_tokens=settings.agent_max_tokens,
+        max_retries=settings.llm_max_retries,
+        default_request_timeout=settings.llm_timeout_seconds,
+        thinking={"type": "disabled"},
+    )
+
+
 def build_agent(
     settings: Settings,
     patient_fhir_id: str,
@@ -133,55 +187,8 @@ def build_agent(
     directly to the patient/guardian in plain, reassuring language). `context_text`
     is a pre-loaded, cited snapshot of the record (grounding by construction) — it
     is appended to the system prompt so the agent starts from the chart."""
-    system_prompt = PROMPTS.get(audience, SYSTEM_PROMPT) + _language_directive(locale)
-    if context_text:
-        system_prompt += "\n\n" + context_text
-    # Offline/stub mode (backlog 0.3): deterministic model, no API calls — for CI
-    # load tests and demos when the provider is unavailable / quota-capped.
-    if settings.agent_llm_mode == "stub":
-        from app.agent.stub import StubChatModel
-
-        llm: Any = StubChatModel()
-    elif settings.agent_llm_mode == "openai":
-        # Any OpenAI-compatible provider (Groq / OpenRouter / Cerebras / Together).
-        # The model MUST support tool calling — this is a ReAct+tools agent. Used
-        # as a free fallback when the Anthropic quota is capped (04 ADR AG-2:
-        # safety determinism comes from the Rx engine, not the chat model, so a
-        # different narration model is acceptable).
-        from langchain_openai import ChatOpenAI
-
-        llm = ChatOpenAI(
-            model=settings.llm_openai_model,
-            api_key=settings.llm_openai_api_key,
-            base_url=settings.llm_openai_base_url,
-            temperature=0,
-            max_tokens=settings.agent_max_tokens,
-            max_retries=settings.llm_max_retries,
-            request_timeout=settings.llm_timeout_seconds,
-            # streaming OFF: some OpenAI-compatible providers (Groq) emit streamed
-            # tool-call deltas that don't reconstruct in LangChain, truncating the
-            # ReAct loop before the final answer. With streaming off the tool calls
-            # arrive complete; the chat SSE emits the final answer via the "values"
-            # fallback in routers/chat.py.
-            streaming=False,
-        )
-    else:
-        # NOTE: newer models (e.g. claude-sonnet-5) reject `temperature` — it is
-        # deprecated for them — so we do not pass it. Determinism for the
-        # safety-critical paths comes from the deterministic Rx engine (04 ADR AG-2),
-        # not model temperature.
-        llm = ChatAnthropic(
-            model=settings.anthropic_model,
-            api_key=settings.anthropic_api_key,
-            max_tokens=settings.agent_max_tokens,
-            max_retries=settings.llm_max_retries,
-            default_request_timeout=settings.llm_timeout_seconds,
-            # Extended thinking is disabled: with tool-calling round-trips the
-            # thinking blocks must be echoed back intact, which the LangChain
-            # adapter mishandles ("thinking.thinking: Field required"). The clinical
-            # agent does not need model-side reasoning traces.
-            thinking={"type": "disabled"},
-        )
+    system_prompt = build_system_prompt(audience, locale, context_text)
+    llm = build_chat_llm(settings)  # ReAct loop: streaming off (see build_chat_llm)
     tools = build_patient_tools(
         settings.fhir_base_url, patient_fhir_id, sources, proposals, cards, audience=audience
     )

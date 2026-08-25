@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 import uuid
 from collections.abc import AsyncIterator
 from typing import Annotated, Any
@@ -19,7 +20,12 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from app.agent.build import build_agent, resolve_patient_fhir_id
+from app.agent.build import (
+    build_agent,
+    build_chat_llm,
+    build_system_prompt,
+    resolve_patient_fhir_id,
+)
 from app.agent.context import build_patient_context
 from app.auth import Principal, require_user
 from app.config import Settings
@@ -88,6 +94,33 @@ def _to_agent_messages(messages: list[dict[str, Any]]) -> list[dict[str, str]]:
     return out
 
 
+_OVERVIEW_KW = (
+    "360", "full profile", "full picture", "complete profile", "complete picture",
+    "overview", "whole record", "entire record", "full record", "full summary",
+    "profile of this patient", "summarise this patient", "summarize this patient",
+    "everything about", "give me the full", "complete overview", "full clinical picture",
+)
+
+
+def _is_broad_overview(question: str) -> bool:
+    """A broad 'give me the whole picture' request — answered from the pre-loaded
+    cited context in one streamed pass, not by crawling every read tool."""
+    q = (question or "").lower()
+    return any(k in q for k in _OVERVIEW_KW)
+
+
+_SOURCE_RE = re.compile(r"\[source:\s*([A-Za-z]+)/([A-Za-z0-9._-]+)\]")
+
+
+def _context_citations(context_text: str) -> list[dict[str, str]]:
+    """Unique [source: Type/id] refs from the context, as citation chips."""
+    out: dict[str, dict[str, str]] = {}
+    for rt, rid in _SOURCE_RE.findall(context_text or ""):
+        ref = f"{rt}/{rid}"
+        out.setdefault(ref, {"ref": ref, "resource_type": rt, "id": rid})
+    return list(out.values())
+
+
 def _delta_text(chunk: Any) -> str:
     """Pull text from an AIMessageChunk whose content may be a str or a block list."""
     content = getattr(chunk, "content", "")
@@ -148,10 +181,6 @@ async def chat(
         context_text = await build_patient_context(
             settings.core_api_base_url, request.headers.get("authorization"), body.patient_id
         )
-        agent = build_agent(
-            settings, fhir_id, sources, proposals,
-            audience=body.audience, cards=cards, locale=body.locale, context_text=context_text,
-        )
 
         # State tracked across the run so we can GUARANTEE an answer floor: every
         # 200 stream must carry at least one text-delta. A tool-heavy request (e.g.
@@ -162,6 +191,55 @@ async def chat(
         final_answer = ""  # last non-empty AI message content (non-streaming providers)
         errored = False  # an error note was already emitted as the reply
         timed_out = False
+
+        # FAST PATH — a broad "overview / 360 / full profile" is synthesised directly
+        # from the pre-loaded, cited context in ONE streamed LLM call (no tool loop).
+        # A proper agent answers from what it already has; the read tools are for
+        # drilling into a specific domain, not for crawling all 14 on an overview.
+        # This is fast (~5-15s), streams token-by-token, and stays grounded/cited.
+        if context_text and _is_broad_overview(question):
+            try:
+                from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+
+                sys_prompt = build_system_prompt(body.audience, body.locale, context_text) + (
+                    "\n\nThe user asked for an overview / full profile. Write it ENTIRELY from the "
+                    "CURRENT PATIENT CONTEXT above — do NOT call or mention tools. Lead with any "
+                    "SAFETY FLAGS, then organise clearly into short sections/bullets, and reuse the "
+                    "[source: …] citations exactly as given. Be concise and clinical."
+                )
+                msgs: list[Any] = [SystemMessage(content=sys_prompt)]
+                for m in agent_messages:
+                    msgs.append(
+                        HumanMessage(content=m["content"]) if m["role"] == "user"
+                        else AIMessage(content=m["content"])
+                    )
+                llm = build_chat_llm(settings, streaming=True)
+                async with asyncio.timeout(settings.agent_run_timeout_seconds):
+                    async for chunk in llm.astream(msgs):
+                        delta = _delta_text(chunk)
+                        if delta:
+                            streamed = True
+                            yield _sse({"type": "text-delta", "id": text_id, "delta": delta})
+            except (TimeoutError, asyncio.TimeoutError):
+                timed_out = True
+                logger.warning("direct synthesis exceeded %ss", settings.agent_run_timeout_seconds)
+            except Exception:  # noqa: BLE001 — fall back to the full agent
+                logger.exception("direct synthesis failed; falling back to the ReAct agent")
+            # If any answer streamed, finish here — don't also run the tool loop.
+            if streamed:
+                cites = _context_citations(context_text)
+                if cites:
+                    yield _sse({"type": "data-citations", "data": cites})
+                yield _sse({"type": "text-end", "id": text_id})
+                yield _sse({"type": "finish"})
+                yield "data: [DONE]\n\n"
+                return
+            # nothing usable streamed → fall through to the ReAct agent below
+
+        agent = build_agent(
+            settings, fhir_id, sources, proposals,
+            audience=body.audience, cards=cards, locale=body.locale, context_text=context_text,
+        )
         try:
             # Provider-agnostic streaming. We ask for BOTH "messages" (token stream)
             # and "values" (full state per step). Anthropic streams the answer token
