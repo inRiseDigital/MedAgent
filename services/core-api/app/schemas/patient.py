@@ -102,3 +102,37 @@ class VitalSeries(BaseModel):
 
 class VitalTrends(BaseModel):
     series: list[VitalSeries]
+
+
+# --- child health development record (CHDR) --------------------------------
+class ChildDemographics(BaseModel):
+    phn: str
+    name: str
+    sex: str | None = None
+    birth_date: str | None = None
+    age_months: float | None = None
+
+
+class GrowthPoint(BaseModel):
+    date: str
+    age_months: float | None = None
+    kind: str
+    value: float
+    flags: list[str]
+
+
+class GrowthHistory(BaseModel):
+    latest_flags: list[str]
+    points: list[GrowthPoint]
+
+
+class ChildAlert(BaseModel):
+    severity: str
+    text: str
+
+
+class ChildHealthRecord(BaseModel):
+    child: ChildDemographics
+    immunizations: ImmunizationSchedule
+    growth: GrowthHistory
+    alerts: list[ChildAlert]

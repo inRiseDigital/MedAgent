@@ -42,6 +42,7 @@ from app.clinical.paediatrics import (
     _compute_immunizations,
 )
 from app.schemas.patient import (
+    ChildHealthRecord,
     ImmunizationSchedule,
     PatientBrief,
     PatientSummary,
@@ -649,7 +650,7 @@ async def growth(
         await fhir.close()
 
 
-@router.get("/{phn}/chdr")
+@router.get("/{phn}/chdr", response_model=ChildHealthRecord)
 async def child_health_record(
     phn: str,
     principal: Annotated[Principal, Depends(require_user)],
