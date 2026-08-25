@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -18,10 +19,40 @@ from app.telemetry import configure_telemetry
 
 API_V1_PREFIX = "/api/v1"
 
+logger = logging.getLogger("agent-service")
+
 
 def _plain_dsn(url: str) -> str:
     """Normalise SQLAlchemy-style DSNs (postgresql+asyncpg://) for asyncpg."""
     return url.replace("postgresql+asyncpg://", "postgresql://", 1)
+
+
+def _verify_model_config(settings: Settings) -> None:
+    """Startup model-pin check (04 §4). NON-FATAL by design — an LLM outage must
+    never stop the service (readyz stays up; chat degrades to the graceful floor).
+    Surfaces a misconfiguration (unknown mode, missing key, unpinned model) as a
+    clear boot-time log so it is caught before it silently degrades every turn."""
+    mode = settings.agent_llm_mode
+    if mode == "live":
+        if not settings.anthropic_model:
+            logger.error("model-pin: agent_llm_mode=live but anthropic_model is empty (unpinned)")
+        elif not settings.anthropic_api_key:
+            logger.warning(
+                "model-pin: live mode with no ANTHROPIC_API_KEY — chat degrades to the "
+                "graceful fallback until a key is provided")
+        else:
+            logger.info("model-pin: live mode, pinned model=%s temp=%s",
+                        settings.anthropic_model, settings.anthropic_temperature)
+    elif mode == "openai":
+        if not settings.llm_openai_api_key:
+            logger.warning("model-pin: openai mode with no llm_openai_api_key — chat degrades")
+        else:
+            logger.info("model-pin: openai-compatible mode, model=%s base=%s",
+                        settings.llm_openai_model, settings.llm_openai_base_url)
+    elif mode == "stub":
+        logger.info("model-pin: stub mode (deterministic offline model, no API calls)")
+    else:
+        logger.error("model-pin: unknown agent_llm_mode=%r (expected live|openai|stub)", mode)
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -35,9 +66,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             settings.keycloak_internal_url or settings.keycloak_issuer,
             settings.jwks_cache_ttl_seconds,
         )
+        _verify_model_config(settings)
         # TODO(S3): LangGraph Postgres checkpointer over app_db (tables created
-        # via Alembic in core-api's tree, 10 §9 rule 4) + Anthropic client with
-        # the pinned model verified at startup (04 §4).
+        # via Alembic in core-api's tree, 10 §9 rule 4).
         try:
             yield
         finally:
