@@ -41,6 +41,12 @@ from app.clinical.paediatrics import (
     _compute_growth,
     _compute_immunizations,
 )
+from app.schemas.patient import (
+    ImmunizationSchedule,
+    PatientBrief,
+    PatientSummary,
+    VitalTrends,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -319,7 +325,7 @@ async def _load_summary(fhir: FHIRClient, phn: str) -> tuple[dict[str, Any], str
     return summary, pid
 
 
-@router.get("/{phn}/summary")
+@router.get("/{phn}/summary", response_model=PatientSummary)
 async def patient_summary(
     phn: str,
     principal: Annotated[Principal, Depends(require_user)],
@@ -336,7 +342,7 @@ async def patient_summary(
         await fhir.close()
 
 
-@router.get("/{phn}/brief")
+@router.get("/{phn}/brief", response_model=PatientBrief)
 async def patient_brief(
     phn: str,
     request: Request,
@@ -466,7 +472,7 @@ async def request_refill(
         await fhir.close()
 
 
-@router.get("/{phn}/vitals/trends")
+@router.get("/{phn}/vitals/trends", response_model=VitalTrends)
 async def vital_trends(
     phn: str,
     principal: Annotated[Principal, Depends(require_user)],
@@ -503,7 +509,7 @@ async def vital_trends(
         await fhir.close()
 
 
-@router.get("/{phn}/immunizations")
+@router.get("/{phn}/immunizations", response_model=ImmunizationSchedule)
 async def immunizations(
     phn: str,
     principal: Annotated[Principal, Depends(require_user)],
