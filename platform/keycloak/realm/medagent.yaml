@@ -330,6 +330,33 @@ clients:
     # TODO(S2): service-account role mapping -> realm administration scope.
 
 # =============================================================================
+# IDENTITY PROVIDERS — social / brokered login ("Sign in with Google").
+# Credentials come from a Google Cloud OAuth 2.0 "Web application" client.
+# Register this EXACT authorized redirect URI on that Google client:
+#   https://localhost/auth/realms/medagent/broker/google/endpoint
+# Values are env-substituted at apply time (never committed). Leaving
+# GOOGLE_CLIENT_ID blank simply yields a non-functional button — set both to
+# enable it. Brokered users import with trustEmail; assign a clinical role
+# afterwards (they land with the realm default role only).
+# =============================================================================
+identityProviders:
+  - alias: google
+    displayName: Google
+    providerId: google
+    enabled: true
+    trustEmail: true
+    storeToken: false
+    addReadTokenRoleOnCreate: false
+    linkOnly: false
+    firstBrokerLoginFlowAlias: "first broker login"
+    config:
+      clientId: "$(env:GOOGLE_CLIENT_ID)"
+      clientSecret: "$(env:GOOGLE_CLIENT_SECRET)"
+      defaultScope: "openid profile email"
+      syncMode: IMPORT
+      useJwksUrl: "true"
+
+# =============================================================================
 # AUTHENTICATION FLOWS (02 §4 MFA, §5 step-up ACR/LoA) — S1 SKELETON
 # Browser flow: cookie / IdP-redirect / forms(username+password -> conditional
 # staff TOTP -> conditional LoA2 fresh-OTP subflow, Max Age 300 s).

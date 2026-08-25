@@ -395,6 +395,10 @@ services:
       KC_AGENT_SERVICE_CLIENT_SECRET: ${KC_AGENT_SERVICE_CLIENT_SECRET:-dev-agent-secret}
       KC_KIOSK_DEVICE_CLIENT_SECRET: ${KC_KIOSK_DEVICE_CLIENT_SECRET:-dev-kiosk-secret}
       KC_CONFIG_CLI_CLIENT_SECRET: ${KC_CONFIG_CLI_CLIENT_SECRET:-dev-config-cli-secret}
+      # "Sign in with Google" — a Google Cloud OAuth 2.0 Web client's id/secret.
+      # Blank by default (button appears but is non-functional); set both to enable.
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
     depends_on:
       keycloak:
         condition: service_healthy
