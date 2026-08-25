@@ -9,7 +9,23 @@
  */
 import "server-only";
 
+import type { components } from "@medagent/ts-sdk/generated/core-api";
+
 import { getAccessToken } from "@/lib/session-store";
+
+// Single source of truth for response shapes: the OpenAPI-generated schemas
+// (A3). Hand-maintained interfaces below are only for endpoints that still
+// return an untyped body (queue, MPI search, audit log).
+//
+// The generated schemas type Python `Optional[X]` as `X | null`; the UI treats
+// an absent value as `undefined`, so strip null→undefined at this boundary so
+// the adopted types match how components consume them (no null-handling churn).
+type DeepNullToUndef<T> = T extends (infer U)[]
+  ? DeepNullToUndef<U>[]
+  : T extends object
+    ? { [K in keyof T]: DeepNullToUndef<Exclude<T[K], null>> }
+    : T;
+type S = DeepNullToUndef<components["schemas"]>;
 
 export class ApiError extends Error {
   constructor(
@@ -91,15 +107,7 @@ export async function searchPatients(params: {
   return coreApiGet<PatientSearchResult[]>(`/api/v1/patients?${q.toString()}`);
 }
 
-export interface PatientSummary {
-  patient: { phn: string; name: string; gender?: string; birthDate?: string };
-  problems: { text: string; ref: string }[];
-  medications: { text: string; ref: string }[];
-  allergies: { text: string; criticality: string; ref: string }[];
-  vitals: { text: string; value?: number; unit?: string; when?: string }[];
-  appointments: { start?: string; status?: string }[];
-  results: { text: string; conclusion?: string; critical: boolean; ref: string }[];
-}
+export type PatientSummary = S["PatientSummary"];
 
 export interface AccessLogEntry {
   recorded?: string;
@@ -113,59 +121,25 @@ export async function fetchPatientSummary(phn: string): Promise<PatientSummary> 
   return coreApiGet<PatientSummary>(`/api/v1/patients/${encodeURIComponent(phn)}/summary`);
 }
 
-export interface ImmunizationRow {
-  key: string;
-  name: string;
-  due: string | null;
-  status: "given" | "overdue" | "due-soon" | "upcoming" | "unknown" | string;
-  given_on?: string | null;
-}
-export interface ImmunizationSchedule {
-  schedule: ImmunizationRow[];
-  overdue: number;
-}
+export type ImmunizationRow = S["ImmunizationRow"];
+export type ImmunizationSchedule = S["ImmunizationSchedule"];
 export async function fetchImmunizations(phn: string): Promise<ImmunizationSchedule> {
   return coreApiGet<ImmunizationSchedule>(`/api/v1/patients/${encodeURIComponent(phn)}/immunizations`);
 }
 
-export interface VitalSeries {
-  name: string;
-  unit?: string;
-  points: { value: number; when?: string }[];
-}
+export type VitalSeries = S["VitalSeries"];
 export async function fetchVitalTrends(phn: string): Promise<{ series: VitalSeries[] }> {
   return coreApiGet<{ series: VitalSeries[] }>(`/api/v1/patients/${encodeURIComponent(phn)}/vitals/trends`);
 }
 
-export interface SafetyFlag {
-  severity: "block" | "warn" | string;
-  kind: "allergy" | "medication" | "lab" | string;
-  text: string;
-  code?: string;
-  cite?: string;
-}
-export interface PatientBrief {
-  headline: string;
-  problems: string[];
-  flags: SafetyFlag[];
-}
+export type SafetyFlag = S["SafetyFlag"];
+export type PatientBrief = S["PatientBrief"];
 
 export async function fetchPatientBrief(phn: string): Promise<PatientBrief> {
   return coreApiGet<PatientBrief>(`/api/v1/patients/${encodeURIComponent(phn)}/brief`);
 }
 
-export interface ChildHealthRecord {
-  child: { phn: string; name: string; sex?: string; birth_date?: string; age_months?: number };
-  immunizations: {
-    overdue: number;
-    schedule: { key: string; name: string; due?: string; status: string; given_on?: string | null }[];
-  };
-  growth: {
-    latest_flags: string[];
-    points: { date: string; age_months?: number; kind: "weight" | "height"; value: number; flags: string[] }[];
-  };
-  alerts: { severity: "block" | "warn" | string; text: string }[];
-}
+export type ChildHealthRecord = S["ChildHealthRecord"];
 
 export async function fetchChildHealth(phn: string): Promise<ChildHealthRecord> {
   return coreApiGet<ChildHealthRecord>(`/api/v1/patients/${encodeURIComponent(phn)}/chdr`);
@@ -178,64 +152,19 @@ export async function fetchAccessLog(phn: string): Promise<AccessLogEntry[]> {
 }
 
 // --- National analytics (FR-12) ---
-export interface AnalyticsOverview {
-  as_of: string;
-  patients_registered: number;
-  lab_reports: number;
-  imaging_studies: number;
-  immunizations: number;
-  referrals_open: number;
-  appointments: number;
-  notifiable_cases: number;
-  notifiable_by_disease: Record<string, number>;
-}
-export interface OutbreakSignal {
-  disease: string;
-  cases: number;
-  watch_at: number;
-  alert_at: number;
-  signal: "alert" | "watch" | "none";
-}
-export interface OutbreakView {
-  as_of: string;
-  any_alert: boolean;
-  signals: OutbreakSignal[];
-}
-export interface CapacityRow {
-  facility: string;
-  waitlist: number;
-  free_slots: number;
-  open_referrals: number;
-}
-export interface CapacityView {
-  as_of: string;
-  totals: { waitlist: number; free_slots: number; open_referrals: number };
-  by_facility: CapacityRow[];
-}
+export type AnalyticsOverview = S["AnalyticsOverview"];
+export type OutbreakSignal = S["OutbreakSignal"];
+export type OutbreakView = S["OutbreakView"];
+export type CapacityRow = S["CapacityRow"];
+export type CapacityView = S["CapacityView"];
 
 export async function fetchAnalyticsOverview(): Promise<AnalyticsOverview> {
   return coreApiGet<AnalyticsOverview>(`/api/v1/analytics/overview`);
 }
 
 // --- Referrals (FR-9) ---
-export interface ReferralItem {
-  task_id: string;
-  referral_ref?: string;
-  patient_ref?: string;
-  patient_name?: string;
-  to_facility?: string;
-  specialty?: string;
-  reason?: string;
-  priority?: string;
-  status?: string;
-  requested_by?: string;
-  authored_on?: string;
-}
-export interface ReferralInbox {
-  facility: string;
-  count: number;
-  items: ReferralItem[];
-}
+export type ReferralItem = S["ReferralItem"];
+export type ReferralInbox = S["ReferralInbox"];
 export async function fetchReferralInbox(facility: string, includeClosed = false): Promise<ReferralInbox> {
   const q = new URLSearchParams({ facility });
   if (includeClosed) q.set("include_closed", "true");
@@ -243,34 +172,14 @@ export async function fetchReferralInbox(facility: string, includeClosed = false
 }
 
 // --- Imaging (FR-10) ---
-export interface ImagingReport {
-  ref: string;
-  code?: string;
-  conclusion?: string;
-  issued?: string;
-  flag?: "urgent" | "abnormal" | "normal" | string;
-  needs_review?: boolean;
-  matched?: string;
-}
-export interface ImagingReports {
-  patient: string;
-  count: number;
-  reports: ImagingReport[];
-}
+export type ImagingReports = S["ImagingReports"];
+export type ImagingReport = ImagingReports["reports"][number];
 export async function fetchImagingReports(phn: string): Promise<ImagingReports> {
   return coreApiGet<ImagingReports>(`/api/v1/imaging/reports?patient=${encodeURIComponent(phn)}`);
 }
 
 // --- Lab results (FR-8) ---
-export interface LabReport {
-  id: string;
-  test?: string;
-  conclusion?: string;
-  value?: number;
-  unit?: string;
-  critical: boolean;
-  issued?: string;
-}
+export type LabReport = S["LabReport"];
 export async function fetchLabReports(phn: string): Promise<LabReport[]> {
   return coreApiGet<LabReport[]>(`/api/v1/lab/reports?patient=${encodeURIComponent(phn)}`);
 }
