@@ -356,6 +356,23 @@ identityProviders:
       syncMode: IMPORT
       useJwksUrl: "true"
 
+# Grant every Google sign-in both app roles (FORCE = re-applied on each login),
+# so a brokered account can use the doctor workspace and the patient portal.
+# Narrow this to a single role, or drop it, to change what Google users can do.
+identityProviderMappers:
+  - name: grant-doctor
+    identityProviderAlias: google
+    identityProviderMapper: oidc-hardcoded-role-idp-mapper
+    config:
+      role: doctor
+      syncMode: FORCE
+  - name: grant-patient
+    identityProviderAlias: google
+    identityProviderMapper: oidc-hardcoded-role-idp-mapper
+    config:
+      role: patient
+      syncMode: FORCE
+
 # =============================================================================
 # AUTHENTICATION FLOWS (02 §4 MFA, §5 step-up ACR/LoA) — S1 SKELETON
 # Browser flow: cookie / IdP-redirect / forms(username+password -> conditional
