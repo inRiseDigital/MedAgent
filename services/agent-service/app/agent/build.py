@@ -179,6 +179,7 @@ def build_agent(
     audience: str = "clinician",
     cards: list[dict[str, Any]] | None = None,
     widgets: list[dict[str, Any]] | None = None,
+    remember_fn: Any = None,
     locale: str = "en",
     context_text: str = "",
 ) -> CompiledStateGraph:
@@ -191,6 +192,7 @@ def build_agent(
     system_prompt = build_system_prompt(audience, locale, context_text)
     llm = build_chat_llm(settings)  # ReAct loop: streaming off (see build_chat_llm)
     tools = build_patient_tools(
-        settings.fhir_base_url, patient_fhir_id, sources, proposals, cards, widgets, audience=audience
+        settings.fhir_base_url, patient_fhir_id, sources, proposals, cards, widgets,
+        remember_fn=remember_fn, audience=audience,
     )
     return create_react_agent(llm, tools, prompt=SystemMessage(content=system_prompt))

@@ -27,6 +27,9 @@ from app.agent.build import (
     resolve_patient_fhir_id,
 )
 from app.agent.context import build_patient_context
+from app.agent.memory import recall as recall_memory
+from app.agent.memory import remember as remember_memory
+from app.agent.memory import render_memory_block
 from app.auth import Principal, require_user
 from app.config import Settings
 
@@ -45,6 +48,8 @@ class ChatRequest(BaseModel):
     audience: str = "clinician"
     # UI locale: the assistant replies in this language (en | si | ta).
     locale: str = "en"
+    # Stable id for this conversation thread (memory scoping; future resume).
+    conversation_id: str | None = None
 
 
 def _sse(payload: dict[str, Any]) -> str:
@@ -222,6 +227,16 @@ async def chat(
             settings.core_api_base_url, request.headers.get("authorization"), body.patient_id
         )
 
+        # Long-term memory (P2): recall durable preferences/context for this record
+        # and inject them; the agent persists new ones via the `remember` tool.
+        _redis = getattr(request.app.state, "redis", None)
+        _mem = render_memory_block(await recall_memory(_redis, body.patient_id))
+        if _mem:
+            context_text = (context_text + "\n\n" + _mem) if context_text else _mem
+
+        async def _remember(note: str) -> bool:
+            return await remember_memory(_redis, body.patient_id, note)
+
         # State tracked across the run so we can GUARANTEE an answer floor: every
         # 200 stream must carry at least one text-delta. A tool-heavy request (e.g.
         # "give me a full 360 profile") can otherwise finish with an empty final
@@ -285,7 +300,7 @@ async def chat(
         agent = build_agent(
             settings, fhir_id, sources, proposals,
             audience=body.audience, cards=cards, widgets=widgets,
-            locale=body.locale, context_text=context_text,
+            remember_fn=_remember, locale=body.locale, context_text=context_text,
         )
         try:
             # Provider-agnostic streaming. We ask for BOTH "messages" (token stream)

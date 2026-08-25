@@ -105,6 +105,7 @@ def build_patient_tools(
     proposals: list[dict[str, Any]] | None = None,
     cards: list[dict[str, Any]] | None = None,
     widgets: list[dict[str, Any]] | None = None,
+    remember_fn: Any = None,
     audience: str = "clinician",
 ) -> list[BaseTool]:
     """Build the read + screening tool belt for one patient, PERSONA-SCOPED.
@@ -443,6 +444,18 @@ def build_patient_tools(
         widget_sink.append({"id": f"w_{len(widget_sink)}", "kind": k, "title": title.strip()[:120], "data": data})
         return f"Rendered a {k} widget in the chat. Now continue your written reply."
 
+    @tool
+    async def remember(note: str) -> str:
+        """Remember a short PREFERENCE or recurring context about this person for next
+        time — e.g. "prefers simple, plain-language explanations", "usually asks in
+        Sinhala", "anxious about needles", "following up on weight". NOT for clinical
+        facts (those come from the record and are cited). Use it when the user states
+        a preference or you learn something durable about how best to help them."""
+        if remember_fn is None:
+            return "Noted."
+        ok = await remember_fn(note)
+        return "I'll remember that for next time." if ok else "Noted."
+
     read_tools: list[BaseTool] = [
         get_patient_summary,
         get_record_overview,
@@ -463,5 +476,5 @@ def build_patient_tools(
     # tools; clinicians never receive the patient-facing summary-card tool. Both
     # get render_widget (a display tool — no write side effects).
     if audience == "patient":
-        return [*read_tools, present_card, render_widget]
-    return [*read_tools, screen_medication, draft_prescription, render_widget]
+        return [*read_tools, present_card, render_widget, remember]
+    return [*read_tools, screen_medication, draft_prescription, render_widget, remember]
