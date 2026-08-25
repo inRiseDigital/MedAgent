@@ -26,6 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import Principal, require_user
 from app.config import Settings
+from app.schemas.analytics import AnalyticsOverview, CapacityView, OutbreakView
 from app.deps import get_session, get_settings
 from app.fhir_client import FHIRClient
 from app.models import PatientMPI
@@ -70,7 +71,7 @@ async def _notifiable_counts(fhir: FHIRClient) -> Counter[str]:
     return counts
 
 
-@router.get("/overview")
+@router.get("/overview", response_model=AnalyticsOverview)
 async def overview(
     principal: Annotated[Principal, Depends(require_user)],
     session: Annotated[AsyncSession, Depends(get_session)],
@@ -96,7 +97,7 @@ async def overview(
         await fhir.close()
 
 
-@router.get("/outbreak")
+@router.get("/outbreak", response_model=OutbreakView)
 async def outbreak(
     principal: Annotated[Principal, Depends(require_user)],
     settings: Annotated[Settings, Depends(get_settings)],
@@ -120,7 +121,7 @@ async def outbreak(
         await fhir.close()
 
 
-@router.get("/capacity")
+@router.get("/capacity", response_model=CapacityView)
 async def capacity(
     principal: Annotated[Principal, Depends(require_user)],
     settings: Annotated[Settings, Depends(get_settings)],

@@ -32,6 +32,7 @@ from app.config import Settings
 from app.deps import get_session, get_settings
 from app.fhir_client import FHIRClient
 from app.fhir.helpers import PHN_SYSTEM
+from app.schemas.clinical import ReferralInbox
 from app.models import AuditOutbox
 
 logger = logging.getLogger(__name__)
@@ -171,7 +172,7 @@ async def create_referral(
         await fhir.close()
 
 
-@router.get("/inbox")
+@router.get("/inbox", response_model=ReferralInbox)
 async def inbox(
     principal: Annotated[Principal, Depends(require_user)],
     settings: Annotated[Settings, Depends(get_settings)],

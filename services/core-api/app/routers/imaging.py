@@ -28,6 +28,7 @@ from app.config import Settings
 from app.deps import get_session, get_settings
 from app.fhir_client import FHIRClient
 from app.fhir.helpers import PHN_SYSTEM, resolve_pid as _resolve_pid
+from app.schemas.clinical import ImagingReports
 from app.models import AuditOutbox
 from app.routers.referrals import REFERRAL_CATEGORY_CODE, REFERRAL_FACILITY_SYSTEM
 
@@ -199,7 +200,7 @@ def _triage_of(report: dict[str, Any]) -> dict[str, Any]:
     return {}
 
 
-@router.get("/reports")
+@router.get("/reports", response_model=ImagingReports)
 async def imaging_reports(
     principal: Annotated[Principal, Depends(require_user)],
     settings: Annotated[Settings, Depends(get_settings)],
