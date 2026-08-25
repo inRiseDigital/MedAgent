@@ -10,8 +10,14 @@ import logging
 from typing import Any
 
 from app.graph.state import AgentState, SafetyVerdict, assert_context_stamp
+from app.rxsafety import screen as rx_screen
 
 logger = logging.getLogger(__name__)
+
+# Intent keywords — a fast deterministic classifier; an LLM refinement can layer
+# on later, but the safety-relevant routing must never depend on a model.
+_WRITE_KW = ("prescribe", "start ", "give ", "order ", "draft", "rx ", "put her on", "put him on")
+_SCHED_KW = ("book", "appointment", "schedule", "refer ", "referral", "follow-up")
 
 
 def ingress(state: AgentState) -> dict[str, Any]:
@@ -25,12 +31,22 @@ def ingress(state: AgentState) -> dict[str, Any]:
 
 
 def classify_intent(state: AgentState) -> dict[str, Any]:
-    """Intent classifier stub — routes question | write | schedule.
+    """Deterministic intent classifier — routes question | write | schedule.
 
-    S1: everything is a `question`. TODO(S3): LLM/structured classification.
+    Keyword-based so routing (and therefore which safety path a turn takes) never
+    depends on a model. `write` (prescribe/order a medication) is routed through
+    the mandatory Rx-safety gate; everything else is a read `question`.
     """
     assert_context_stamp(state)
-    return {"intent": "question"}
+    msgs = state.get("messages", [])
+    last = (msgs[-1]["content"] if msgs else "").lower()
+    if any(k in last for k in _WRITE_KW):
+        intent = "write"
+    elif any(k in last for k in _SCHED_KW):
+        intent = "schedule"
+    else:
+        intent = "question"
+    return {"intent": intent}
 
 
 def summary_agent(state: AgentState) -> dict[str, Any]:
@@ -50,21 +66,34 @@ def summary_agent(state: AgentState) -> dict[str, Any]:
 
 
 def rx_safety_gate(state: AgentState) -> dict[str, Any]:
-    """Rx-safety gate stub (agents/03) — MANDATORY on the write path.
+    """Rx-safety gate (agents/03) — MANDATORY on the write path, FAIL-CLOSED.
 
-    The graph topology guarantees every MedicationRequest proposal passes
-    through this node (safety is topology, not prompt instructions). S1
-    returns a placeholder `pass` verdict with the real schema; the
-    deterministic DDI/allergy engine lands in S4. NOTE: once real, absence of
-    the DDI dataset must BLOCK proposals entirely (fail closed, 04 §7).
+    The graph topology guarantees every MedicationRequest proposal passes through
+    this node (safety is topology, not prompt instructions), and a `block` verdict
+    is routed straight to END — it can never reach the sign-off interrupt. The
+    verdict is computed by the deterministic DDI/allergy engine; if there is no
+    drug to screen or the engine raises, we BLOCK (absence of a clean verdict is
+    never a pass — 04 §7).
     """
     assert_context_stamp(state)
-    verdict = SafetyVerdict(
-        verdict="pass",
-        codes=[],
-        rationale="S1 placeholder verdict — deterministic DDI/allergy engine lands in S4.",
-    )
-    return {"safety": verdict}
+    proposal = state.get("proposal") or {}
+    drug = proposal.get("drug")
+    if not drug:
+        return {"safety": SafetyVerdict(
+            verdict="block", codes=["NO_DRUG"],
+            rationale="No drug on the proposal to screen — blocked (fail closed).")}
+    active_meds = [str(m) for m in proposal.get("active_meds", [])]
+    allergies = proposal.get("allergies", [])
+    try:
+        v = rx_screen(drug, active_meds, allergies)
+    except Exception as exc:  # noqa: BLE001 — engine failure must fail closed
+        logger.exception("rx-safety engine failed; blocking proposal")
+        return {"safety": SafetyVerdict(
+            verdict="block", codes=["ENGINE_UNAVAILABLE"],
+            rationale=f"Rx-safety engine unavailable — blocked (fail closed): {exc}")}
+    rationale = "; ".join(f.get("rationale", "") for f in v.findings) or \
+        "No interaction, allergy or dose issue detected by the deterministic engine."
+    return {"safety": SafetyVerdict(verdict=v.verdict, codes=list(v.codes), rationale=rationale)}
 
 
 def human_interrupt(state: AgentState) -> dict[str, Any]:

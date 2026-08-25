@@ -40,6 +40,16 @@ def _route_intent(state: AgentState) -> str:
     return END
 
 
+def _route_safety(state: AgentState) -> str:
+    """A `block` verdict NEVER reaches the sign-off interrupt — it is a hard stop
+    routed straight to END. Only pass/warn proposals can be presented for signing.
+    This makes "a blocked drug cannot be signed" a property of the topology."""
+    safety = state.get("safety")
+    if safety is not None and safety.verdict == "block":
+        return END
+    return "interrupt"
+
+
 def build_graph() -> Any:
     """Compile the S1 orchestrator graph."""
     graph: StateGraph[AgentState] = StateGraph(AgentState)
@@ -58,9 +68,14 @@ def build_graph() -> Any:
         {"summary": "summary", "rx_safety": "rx_safety", END: END},
     )
     graph.add_edge("summary", END)
-    # No conditional bypass: every write proposal crosses the safety gate
-    # before the sign-off interrupt.
-    graph.add_edge("rx_safety", "interrupt")
+    # No conditional bypass: every write proposal crosses the safety gate first,
+    # and a `block` verdict is routed to END — only pass/warn reach the sign-off
+    # interrupt. Safety is topology, not prompt instructions.
+    graph.add_conditional_edges(
+        "rx_safety",
+        _route_safety,
+        {"interrupt": "interrupt", END: END},
+    )
     graph.add_edge("interrupt", END)
 
     return graph.compile()
