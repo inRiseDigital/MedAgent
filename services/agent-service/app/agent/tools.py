@@ -456,6 +456,23 @@ def build_patient_tools(
         ok = await remember_fn(note)
         return "I'll remember that for next time." if ok else "Noted."
 
+    @tool
+    async def web_search(query: str) -> str:
+        """Search the WEB for GENERAL medical knowledge, clinical guidelines, or drug
+        information that is NOT in this patient's record — e.g. "metformin dosing in
+        CKD", "first-line therapy for hypertension", "is amoxicillin safe in
+        pregnancy". Use it to add up-to-date, sourced general context; NEVER use it
+        for this patient's own facts (those come from the record via the read tools).
+        Summarise the results and LABEL them [web: source]; never cite web content
+        with [source: …] (that form is only for the patient's record)."""
+        from app.agent.websearch import web_search as _search
+        results = await _search(query)
+        if not results:
+            return "No web results (search unavailable right now)."
+        lines = [f"- {r['title']}: {r['snippet']} [web: {r['url']}]" for r in results]
+        return ("Web results (GENERAL knowledge — not this patient's record; label as "
+                "[web: …], never [source: …]):\n" + "\n".join(lines))
+
     read_tools: list[BaseTool] = [
         get_patient_summary,
         get_record_overview,
@@ -476,5 +493,5 @@ def build_patient_tools(
     # tools; clinicians never receive the patient-facing summary-card tool. Both
     # get render_widget (a display tool — no write side effects).
     if audience == "patient":
-        return [*read_tools, present_card, render_widget, remember]
-    return [*read_tools, screen_medication, draft_prescription, render_widget, remember]
+        return [*read_tools, present_card, render_widget, remember, web_search]
+    return [*read_tools, screen_medication, draft_prescription, render_widget, remember, web_search]
