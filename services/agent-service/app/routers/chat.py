@@ -121,6 +121,45 @@ def _context_citations(context_text: str) -> list[dict[str, str]]:
     return list(out.values())
 
 
+def _context_widgets(context_text: str) -> list[dict[str, Any]]:
+    """Deterministically derive generative-UI widgets from the grounded context
+    block (used on the tool-free fast path, where the model can't call
+    render_widget): a safety-alert from the SAFETY FLAGS line and record-links
+    from problems/medications/allergies."""
+    lines = [ln.strip().lstrip("-").strip() for ln in (context_text or "").splitlines()]
+    out: list[dict[str, Any]] = []
+
+    def _section(label: str) -> str | None:
+        for s in lines:
+            if s.lower().startswith(label.lower()):
+                return s[len(label):].lstrip(": ").rstrip(".")
+        return None
+
+    flags = _section("SAFETY FLAGS (deterministic)")
+    if flags:
+        items = [f.strip() for f in flags.split(";") if f.strip()]
+        if items:
+            sev = "block" if any(("high-risk" in i.lower() or "critical" in i.lower()) for i in items) else "warn"
+            out.append({"id": "w_ctx_flags", "kind": "safety-alert", "title": "Safety flags",
+                        "data": {"severity": sev, "items": items}})
+
+    links: list[dict[str, str]] = []
+    for label in ("Active problems", "Active medications", "Allergies"):
+        sec = _section(label)
+        if not sec:
+            continue
+        for item in sec.split(";"):
+            m = _SOURCE_RE.search(item)
+            if m:
+                text = _SOURCE_RE.sub("", item).strip().rstrip(" .")
+                if text:
+                    links.append({"label": text[:80], "ref": f"{m.group(1)}/{m.group(2)}"})
+    if links:
+        out.append({"id": "w_ctx_links", "kind": "record-links", "title": "In your record",
+                    "data": {"items": links[:12]}})
+    return out
+
+
 def _delta_text(chunk: Any) -> str:
     """Pull text from an AIMessageChunk whose content may be a str or a block list."""
     content = getattr(chunk, "content", "")
@@ -176,6 +215,7 @@ async def chat(
         sources: list[dict[str, Any]] = []
         proposals: list[dict[str, Any]] = []
         cards: list[dict[str, Any]] = []
+        widgets: list[dict[str, Any]] = []
         # Grounding by construction: pre-load a compact, cited context snapshot via
         # core-api (best-effort — falls back to on-demand tools if unavailable).
         context_text = await build_patient_context(
@@ -230,6 +270,12 @@ async def chat(
                 cites = _context_citations(context_text)
                 if cites:
                     yield _sse({"type": "data-citations", "data": cites})
+                # Generative UI: derive widgets deterministically from the grounded
+                # context so an overview always renders rich components (safety alert,
+                # record links) — the fast path is tool-free so the model can't call
+                # render_widget here.
+                for w in _context_widgets(context_text):
+                    yield _sse({"type": "data-widget", "widget": w})
                 yield _sse({"type": "text-end", "id": text_id})
                 yield _sse({"type": "finish"})
                 yield "data: [DONE]\n\n"
@@ -238,7 +284,8 @@ async def chat(
 
         agent = build_agent(
             settings, fhir_id, sources, proposals,
-            audience=body.audience, cards=cards, locale=body.locale, context_text=context_text,
+            audience=body.audience, cards=cards, widgets=widgets,
+            locale=body.locale, context_text=context_text,
         )
         try:
             # Provider-agnostic streaming. We ask for BOTH "messages" (token stream)
@@ -320,6 +367,8 @@ async def chat(
                 yield _sse({"type": "data-proposals", "data": safe})
         if cards:  # generative-UI summary cards (present_card) rendered by the client
             yield _sse({"type": "data-cards", "data": cards})
+        for w in widgets:  # generative-UI widgets (render_widget) → client registry
+            yield _sse({"type": "data-widget", "widget": w})
         yield _sse({"type": "finish"})
         yield "data: [DONE]\n\n"
 

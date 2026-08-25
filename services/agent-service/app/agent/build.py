@@ -38,7 +38,7 @@ Tools (call the relevant one(s) before answering — never rely on prior knowled
 - screen_medication(proposed_drug) → current meds + allergies so you can assess a drug the doctor is CONSIDERING
 - draft_prescription(drug, dose_text) → when the doctor asks to PRESCRIBE/START/GIVE a drug: screens it and stages a sign-off card to review and sign (does NOT commit)
 
-Use as many tools as the question needs — chain them, but be economical. For a BROAD "full picture / 360 / overview" request, ANSWER PRIMARILY FROM the CURRENT PATIENT CONTEXT already loaded below (demographics, active problems, medications, allergies, recent vitals and results — each with a citation): reuse its [source: …] citations, add at most ONE get_record_overview call, and only pull an individual domain tool for a domain the context does not cover. Do NOT re-fetch every domain — the context is authoritative for what it lists, and a broad question must still finish in a few steps. For "is X safe to give / can I prescribe X", ALWAYS call screen_medication first. For an explicit instruction to prescribe/start/give a drug, call draft_prescription (it screens and stages the sign-off card); present the verdict and never claim the drug is prescribed.
+Use as many tools as the question needs — chain them, but be economical. For a BROAD "full picture / 360 / overview" request, ANSWER PRIMARILY FROM the CURRENT PATIENT CONTEXT already loaded below (demographics, active problems, medications, allergies, recent vitals and results — each with a citation): reuse its [source: …] citations, add at most ONE get_record_overview call, and only pull an individual domain tool for a domain the context does not cover. Do NOT re-fetch every domain — the context is authoritative for what it lists, and a broad question must still finish in a few steps. For "is X safe to give / can I prescribe X", ALWAYS call screen_medication first. For an explicit instruction to prescribe/start/give a drug, call draft_prescription (it screens and stages the sign-off card); present the verdict and never claim the drug is prescribed. When your answer contains structured or visual data — a value over time, key numbers, a list of record items, or suggested next actions — ALSO call render_widget to render it as a chat component (metric-trend, stat-grid, record-links, safety-alert, next-best-action), then write a short reply alongside it.
 
 Rules:
 - ALWAYS ground answers in tool output. Every clinical statement about THIS patient must carry the citation the tool returned, in the form [source: ResourceType/id]. Never invent citations or data.
@@ -68,7 +68,7 @@ Hard rules:
 - If something is urgent or an emergency (e.g. chest pain, trouble breathing, severe bleeding), tell them to seek emergency care immediately.
 - If asked something outside their own health record, gently say that's not something you can help with here.
 
-Showing a summary card: when you explain something important — a result, a medicine, a condition — call the `present_card` tool ONCE with a short title and 2–4 key points, so the patient also sees a clear visual summary card. Set tone to "good" (reassuring), "warn" (needs care), or "urgent" (act now). Still write your normal plain-language reply too; the card is a supplement, not a replacement.
+Showing a summary card: when you explain something important — a result, a medicine, a condition — call the `present_card` tool ONCE with a short title and 2–4 key points, so the patient also sees a clear visual summary card. Set tone to "good" (reassuring), "warn" (needs care), or "urgent" (act now). Still write your normal plain-language reply too; the card is a supplement, not a replacement. For structured or visual info (a value over time, a list of things in their record, suggested next steps) you may also call `render_widget` (metric-trend, record-links, next-best-action) to show it as a friendly chat component.
 """
 
 
@@ -178,6 +178,7 @@ def build_agent(
     proposals: list[dict[str, Any]] | None = None,
     audience: str = "clinician",
     cards: list[dict[str, Any]] | None = None,
+    widgets: list[dict[str, Any]] | None = None,
     locale: str = "en",
     context_text: str = "",
 ) -> CompiledStateGraph:
@@ -190,6 +191,6 @@ def build_agent(
     system_prompt = build_system_prompt(audience, locale, context_text)
     llm = build_chat_llm(settings)  # ReAct loop: streaming off (see build_chat_llm)
     tools = build_patient_tools(
-        settings.fhir_base_url, patient_fhir_id, sources, proposals, cards, audience=audience
+        settings.fhir_base_url, patient_fhir_id, sources, proposals, cards, widgets, audience=audience
     )
     return create_react_agent(llm, tools, prompt=SystemMessage(content=system_prompt))

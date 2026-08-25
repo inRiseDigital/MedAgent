@@ -14,6 +14,7 @@ path so consent/authz apply (04 §1) — same tool surface.
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 import httpx
@@ -22,6 +23,13 @@ from langchain_core.tools import BaseTool, tool
 from app.rxsafety import screen as rx_screen
 
 PHN_SYSTEM = "https://fhir.medagent.health.lk/id/phn"
+
+# Generative-UI widget kinds the agent may render into the chat (P1). The web
+# widget registry maps each kind → a React component.
+_WIDGET_KINDS = {
+    "summary", "safety-alert", "metric-trend", "stat-grid",
+    "record-links", "next-best-action", "timeline",
+}
 
 
 class FhirClient:
@@ -96,6 +104,7 @@ def build_patient_tools(
     sources: list[dict[str, Any]],
     proposals: list[dict[str, Any]] | None = None,
     cards: list[dict[str, Any]] | None = None,
+    widgets: list[dict[str, Any]] | None = None,
     audience: str = "clinician",
 ) -> list[BaseTool]:
     """Build the read + screening tool belt for one patient, PERSONA-SCOPED.
@@ -111,6 +120,7 @@ def build_patient_tools(
     pid = patient_fhir_id
     drafts = proposals if proposals is not None else []
     card_sink = cards if cards is not None else []
+    widget_sink = widgets if widgets is not None else []
 
     @tool
     async def get_patient_summary() -> str:
@@ -404,7 +414,34 @@ def build_patient_tools(
         pts = [p.strip() for p in points.split("|") if p.strip()][:4]
         t = tone if tone in {"good", "warn", "urgent", "info"} else "info"
         card_sink.append({"kind": "summary", "tone": t, "title": title.strip()[:120], "points": pts})
+        widget_sink.append({"id": f"w_{len(widget_sink)}", "kind": "summary",
+                            "title": title.strip()[:120], "data": {"tone": t, "points": pts}})
         return "Summary card shown to the patient. Continue your plain-language reply."
+
+    @tool
+    async def render_widget(kind: str, title: str, data_json: str) -> str:
+        """Render a rich, interactive WIDGET in the chat alongside your written reply — for
+        structured or visual information that reads better as a component than as prose.
+        Call this IN ADDITION to a short written answer. Reuse [source: Type/id] citations
+        inside item text. `data_json` is a JSON object string. Valid kinds:
+        - "safety-alert": {"severity":"block|warn|info","items":["High-risk penicillin allergy [source: AllergyIntolerance/1005]"]}
+        - "metric-trend": {"label":"Systolic BP","unit":"mmHg","points":[{"t":"2026-01","v":128},{"t":"2026-03","v":134}]}
+        - "stat-grid": {"stats":[{"label":"HbA1c","value":"7.2%","tone":"warn"},{"label":"BP","value":"128/82"}]}
+        - "record-links": {"items":[{"label":"Metformin 500mg","ref":"MedicationRequest/2"}]}
+        - "next-best-action": {"actions":[{"id":"book","label":"Book a follow-up"},{"id":"refill","label":"Refill metformin"}]}
+        - "timeline": {"events":[{"t":"2026-01-10","label":"Metformin started","ref":"MedicationRequest/2"}]}
+        """
+        k = kind.strip()
+        if k not in _WIDGET_KINDS:
+            return f"Unknown widget kind '{kind}'. Valid: {', '.join(sorted(_WIDGET_KINDS))}."
+        try:
+            data = json.loads(data_json)
+            if not isinstance(data, dict):
+                raise ValueError("data must be a JSON object")
+        except Exception as exc:  # noqa: BLE001 — narratable, never raise
+            return f"Could not render the widget — data_json must be a JSON object ({exc})."
+        widget_sink.append({"id": f"w_{len(widget_sink)}", "kind": k, "title": title.strip()[:120], "data": data})
+        return f"Rendered a {k} widget in the chat. Now continue your written reply."
 
     read_tools: list[BaseTool] = [
         get_patient_summary,
@@ -423,7 +460,8 @@ def build_patient_tools(
         get_social_history,
     ]
     # Persona scoping: patients never receive medication-screening or prescription
-    # tools; clinicians never receive the patient-facing summary-card tool.
+    # tools; clinicians never receive the patient-facing summary-card tool. Both
+    # get render_widget (a display tool — no write side effects).
     if audience == "patient":
-        return [*read_tools, present_card]
-    return [*read_tools, screen_medication, draft_prescription]
+        return [*read_tools, present_card, render_widget]
+    return [*read_tools, screen_medication, draft_prescription, render_widget]
