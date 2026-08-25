@@ -172,7 +172,9 @@ services:
       - "8001:8000" # dev convenience: direct OpenAPI for ts-sdk generate + debugging; real traffic via gateway
     volumes:
       - ../../services/core-api:/app
+      - ../../packages/py-common:/py-common:ro
     environment:
+      PYTHONPATH: /py-common  # shared py_common package (Stage C)
       # per-service DB role, least privilege (10 §5; initdb/01-databases.sh)
       DATABASE_URL: postgresql+asyncpg://core_api:${CORE_API_DB_PASSWORD:-dev-core-api-pw}@postgres:5432/app_db
       REDIS_URL: redis://core-api:${CORE_API_REDIS_PASSWORD:-dev-core-api-redis-pw}@redis:6379/0
@@ -220,7 +222,9 @@ services:
       - "8002:8000" # dev convenience: direct OpenAPI for ts-sdk generate + debugging; real traffic via gateway
     volumes:
       - ../../services/agent-service:/app
+      - ../../packages/py-common:/py-common:ro
     environment:
+      PYTHONPATH: /py-common  # shared py_common package (Stage C)
       # agent-service owns the LangGraph checkpointer tables in app_db (01 §3)
       DATABASE_URL: postgresql+asyncpg://agent_service:${AGENT_SERVICE_DB_PASSWORD:-dev-agent-service-pw}@postgres:5432/app_db
       REDIS_URL: redis://agent-service:${AGENT_SERVICE_REDIS_PASSWORD:-dev-agent-service-redis-pw}@redis:6379/0
@@ -260,7 +264,9 @@ services:
       - "8003:8000" # dev convenience: direct OpenAPI for ts-sdk generate + debugging; real traffic via gateway
     volumes:
       - ../../services/notify-service:/app
+      - ../../packages/py-common:/py-common:ro
     environment:
+      PYTHONPATH: /py-common  # shared py_common package (Stage C)
       # stateless fan-out over Redis pub/sub (01 §1); read-mostly DB access
       DATABASE_URL: postgresql+asyncpg://notify_service:${NOTIFY_SERVICE_DB_PASSWORD:-dev-notify-service-pw}@postgres:5432/app_db
       REDIS_URL: redis://notify-service:${NOTIFY_SERVICE_REDIS_PASSWORD:-dev-notify-service-redis-pw}@redis:6379/0

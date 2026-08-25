@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "medagent-py-common"
+version = "0.1.0"
+description = "Shared auth (JWT/JWKS), structured logging and telemetry for the MedAgent Python services (core-api, agent-service, notify-service)."
+requires-python = ">=3.12"
+dependencies = [
+    "pyjwt[crypto]>=2.8",
+    "httpx>=0.27",
+    "fastapi>=0.110",
+    "pydantic>=2",
+    "prometheus-fastapi-instrumentator>=7",
+]
+
+[tool.setuptools.packages.find]
+include = ["py_common*"]
