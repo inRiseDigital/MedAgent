@@ -162,8 +162,8 @@ services:
   core-api:
     <<: *service-defaults
     build:
-      context: ../../services/core-api
-      dockerfile: Dockerfile
+      context: ../..
+      dockerfile: services/core-api/Dockerfile
       target: dev
     command:
       ["uvicorn", "app.main:app", "--reload", "--host", "0.0.0.0", "--port", "8000"]
@@ -212,8 +212,8 @@ services:
   agent-service:
     <<: *service-defaults
     build:
-      context: ../../services/agent-service
-      dockerfile: Dockerfile
+      context: ../..
+      dockerfile: services/agent-service/Dockerfile
       target: dev
     command:
       ["uvicorn", "app.main:app", "--reload", "--host", "0.0.0.0", "--port", "8000"]
@@ -254,8 +254,8 @@ services:
   notify-service:
     <<: *service-defaults
     build:
-      context: ../../services/notify-service
-      dockerfile: Dockerfile
+      context: ../..
+      dockerfile: services/notify-service/Dockerfile
       target: dev
     command:
       ["uvicorn", "app.main:app", "--reload", "--host", "0.0.0.0", "--port", "8000"]
