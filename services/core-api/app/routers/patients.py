@@ -23,7 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from redis.asyncio import Redis
 
-from app.auth import Principal, require_user
+from app.auth import Principal, require_roles, require_user
 from app.config import Settings
 from app.deps import get_redis, get_session, get_settings
 from app.events import publish_user
@@ -79,7 +79,8 @@ def _to_out(row: PatientMPI) -> PatientOut:
     )
 
 
-@router.post("", status_code=status.HTTP_201_CREATED, response_model=PatientOut)
+@router.post("", status_code=status.HTTP_201_CREATED, response_model=PatientOut,
+             dependencies=[require_roles("doctor")])
 async def register_patient(
     body: RegisterPatientRequest,
     principal: Annotated[Principal, Depends(require_user)],
@@ -140,7 +141,8 @@ class BirthEnrolRequest(BaseModel):
     birth_registration_no: str | None = None
 
 
-@router.post("/newborn", status_code=status.HTTP_201_CREATED)
+@router.post("/newborn", status_code=status.HTTP_201_CREATED,
+             dependencies=[require_roles("doctor")])
 async def enrol_newborn(
     body: BirthEnrolRequest,
     request: Request,
@@ -524,7 +526,8 @@ class GiveVaccineRequest(BaseModel):
     date: str | None = None  # ISO date; defaults to today
 
 
-@router.post("/{phn}/immunizations", status_code=status.HTTP_201_CREATED)
+@router.post("/{phn}/immunizations", status_code=status.HTTP_201_CREATED,
+             dependencies=[require_roles("doctor")])
 async def record_immunization(
     phn: str,
     body: GiveVaccineRequest,
@@ -569,7 +572,8 @@ class GrowthRecord(BaseModel):
     date: str | None = None
 
 
-@router.post("/{phn}/growth", status_code=status.HTTP_201_CREATED)
+@router.post("/{phn}/growth", status_code=status.HTTP_201_CREATED,
+             dependencies=[require_roles("doctor")])
 async def record_growth(
     phn: str,
     body: GrowthRecord,

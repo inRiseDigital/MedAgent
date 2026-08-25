@@ -18,7 +18,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth import Principal, require_user
+from app.auth import Principal, require_roles, require_user
 from app.config import Settings
 from app.deps import get_session, get_settings
 from app.fhir_client import FHIRClient
@@ -178,7 +178,7 @@ class PrescreenRequest(BaseModel):
     dose_mg_per_day: float | None = None
 
 
-@router.post("/prescreen")
+@router.post("/prescreen", dependencies=[require_roles("doctor")])
 async def prescreen(
     body: PrescreenRequest,
     request: Request,
@@ -198,7 +198,7 @@ async def prescreen(
         await fhir.close()
 
 
-@router.post("/commit", status_code=status.HTTP_201_CREATED)
+@router.post("/commit", status_code=status.HTTP_201_CREATED, dependencies=[require_roles("doctor")])
 async def commit(
     body: CommitRequest,
     request: Request,
