@@ -24,6 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from redis.asyncio import Redis
 
 from app.auth import Principal, require_roles, require_user
+from app.routers.authz import require_care_relationship
 from app.config import Settings
 from app.deps import get_redis, get_session, get_settings
 from app.events import publish_user
@@ -326,7 +327,8 @@ async def _load_summary(fhir: FHIRClient, phn: str) -> tuple[dict[str, Any], str
     return summary, pid
 
 
-@router.get("/{phn}/summary", response_model=PatientSummary)
+@router.get("/{phn}/summary", response_model=PatientSummary,
+            dependencies=[Depends(require_care_relationship)])
 async def patient_summary(
     phn: str,
     principal: Annotated[Principal, Depends(require_user)],
@@ -343,7 +345,8 @@ async def patient_summary(
         await fhir.close()
 
 
-@router.get("/{phn}/brief", response_model=PatientBrief)
+@router.get("/{phn}/brief", response_model=PatientBrief,
+            dependencies=[Depends(require_care_relationship)])
 async def patient_brief(
     phn: str,
     request: Request,
@@ -473,7 +476,8 @@ async def request_refill(
         await fhir.close()
 
 
-@router.get("/{phn}/vitals/trends", response_model=VitalTrends)
+@router.get("/{phn}/vitals/trends", response_model=VitalTrends,
+            dependencies=[Depends(require_care_relationship)])
 async def vital_trends(
     phn: str,
     principal: Annotated[Principal, Depends(require_user)],
@@ -510,7 +514,8 @@ async def vital_trends(
         await fhir.close()
 
 
-@router.get("/{phn}/immunizations", response_model=ImmunizationSchedule)
+@router.get("/{phn}/immunizations", response_model=ImmunizationSchedule,
+            dependencies=[Depends(require_care_relationship)])
 async def immunizations(
     phn: str,
     principal: Annotated[Principal, Depends(require_user)],
@@ -632,7 +637,7 @@ async def record_growth(
         await fhir.close()
 
 
-@router.get("/{phn}/growth")
+@router.get("/{phn}/growth", dependencies=[Depends(require_care_relationship)])
 async def growth(
     phn: str,
     principal: Annotated[Principal, Depends(require_user)],
@@ -650,7 +655,8 @@ async def growth(
         await fhir.close()
 
 
-@router.get("/{phn}/chdr", response_model=ChildHealthRecord)
+@router.get("/{phn}/chdr", response_model=ChildHealthRecord,
+            dependencies=[Depends(require_care_relationship)])
 async def child_health_record(
     phn: str,
     principal: Annotated[Principal, Depends(require_user)],

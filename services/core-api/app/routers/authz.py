@@ -29,12 +29,13 @@ from __future__ import annotations
 import json
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel
 from redis.asyncio import Redis
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth import Principal, require_user
 from app.deps import get_redis, get_session
 from app.models import PatientMPI, QueueEntry, QueueState
 
@@ -70,6 +71,32 @@ async def _evaluate(patient_phn: str, session: AsyncSession) -> Decision:
         purpose_of_use="TREAT",
         reason="no-active-care-relationship",
     )
+
+
+async def require_care_relationship(
+    phn: str,
+    request: Request,
+    principal: Annotated[Principal, Depends(require_user)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> None:
+    """Route dependency (P3.2/B3): a clinician may only read a patient-scoped
+    record when a care relationship exists (the S1 queue-grant). Closes the
+    prototype flaw where any doctor could read every record.
+
+    Patient (and guardian) self-access is always allowed — the patient portal
+    only ever reaches the session's own PHN through the BFF, so there is no
+    cross-patient exposure to gate there. Dev auth-disabled short-circuits.
+    """
+    if request.app.state.settings.auth_disabled:
+        return
+    if principal.has_role("patient"):
+        return  # self-scoped by the session-bound BFF
+    decision = await _evaluate(phn, session)
+    if not decision.permit:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="no active care relationship for this patient",
+        )
 
 
 @router.get("/decision", response_model=Decision)
