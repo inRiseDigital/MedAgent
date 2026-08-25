@@ -50,6 +50,8 @@ class ChatRequest(BaseModel):
     locale: str = "en"
     # Stable id for this conversation thread (memory scoping; future resume).
     conversation_id: str | None = None
+    # "chat" (a user turn) or "proactive" (agent-initiated grounded greeting/nudge).
+    mode: str = "chat"
 
 
 def _sse(payload: dict[str, Any]) -> str:
@@ -246,6 +248,62 @@ async def chat(
         final_answer = ""  # last non-empty AI message content (non-streaming providers)
         errored = False  # an error note was already emitted as the reply
         timed_out = False
+
+        # PROACTIVE (P5): an agent-authored grounded greeting/nudge on portal-open —
+        # not a reply to a user turn. Synthesise a warm, brief greeting from the
+        # context + memory, then always render the safety/record widgets + a few
+        # next-best-actions so the person lands on something useful and actionable.
+        if body.mode == "proactive":
+            try:
+                from langchain_core.messages import HumanMessage, SystemMessage
+                # A MINIMAL, tool-free prompt: the full persona prompt lists tools, and
+                # a direct (toolless) call then makes the model emit a JSON tool-plan
+                # instead of prose. Keep only the tone + grounded context here.
+                tone = (
+                    "You are a warm, reassuring health concierge speaking DIRECTLY to a patient in "
+                    "plain, kind language (second person, 'you'). You never diagnose or replace a doctor."
+                    if body.audience == "patient"
+                    else "You are a concise clinical assistant giving a doctor a proactive brief."
+                )
+                sys_prompt = (
+                    tone + "\n\n" + context_text +
+                    "\n\nGreet this person warmly (by first name if the context gives one) in 2-4 short lines: "
+                    "surface only the MOST important thing(s) right now — a safety flag, an overdue item, or a "
+                    "result worth explaining — then invite them to ask. Reuse any [source: …] citations. Reply "
+                    "with ONLY the greeting prose — do NOT output JSON, a 'thought', or tool calls."
+                )
+                pro_msgs: list[Any] = [
+                    SystemMessage(content=sys_prompt),
+                    HumanMessage(content="Greet me and tell me what I should know or do today."),
+                ]
+                llm = build_chat_llm(settings, streaming=True)
+                async with asyncio.timeout(settings.agent_run_timeout_seconds):
+                    async for chunk in llm.astream(pro_msgs):
+                        d = _delta_text(chunk)
+                        if d:
+                            streamed = True
+                            yield _sse({"type": "text-delta", "id": text_id, "delta": d})
+            except Exception:  # noqa: BLE001
+                logger.exception("proactive greeting failed")
+            if not streamed:
+                yield _sse({"type": "text-delta", "id": text_id,
+                            "delta": "Hello — I'm here to help you understand your health record. Ask me anything."})
+            for w in _context_widgets(context_text):
+                yield _sse({"type": "data-widget", "widget": w})
+            yield _sse({"type": "data-widget", "widget": {
+                "id": "w_nba", "kind": "next-best-action", "title": "",
+                "data": {"actions": [
+                    {"id": "Explain my most recent result in simple terms.", "label": "Explain my results"},
+                    {"id": "Am I due for any vaccinations, screenings or follow-ups?", "label": "What am I due for?"},
+                    {"id": "What medications am I taking, and what are they for?", "label": "My medications"},
+                ]}}})
+            cites = _context_citations(context_text)
+            if cites:
+                yield _sse({"type": "data-citations", "data": cites})
+            yield _sse({"type": "text-end", "id": text_id})
+            yield _sse({"type": "finish"})
+            yield "data: [DONE]\n\n"
+            return
 
         # FAST PATH — a broad "overview / 360 / full profile" is synthesised directly
         # from the pre-loaded, cited context in ONE streamed LLM call (no tool loop).
