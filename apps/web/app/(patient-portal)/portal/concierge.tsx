@@ -22,6 +22,7 @@ import {
 
 import { VideoRoom } from "@/components/video-room";
 import { streamAgentChat } from "@/lib/agent-stream";
+import { Widget, type WidgetSpec } from "@/components/widgets";
 import { FormattedText } from "./formatted-text";
 import { VoiceMode } from "./voice-mode";
 
@@ -43,7 +44,8 @@ type Node =
   | { t: "card"; data: CardData }
   | { t: "services" }
   | { t: "bslots"; slots: BSlot[] }
-  | { t: "breceipt"; b: BookResult };
+  | { t: "breceipt"; b: BookResult }
+  | { t: "widget"; spec: WidgetSpec };
 type Quick = { label: string; act: () => void };
 type BSlot = { id: string; start?: string; end?: string; specialty?: string; facility?: string };
 type BookResult = { appointment_id?: string; start?: string; end?: string; specialty?: string; facility?: string };
@@ -154,6 +156,7 @@ export function Concierge({ patientPhn, name, signals }: { patientPhn: string; n
                   push({ t: "card", data: { tone: c.tone ?? "info", kicker: "Summary", title: c.title, facts: (c.points ?? []).map((x) => ({ x })) } });
                 }
               }
+              else if (o.type === "data-widget" && o.widget) { push({ t: "widget", spec: o.widget as WidgetSpec }); down(); }
             },
           },
         );
@@ -512,6 +515,9 @@ export function Concierge({ patientPhn, name, signals }: { patientPhn: string; n
                     </div>
                   </div>
                 </div>
+              )
+            : n.t === "widget" ? (
+                <Widget spec={n.spec} onAction={(id) => streamAgent(id.includes("/") ? `Tell me about this record item (${id}).` : id)} />
               )
             : null;
           return <div key={i} className="mh-msg ai" style={{ maxWidth: "94%" }}><div className="mh-ai-row"><span className="mh-av"><Sparkles className="h-4 w-4" /></span><div style={{ flex: 1 }}>{body}</div></div></div>;

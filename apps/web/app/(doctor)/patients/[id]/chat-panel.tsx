@@ -15,6 +15,7 @@ import { Badge, Button, type BadgeProps } from "@medagent/ui";
 
 import { VoiceButton } from "@/components/voice-button";
 import { streamAgentChat } from "@/lib/agent-stream";
+import { Widget, type WidgetSpec } from "@/components/widgets";
 
 // Markdown rendering is loaded as a separate client-only chunk: it must NEVER
 // be able to break the chat's core interactivity (send / input) if the markdown
@@ -41,6 +42,7 @@ interface Turn {
   text: string;
   citations?: Citation[];
   proposals?: Proposal[];
+  widgets?: WidgetSpec[];
   streaming?: boolean;
 }
 
@@ -125,6 +127,8 @@ export function ChatPanel({ patientId, opening }: { patientId: string; opening?:
                 patch((a) => ({ ...a, citations: evt.data as Citation[] }));
               } else if (evt.type === "data-proposals" && Array.isArray(evt.data)) {
                 patch((a) => ({ ...a, proposals: evt.data as Proposal[] }));
+              } else if (evt.type === "data-widget" && evt.widget) {
+                patch((a) => ({ ...a, widgets: [...(a.widgets ?? []), evt.widget as WidgetSpec] }));
               }
             },
           },
@@ -226,6 +230,14 @@ export function ChatPanel({ patientId, opening }: { patientId: string; opening?:
                           </div>
                         );
                       })}
+                    </div>
+                  ) : null}
+
+                  {turn.widgets && turn.widgets.length > 0 ? (
+                    <div className="mt-2 flex flex-col gap-2">
+                      {turn.widgets.map((w) => (
+                        <Widget key={w.id} spec={w} onAction={(id) => void send(id.includes("/") ? `Tell me about ${id}` : id)} />
+                      ))}
                     </div>
                   ) : null}
                 </div>

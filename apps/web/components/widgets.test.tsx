@@ -1,0 +1,52 @@
+import { fireEvent, render, screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
+
+import { Widget, WIDGET_KINDS, type WidgetSpec } from "@/components/widgets";
+
+const spec = (kind: string, data: Record<string, unknown>, extra: Partial<WidgetSpec> = {}): WidgetSpec => ({
+  id: "w1", kind, title: "T", data, ...extra,
+});
+
+describe("Widget registry", () => {
+  it("exposes the expected kinds", () => {
+    expect(WIDGET_KINDS).toEqual(
+      expect.arrayContaining(["safety-alert", "record-links", "metric-trend", "stat-grid", "next-best-action", "timeline", "summary"]),
+    );
+  });
+
+  it("renders an unknown kind as nothing", () => {
+    const { container } = render(<Widget spec={spec("does-not-exist", {})} />);
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it("safety-alert renders items and strips [source] into a chip", () => {
+    render(<Widget spec={spec("safety-alert", { severity: "block", items: ["Penicillin allergy [source: AllergyIntolerance/5]"] })} />);
+    expect(screen.getByText(/Penicillin allergy/)).toBeInTheDocument();
+    expect(screen.getByText("AllergyIntolerance")).toBeInTheDocument(); // ref chip = resource type
+  });
+
+  it("record-links renders tappable items and fires onAction with the ref", () => {
+    const onAction = vi.fn();
+    render(<Widget spec={spec("record-links", { items: [{ label: "Metformin", ref: "MedicationRequest/2" }] })} onAction={onAction} />);
+    fireEvent.click(screen.getByRole("button", { name: /Metformin/ }));
+    expect(onAction).toHaveBeenCalledWith("MedicationRequest/2");
+  });
+
+  it("metric-trend shows the latest value + unit", () => {
+    render(<Widget spec={spec("metric-trend", { label: "Systolic", unit: "mmHg", points: [{ t: "a", v: 120 }, { t: "b", v: 134 }] })} />);
+    expect(screen.getByText("134")).toBeInTheDocument();
+    expect(screen.getByText("mmHg")).toBeInTheDocument();
+  });
+
+  it("next-best-action fires onAction with the action id", () => {
+    const onAction = vi.fn();
+    render(<Widget spec={spec("next-best-action", { actions: [{ id: "book", label: "Book a follow-up" }] })} onAction={onAction} />);
+    fireEvent.click(screen.getByRole("button", { name: "Book a follow-up" }));
+    expect(onAction).toHaveBeenCalledWith("book");
+  });
+
+  it("summary renders its points", () => {
+    render(<Widget spec={spec("summary", { tone: "good", points: ["All results normal", "Keep taking metformin"] })} />);
+    expect(screen.getByText("All results normal")).toBeInTheDocument();
+  });
+});

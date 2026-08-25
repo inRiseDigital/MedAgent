@@ -11,6 +11,8 @@ export interface AgentEvent {
   type?: string;
   delta?: string;
   data?: unknown;
+  /** `data-widget` frames carry a generative-UI widget spec at the top level. */
+  widget?: unknown;
 }
 
 export interface StreamHandlers {
