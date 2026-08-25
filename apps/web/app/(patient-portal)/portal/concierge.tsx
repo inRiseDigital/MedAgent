@@ -113,12 +113,15 @@ export function Concierge({ patientPhn, name, signals }: { patientPhn: string; n
 
   // ---- live agent (real, cited) for explain + free text ----
   const streamAgent = useCallback(
-    async (question: string) => {
+    async (question: string, opts?: { proactive?: boolean }) => {
       if (busy) return "";
       setBusy(true);
+      const proactive = opts?.proactive === true;
       const prior = msgs.filter((n): n is Extract<Node, { t: "ai" | "me" }> => n.t === "ai" || n.t === "me");
-      const history = [...prior, { t: "me" as const, text: question }];
-      setMsgs((m) => [...m, { t: "me", text: question }, { t: "ai", text: "", streaming: true }]);
+      const history = proactive ? prior : [...prior, { t: "me" as const, text: question }];
+      setMsgs((m) => proactive
+        ? [...m, { t: "ai", text: "", streaming: true }]
+        : [...m, { t: "me", text: question }, { t: "ai", text: "", streaming: true }]);
       down();
       // Target THIS turn's AI node by finding the last "ai" node — not "the last
       // message" — because data-cards push card nodes after it. Otherwise the
@@ -143,7 +146,10 @@ export function Concierge({ patientPhn, name, signals }: { patientPhn: string; n
             patient_id: patientPhn,
             audience: "patient",
             locale,
-            messages: history.map((t) => ({ role: t.t === "me" ? "user" : "assistant", content: t.text })),
+            mode: proactive ? "proactive" : "chat",
+            messages: proactive
+              ? [{ role: "user", content: "(open)" }]
+              : history.map((t) => ({ role: t.t === "me" ? "user" : "assistant", content: t.text })),
           },
           {
             signal: ctrl.signal,
@@ -382,34 +388,14 @@ export function Concierge({ patientPhn, name, signals }: { patientPhn: string; n
   useEffect(() => {
     if (ran.current) return;
     ran.current = true;
-    const { overdueVaccines, latestResult } = signals;
-    const actionable = overdueVaccines.length > 0 || !!latestResult;
-    push({ t: "ai", text: tc(actionable ? "greetActionable" : "greetClear", { name: first }) });
-    // NOTE: no cleanup clearing these timeouts — StrictMode's dev double-invoke
-    // would fire it and the `ran` guard would then block re-scheduling, so the
-    // cards would never appear. `ran` already makes this run exactly once.
-    let delay = 600;
-    if (overdueVaccines.length) {
-      const d = delay; delay += 650;
-      window.setTimeout(() => push({ t: "card", data: { tone: "urgent", kicker: "Action needed",
-        title: overdueVaccines.length === 1 ? `${overdueVaccines[0]} is overdue` : `${overdueVaccines.length} immunisations are overdue`,
-        text: overdueVaccines.join(", "), cite: "National immunisation schedule (EPI)",
-        actions: [
-          { kind: "pri", icon: <CalendarDays className="h-4 w-4" />, label: "Book vaccination", act: () => book("the overdue vaccination", "Child Health") },
-          { kind: "ghost", icon: <Bell className="h-4 w-4" />, label: "Remind me", act: () => { me("Remind me tomorrow"); typing(() => push({ t: "ai", text: "Done — I'll nudge you tomorrow morning. 👍" }), 700); } },
-        ] } }), d);
-    }
-    if (latestResult) {
-      const d = delay; delay += 650;
-      window.setTimeout(() => push({ t: "card", data: { tone: latestResult.critical ? "urgent" : "good", kicker: tc("resultReadyKicker"),
-        title: latestResult.critical ? `${latestResult.text} ⚠️` : tc("resultReadyTitle"),
-        text: `${latestResult.text}`,
-        actions: [
-          { kind: "pri", icon: <MessageSquareText className="h-4 w-4" />, label: tc("explainSimply"), act: () => explainResult() },
-          { kind: "ghost", icon: <FileText className="h-4 w-4" />, label: tc("viewResult"), act: () => viewResult() },
-        ] } }), d);
-    }
-    window.setTimeout(() => { push({ t: "ai", text: tc("orTap") }); push({ t: "services" }); setQuicks(menu()); }, delay + 200);
+    // P5 — the agent AUTHORS a grounded proactive greeting: it streams a warm,
+    // cited opening (name + the most important thing right now) and renders the
+    // safety-alert / record-links / next-best-action widgets, replacing the old
+    // static scripted nudges. The services shelf + quick chips follow.
+    void streamAgent("", { proactive: true }).finally(() => {
+      push({ t: "services" });
+      setQuicks(menu());
+    });
   }, [first, signals, push, me, typing, streamAgent, menu]);
 
   const services: { icon: React.ReactNode; c: string; t: string; d: string; act: () => void }[] = [
