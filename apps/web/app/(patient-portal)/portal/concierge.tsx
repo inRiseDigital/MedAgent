@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 
 import { VideoRoom } from "@/components/video-room";
+import { streamAgentChat } from "@/lib/agent-stream";
 import { VoiceMode } from "./voice-mode";
 
 type Tone = "urgent" | "good" | "warn" | "info";
@@ -173,36 +174,16 @@ export function Concierge({ patientPhn, name, signals }: { patientPhn: string; n
       const ctrl = new AbortController();
       const timer = window.setTimeout(() => ctrl.abort(), 120_000);
       try {
-        const res = await fetch("/api/chat", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
+        const result = await streamAgentChat(
+          {
             patient_id: patientPhn,
             audience: "patient",
             locale,
             messages: history.map((t) => ({ role: t.t === "me" ? "user" : "assistant", content: t.text })),
-          }),
-          signal: ctrl.signal,
-        });
-        if (!res.ok || !res.body) {
-          bump((n) => ({ ...n, text: "Sorry — the assistant is unavailable right now.", streaming: false }));
-          return full;
-        }
-        const reader = res.body.getReader();
-        const dec = new TextDecoder();
-        let buf = "";
-        for (;;) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          buf += dec.decode(value, { stream: true });
-          const lines = buf.split("\n");
-          buf = lines.pop() ?? "";
-          for (const line of lines) {
-            if (!line.startsWith("data: ")) continue;
-            const p = line.slice(6).trim();
-            if (!p || p === "[DONE]") continue;
-            try {
-              const o = JSON.parse(p) as { type?: string; delta?: string; data?: unknown };
+          },
+          {
+            signal: ctrl.signal,
+            onEvent: (o) => {
               if (o.type === "text-delta" && o.delta) { full += o.delta; bump((n) => ({ ...n, text: n.text + o.delta })); down(); }
               else if (o.type === "data-citations" && Array.isArray(o.data)) { const cites = o.data as { ref: string; resource_type?: string }[]; bump((n) => ({ ...n, cites })); down(); }
               else if (o.type === "data-cards" && Array.isArray(o.data)) {
@@ -211,8 +192,12 @@ export function Concierge({ patientPhn, name, signals }: { patientPhn: string; n
                   push({ t: "card", data: { tone: c.tone ?? "info", kicker: "Summary", title: c.title, facts: (c.points ?? []).map((x) => ({ x })) } });
                 }
               }
-            } catch { /* keep-alive */ }
-          }
+            },
+          },
+        );
+        if (!result.ok) {
+          bump((n) => ({ ...n, text: "Sorry — the assistant is unavailable right now.", streaming: false }));
+          return full;
         }
       } catch {
         bump((n) => ({ ...n, text: "Sorry — something went wrong. Please try again.", streaming: false }));

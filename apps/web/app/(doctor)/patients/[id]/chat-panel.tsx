@@ -14,6 +14,7 @@ import { Send, Sparkles } from "lucide-react";
 import { Badge, Button, type BadgeProps } from "@medagent/ui";
 
 import { VoiceButton } from "@/components/voice-button";
+import { streamAgentChat } from "@/lib/agent-stream";
 
 // Markdown rendering is loaded as a separate client-only chunk: it must NEVER
 // be able to break the chat's core interactivity (send / input) if the markdown
@@ -112,47 +113,25 @@ export function ChatPanel({ patientId, opening }: { patientId: string; opening?:
         });
 
       try {
-        const res = await fetch("/api/chat", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            patient_id: patientId,
-            messages: history.map((m) => ({ role: m.role, content: m.text })),
-          }),
-        });
-        if (!res.ok || !res.body) {
+        const result = await streamAgentChat(
+          { patient_id: patientId, messages: history.map((m) => ({ role: m.role, content: m.text })) },
+          {
+            onEvent: (evt) => {
+              if (evt.type === "text-delta" && typeof evt.delta === "string") {
+                const delta = evt.delta;
+                patch((a) => ({ ...a, text: a.text + delta }));
+                logRef.current?.scrollTo({ top: logRef.current.scrollHeight });
+              } else if (evt.type === "data-citations" && Array.isArray(evt.data)) {
+                patch((a) => ({ ...a, citations: evt.data as Citation[] }));
+              } else if (evt.type === "data-proposals" && Array.isArray(evt.data)) {
+                patch((a) => ({ ...a, proposals: evt.data as Proposal[] }));
+              }
+            },
+          },
+        );
+        if (!result.ok) {
           patch((a) => ({ ...a, text: t("chatError"), streaming: false }));
           return;
-        }
-        const reader = res.body.getReader();
-        const decoder = new TextDecoder();
-        let buf = "";
-        for (;;) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          buf += decoder.decode(value, { stream: true });
-          const lines = buf.split("\n");
-          buf = lines.pop() ?? "";
-          for (const line of lines) {
-            if (!line.startsWith("data: ")) continue;
-            const payload = line.slice(6).trim();
-            if (!payload || payload === "[DONE]") continue;
-            let evt: Record<string, unknown>;
-            try {
-              evt = JSON.parse(payload);
-            } catch {
-              continue;
-            }
-            if (evt.type === "text-delta" && typeof evt.delta === "string") {
-              const delta = evt.delta;
-              patch((a) => ({ ...a, text: a.text + delta }));
-              logRef.current?.scrollTo({ top: logRef.current.scrollHeight });
-            } else if (evt.type === "data-citations" && Array.isArray(evt.data)) {
-              patch((a) => ({ ...a, citations: evt.data as Citation[] }));
-            } else if (evt.type === "data-proposals" && Array.isArray(evt.data)) {
-              patch((a) => ({ ...a, proposals: evt.data as Proposal[] }));
-            }
-          }
         }
         // Never settle on a silent blank bubble: the server floors an answer, but
         // if no text arrived at all, show a retry line instead of rendering null.
