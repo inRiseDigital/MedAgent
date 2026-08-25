@@ -53,11 +53,12 @@ class Settings(BaseSettings):
     # ReAct super-step cap. The LangGraph default (25) let a broad request chain so
     # many tool calls it exhausted the budget with an empty final turn; a tighter
     # cap forces the model to answer sooner.
-    agent_recursion_limit: int = 14
+    agent_recursion_limit: int = 18
     # Per-FHIR-tool-call timeout (seconds) — a slow HAPI read can't stall the loop.
     tool_timeout_seconds: float = 8.0
     # Whole-run wall-clock ceiling; on breach we emit a graceful floor message.
-    agent_run_timeout_seconds: float = 90.0
+    # Kept under the web client's 120 s abort so the floor/answer always wins.
+    agent_run_timeout_seconds: float = 110.0
 
     # LLM mode: "live" (real Claude), "stub" (deterministic offline model — no API
     # calls), or "openai" (any OpenAI-compatible provider — Groq / OpenRouter /
@@ -71,4 +72,4 @@ class Settings(BaseSettings):
     # model=llama-3.3-70b-versatile.
     llm_openai_base_url: str = "https://api.groq.com/openai/v1"
     llm_openai_api_key: str = ""
-    llm_openai_model: str = "llama-3.3-70b-versatile"
+    llm_openai_model: str = "qwen/qwen3.6-27b"   # Groq; follows tool-discipline for the ReAct loop
