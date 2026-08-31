@@ -17,10 +17,12 @@
 body {
   background-color: var(--background);
   color: var(--foreground);
+  font-family: var(--font);
   /* 14 px clinical body density in the workspace; portal layouts step up
      to 16 px (06 §4.3, 07 §2). */
   font-size: 0.875rem;
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 /* Tabular numerals for vitals, times and lab values (06 §4.3). */

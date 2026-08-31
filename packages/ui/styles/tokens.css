@@ -16,6 +16,15 @@
  */
 
 :root {
+  /* Typography (06 §4.3). next/font sets --font-inter / --font-jetbrains on
+     <html>; these map them onto the semantic tokens the whole app + the .mh
+     skin consume (mh-theme.css already references var(--font)). Each keeps a
+     full fallback stack so nothing depends on the webfont having loaded. */
+  --font: var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+    Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: var(--font-jetbrains), ui-monospace, SFMono-Regular, "SF Mono",
+    Menlo, Consolas, "Liberation Mono", monospace;
+
   /* Surfaces */
   --background: #f8fafc;          /* page */
   --foreground: #0f172a;          /* primary text on page */

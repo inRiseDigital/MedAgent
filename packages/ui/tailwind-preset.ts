@@ -13,6 +13,12 @@ const medagentPreset = {
   darkMode: ["selector", '[data-theme="dark"]'],
   theme: {
     extend: {
+      fontFamily: {
+        // Consume the semantic font tokens (tokens.css → next/font). `font-sans`
+        // is the default body face; `font-mono` is for tabular data + citations.
+        sans: ["var(--font)"],
+        mono: ["var(--font-mono)"],
+      },
       colors: {
         background: "var(--background)",
         foreground: "var(--foreground)",

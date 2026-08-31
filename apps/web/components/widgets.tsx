@@ -71,7 +71,7 @@ function Shell({ tone = "default", icon, title, children }: {
 function RefChip({ refId }: { refId: string }) {
   const type = refId.split("/")[0];
   return (
-    <span className="ml-1 inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium"
+    <span className="ml-1 inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium font-mono tracking-tight"
       style={{ background: "var(--muted)", color: "var(--muted-foreground)" }}>{type}</span>
   );
 }

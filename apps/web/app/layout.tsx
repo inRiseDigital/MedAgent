@@ -1,10 +1,29 @@
 import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
+import { Inter, JetBrains_Mono } from "next/font/google";
 import { NextIntlClientProvider } from "next-intl";
 import { getLocale, getMessages } from "next-intl/server";
 import { Providers } from "./providers";
 import { PwaRegister } from "./pwa-register";
 import "./globals.css";
+
+/*
+ * Typography (06 §4.3, the standing next/font TODO). Inter is the UI/text face —
+ * a clean, high-legibility grotesque that carries the sleek conversational look;
+ * JetBrains Mono is the data face for tabular numbers, citations and codes.
+ * Both are self-hosted by next/font (no layout-shift, no network at runtime) and
+ * exposed as CSS variables that tokens.css maps onto `--font` / `--font-mono`.
+ */
+const fontSans = Inter({
+  subsets: ["latin"],
+  display: "swap",
+  variable: "--font-inter",
+});
+const fontMono = JetBrains_Mono({
+  subsets: ["latin"],
+  display: "swap",
+  variable: "--font-jetbrains",
+});
 
 export const metadata: Metadata = {
   title: "MedAgent",
@@ -38,7 +57,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
   const messages = await getMessages();
 
   return (
-    <html lang={locale} data-theme="light" suppressHydrationWarning>
+    <html lang={locale} data-theme="light" className={`${fontSans.variable} ${fontMono.variable}`} suppressHydrationWarning>
       <head>
         {/* Apply the persisted theme before first paint (no flash). Reads the
             same key the ThemeToggle writes; falls back to the OS preference. */}
