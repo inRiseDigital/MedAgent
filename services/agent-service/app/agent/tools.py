@@ -445,6 +445,23 @@ def build_patient_tools(
         return f"Rendered a {k} widget in the chat. Now continue your written reply."
 
     @tool
+    async def request_refill(medication: str) -> str:
+        """Prepare a medication REFILL request for the patient to CONFIRM. Use when the
+        patient asks to refill/renew a medication. This does NOT send anything — it
+        shows a confirm card in the chat; the refill is submitted ONLY when the patient
+        taps Confirm (a gated backend route creates the request). Name the exact
+        medication from their record. Never say it is already refilled/sent."""
+        med = medication.strip()[:120]
+        widget_sink.append({
+            "id": f"w_{len(widget_sink)}", "kind": "confirm-action", "title": "Refill request",
+            "data": {"action": "refill", "params": {"medication": med},
+                     "prompt": f"Request a refill for {med}?", "confirmLabel": "Confirm refill",
+                     "doneLabel": f"Refill requested for {med}"},
+        })
+        return (f"I've prepared a refill request for {med}. The patient must tap Confirm to send it — "
+                "tell them to review and confirm; do NOT claim it is already done.")
+
+    @tool
     async def remember(note: str) -> str:
         """Remember a short PREFERENCE or recurring context about this person for next
         time — e.g. "prefers simple, plain-language explanations", "usually asks in
@@ -493,5 +510,5 @@ def build_patient_tools(
     # tools; clinicians never receive the patient-facing summary-card tool. Both
     # get render_widget (a display tool — no write side effects).
     if audience == "patient":
-        return [*read_tools, present_card, render_widget, remember, web_search]
+        return [*read_tools, present_card, render_widget, remember, web_search, request_refill]
     return [*read_tools, screen_medication, draft_prescription, render_widget, remember, web_search]

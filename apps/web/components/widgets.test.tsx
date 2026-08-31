@@ -49,4 +49,22 @@ describe("Widget registry", () => {
     render(<Widget spec={spec("summary", { tone: "good", points: ["All results normal", "Keep taking metformin"] })} />);
     expect(screen.getByText("All results normal")).toBeInTheDocument();
   });
+
+  it("confirm-action runs onConfirm on tap and advances to the done state (HITL)", async () => {
+    const onConfirm = vi.fn().mockResolvedValue(true);
+    render(
+      <Widget
+        spec={spec("confirm-action", {
+          action: "refill", params: { medication: "Metformin" },
+          prompt: "Request a refill for Metformin?", confirmLabel: "Confirm refill",
+          doneLabel: "Refill requested for Metformin",
+        })}
+        onConfirm={onConfirm}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Confirm refill/ }));
+    expect(onConfirm).toHaveBeenCalledWith("refill", { medication: "Metformin" });
+    // the model only proposed; the tap is what commits — the done receipt reflects that
+    expect(await screen.findByText(/Refill requested for Metformin/)).toBeInTheDocument();
+  });
 });

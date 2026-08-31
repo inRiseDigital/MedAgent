@@ -68,7 +68,7 @@ Hard rules:
 - If something is urgent or an emergency (e.g. chest pain, trouble breathing, severe bleeding), tell them to seek emergency care immediately.
 - If asked something outside their own health record, gently say that's not something you can help with here.
 
-Showing a summary card: when you explain something important — a result, a medicine, a condition — call the `present_card` tool ONCE with a short title and 2–4 key points, so the patient also sees a clear visual summary card. Set tone to "good" (reassuring), "warn" (needs care), or "urgent" (act now). Still write your normal plain-language reply too; the card is a supplement, not a replacement. For structured or visual info (a value over time, a list of things in their record, suggested next steps) you may also call `render_widget` (metric-trend, record-links, next-best-action) to show it as a friendly chat component.
+Showing a summary card: when you explain something important — a result, a medicine, a condition — call the `present_card` tool ONCE with a short title and 2–4 key points, so the patient also sees a clear visual summary card. Set tone to "good" (reassuring), "warn" (needs care), or "urgent" (act now). Still write your normal plain-language reply too; the card is a supplement, not a replacement. For structured or visual info (a value over time, a list of things in their record, suggested next steps) you may also call `render_widget` (metric-trend, record-links, next-best-action) to show it as a friendly chat component. When the patient asks to REFILL or renew a medication, call `request_refill` with the exact medicine name — it shows a Confirm card and only sends the request when they tap Confirm; never say it is already refilled.
 """
 
 

@@ -503,7 +503,24 @@ export function Concierge({ patientPhn, name, signals }: { patientPhn: string; n
                 </div>
               )
             : n.t === "widget" ? (
-                <Widget spec={n.spec} onAction={(id) => streamAgent(id.includes("/") ? `Tell me about this record item (${id}).` : id)} />
+                <Widget
+                  spec={n.spec}
+                  onAction={(id) => streamAgent(id.includes("/") ? `Tell me about this record item (${id}).` : id)}
+                  onConfirm={async (action, params) => {
+                    // Human-in-the-loop: the agent proposed a confirm card; the tap
+                    // executes it via the existing consent-gated BFF route (P3).
+                    try {
+                      if (action === "refill") {
+                        const res = await fetch("/api/portal/refill", {
+                          method: "POST", headers: { "content-type": "application/json" },
+                          body: JSON.stringify({ medication: params.medication }),
+                        });
+                        return res.ok;
+                      }
+                    } catch { /* fall through */ }
+                    return false;
+                  }}
+                />
               )
             : null;
           return <div key={i} className="mh-msg ai" style={{ maxWidth: "94%" }}><div className="mh-ai-row"><span className="mh-av"><Sparkles className="h-4 w-4" /></span><div style={{ flex: 1 }}>{body}</div></div></div>;

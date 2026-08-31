@@ -13,9 +13,10 @@ import {
   CheckCircle2,
   ChevronRight,
   Info,
+  Loader2,
   Sparkles,
 } from "lucide-react";
-import type { ReactNode } from "react";
+import { type ReactNode, useState } from "react";
 
 import { LineFade } from "@/components/charts";
 
@@ -202,21 +203,67 @@ function SummaryWidget({ spec }: { spec: WidgetSpec }) {
   );
 }
 
-const REGISTRY: Record<string, (p: { spec: WidgetSpec; onAction?: (id: string) => void }) => ReactNode> = {
+function ConfirmAction({ spec, onConfirm }: WidgetProps) {
+  const [state, setState] = useState<"pending" | "submitting" | "done" | "error">("pending");
+  const action = String(spec.data.action ?? "");
+  const params = (spec.data.params as Record<string, unknown>) ?? {};
+  const prompt = String(spec.data.prompt ?? "Confirm this action?");
+  const confirmLabel = String(spec.data.confirmLabel ?? "Confirm");
+  const doneLabel = String(spec.data.doneLabel ?? "Done");
+  if (state === "done") {
+    return (
+      <Shell tone="good" icon={<CheckCircle2 className="h-4 w-4" />} title={spec.title ?? "Confirmed"}>
+        <p className="text-[13px]">{doneLabel} ✓</p>
+      </Shell>
+    );
+  }
+  return (
+    <Shell tone="info" icon={<CheckCircle2 className="h-4 w-4" />} title={spec.title ?? "Confirm"}>
+      <p className="mb-2 text-[13px] leading-snug">{prompt}</p>
+      <div className="flex items-center gap-2">
+        <button type="button" disabled={state === "submitting"}
+          className="inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[13px] font-semibold text-[var(--primary-foreground)] disabled:opacity-60"
+          style={{ background: "var(--primary)" }}
+          onClick={async () => {
+            setState("submitting");
+            const ok = onConfirm ? await onConfirm(action, params) : false;
+            setState(ok ? "done" : "error");
+          }}>
+          {state === "submitting" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+          {confirmLabel}
+        </button>
+        {state !== "submitting" ? (
+          <button type="button" onClick={() => setState("done")}
+            className="rounded-full px-3 py-1.5 text-[13px] text-[var(--muted-foreground)] hover:bg-[var(--muted)]">Not now</button>
+        ) : null}
+        {state === "error" ? <span className="text-[12px]" style={{ color: "var(--destructive)" }}>Couldn&apos;t complete — try again.</span> : null}
+      </div>
+    </Shell>
+  );
+}
+
+interface WidgetProps {
+  spec: WidgetSpec;
+  onAction?: (id: string) => void;
+  onConfirm?: (action: string, params: Record<string, unknown>) => Promise<boolean>;
+}
+
+const REGISTRY: Record<string, (p: WidgetProps) => ReactNode> = {
   "safety-alert": SafetyAlert,
   "record-links": RecordLinks,
   "metric-trend": MetricTrend,
   "stat-grid": StatGrid,
   "next-best-action": NextBestAction,
+  "confirm-action": ConfirmAction,
   timeline: TimelineW,
   summary: SummaryWidget,
 };
 
 /** Render one widget spec from the registry. Unknown kinds render nothing. */
-export function Widget({ spec, onAction }: { spec: WidgetSpec; onAction?: (id: string) => void }) {
+export function Widget({ spec, onAction, onConfirm }: WidgetProps) {
   const Comp = REGISTRY[spec.kind];
   if (!Comp) return null;
-  return <>{Comp({ spec, onAction })}</>;
+  return <>{Comp({ spec, onAction, onConfirm })}</>;
 }
 
 export const WIDGET_KINDS = Object.keys(REGISTRY);
