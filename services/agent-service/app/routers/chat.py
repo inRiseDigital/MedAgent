@@ -116,6 +116,27 @@ def _is_broad_overview(question: str) -> bool:
     return any(k in q for k in _OVERVIEW_KW)
 
 
+def _overview_from_context(record_context: str) -> str:
+    """A grounded overview assembled DIRECTLY from the pre-loaded cited context — the
+    resilient fallback when the model can't synthesise in time. The context is already
+    a structured, cited snapshot of the chart, so we present it as-is under a plain
+    lead-in, dropping the model-facing preamble line. Guarantees a useful, grounded
+    360 even when the language model is slow or unavailable — never a bare error."""
+    out: list[str] = []
+    for ln in record_context.splitlines():
+        s = ln.strip()
+        if not s or s.startswith("CURRENT PATIENT CONTEXT"):
+            continue
+        # Drop inline [source: …] markers (citations stream separately as chips) and
+        # tidy the space-before-punctuation the removal leaves behind.
+        s = re.sub(r"\s*\[source:[^\]]*\]", "", s)
+        s = re.sub(r"\s+([;.,])", r"\1", s)
+        out.append(s)
+    if not out:
+        return ""
+    return "Here's the 360° picture straight from the record:\n\n" + "\n".join(out)
+
+
 _SOURCE_RE = re.compile(r"\[source:\s*([A-Za-z]+)/([A-Za-z0-9._-]+)\]")
 
 
@@ -228,6 +249,9 @@ async def chat(
         context_text = await build_patient_context(
             settings.core_api_base_url, request.headers.get("authorization"), body.patient_id
         )
+        # The record-only context (no memory block) — used to derive citations/widgets
+        # and as the resilient overview fallback if the model can't synthesise in time.
+        record_context = context_text
 
         # Long-term memory (P2): recall durable preferences/context for this record
         # and inject them; the agent persists new ones via the `remember` tool.
@@ -310,7 +334,12 @@ async def chat(
         # A proper agent answers from what it already has; the read tools are for
         # drilling into a specific domain, not for crawling all 14 on an overview.
         # This is fast (~5-15s), streams token-by-token, and stays grounded/cited.
-        if context_text and _is_broad_overview(question):
+        if record_context and _is_broad_overview(question):
+            # A broad overview is bounded to ~45s here: one streamed synthesis pass is
+            # plenty, and a slow model must NOT be allowed to run out the whole budget
+            # only to then trigger the tool crawl. On any miss we present the context
+            # directly (below) — so an overview always answers fast and grounded.
+            synth_budget = min(45.0, settings.agent_run_timeout_seconds)
             try:
                 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
@@ -327,7 +356,7 @@ async def chat(
                         else AIMessage(content=m["content"])
                     )
                 llm = build_chat_llm(settings, streaming=True)
-                async with asyncio.timeout(settings.agent_run_timeout_seconds):
+                async with asyncio.timeout(synth_budget):
                     async for chunk in llm.astream(msgs):
                         delta = _delta_text(chunk)
                         if delta:
@@ -335,25 +364,29 @@ async def chat(
                             yield _sse({"type": "text-delta", "id": text_id, "delta": delta})
             except (TimeoutError, asyncio.TimeoutError):
                 timed_out = True
-                logger.warning("direct synthesis exceeded %ss", settings.agent_run_timeout_seconds)
-            except Exception:  # noqa: BLE001 — fall back to the full agent
-                logger.exception("direct synthesis failed; falling back to the ReAct agent")
-            # If any answer streamed, finish here — don't also run the tool loop.
-            if streamed:
-                cites = _context_citations(context_text)
-                if cites:
-                    yield _sse({"type": "data-citations", "data": cites})
-                # Generative UI: derive widgets deterministically from the grounded
-                # context so an overview always renders rich components (safety alert,
-                # record links) — the fast path is tool-free so the model can't call
-                # render_widget here.
-                for w in _context_widgets(context_text):
-                    yield _sse({"type": "data-widget", "widget": w})
-                yield _sse({"type": "text-end", "id": text_id})
-                yield _sse({"type": "finish"})
-                yield "data: [DONE]\n\n"
-                return
-            # nothing usable streamed → fall through to the ReAct agent below
+                logger.warning("overview synthesis exceeded %ss; using context-derived overview", synth_budget)
+            except Exception:  # noqa: BLE001 — resilient fallback below
+                logger.exception("overview synthesis failed; using context-derived overview")
+            # Resilient answer: if the model produced nothing (slow / unavailable),
+            # stream the pre-loaded cited context itself — a grounded 360 built without
+            # the model. A broad overview ALWAYS answers here; it never falls into the
+            # multi-tool crawl, which reliably blows the time budget on a whole-record ask.
+            if not streamed:
+                fallback = _overview_from_context(record_context)
+                if fallback:
+                    streamed = True
+                    yield _sse({"type": "text-delta", "id": text_id, "delta": fallback})
+            cites = _context_citations(record_context)
+            if cites:
+                yield _sse({"type": "data-citations", "data": cites})
+            # Generative UI: derive widgets deterministically from the grounded context
+            # so an overview always renders rich components (safety alert, record links).
+            for w in _context_widgets(record_context):
+                yield _sse({"type": "data-widget", "widget": w})
+            yield _sse({"type": "text-end", "id": text_id})
+            yield _sse({"type": "finish"})
+            yield "data: [DONE]\n\n"
+            return
 
         agent = build_agent(
             settings, fhir_id, sources, proposals,
