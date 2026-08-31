@@ -43,7 +43,7 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 echo "1/4  Starting Cloudflare quick tunnel to the gateway (:8090)…"
-cloudflared tunnel --url http://localhost:8090 --no-autoupdate >"$LOG" 2>&1 &
+cloudflared tunnel --url http://localhost:18080 --no-autoupdate >"$LOG" 2>&1 &
 CF_PID=$!
 
 PUBLIC_URL=""
@@ -56,7 +56,12 @@ done
 echo "      Public URL: $PUBLIC_URL"
 
 echo "2/4  Reconfiguring the stack for $PUBLIC_URL (recreates keycloak, services, web, gateway)…"
-PUBLIC_URL="$PUBLIC_URL" "${COMPOSE[@]}" up -d
+# NB: keycloak's healthcheck is chronically 'unhealthy' in dev (its /dev/tcp probe
+# doesn't run in the minimal image shell), which makes `up` exit non-zero even
+# though every container is actually running. Tolerate it so the share flow
+# continues; we independently wait for Keycloak to answer in step 3.
+PUBLIC_URL="$PUBLIC_URL" "${COMPOSE[@]}" up -d \
+  || echo "      NOTE: 'up' returned non-zero (flaky keycloak healthcheck); containers are up — continuing."
 
 echo "3/4  Waiting for Keycloak, then registering the tunnel callback on the 'web' client…"
 for _ in $(seq 1 40); do

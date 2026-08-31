@@ -22,8 +22,11 @@ services:
     # Publish the tunnel entry point so cloudflared/ngrok can reach it. The
     # `tunnel` entry point + host-agnostic routes are defined in
     # platform/gateway/{traefik.yaml,dynamic/routes-tunnel.yaml}.
+    # Host port 18080 (NOT 8090): Windows reserves the 8082–8181 range
+    # (netsh int ipv4 show excludedportrange tcp), so 8090 fails to bind. The
+    # container side stays 8090 (Traefik's `tunnel` entrypoint).
     ports:
-      - "8090:8090"
+      - "18080:8090"
 
   keycloak:
     environment:
