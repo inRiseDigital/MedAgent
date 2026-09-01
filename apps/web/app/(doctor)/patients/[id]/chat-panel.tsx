@@ -43,6 +43,7 @@ interface Turn {
   citations?: Citation[];
   proposals?: Proposal[];
   widgets?: WidgetSpec[];
+  status?: string;
   streaming?: boolean;
 }
 
@@ -121,7 +122,10 @@ export function ChatPanel({ patientId, opening }: { patientId: string; opening?:
             onEvent: (evt) => {
               if (evt.type === "text-delta" && typeof evt.delta === "string") {
                 const delta = evt.delta;
-                patch((a) => ({ ...a, text: a.text + delta }));
+                patch((a) => ({ ...a, text: a.text + delta, status: undefined }));
+                logRef.current?.scrollTo({ top: logRef.current.scrollHeight });
+              } else if (evt.type === "data-status" && typeof evt.text === "string") {
+                patch((a) => ({ ...a, status: evt.text }));
                 logRef.current?.scrollTo({ top: logRef.current.scrollHeight });
               } else if (evt.type === "data-citations" && Array.isArray(evt.data)) {
                 patch((a) => ({ ...a, citations: evt.data as Citation[] }));
@@ -194,6 +198,9 @@ export function ChatPanel({ patientId, opening }: { patientId: string; opening?:
               <div className="mh-ai-row">
                 <span className="mh-av"><Sparkles className="h-4 w-4" /></span>
                 <div className="min-w-0 flex-1">
+                  {!turn.text && turn.streaming && turn.status ? (
+                    <div className="mh-think" aria-live="polite"><Sparkles className="h-3.5 w-3.5" /><span>{turn.status}</span><i /><i /><i /></div>
+                  ) : (
                   <div className="mh-bubble">
                     {turn.text ? <AssistantMarkdown text={turn.text} /> : turn.streaming ? <span className="mh-typing"><i /><i /><i /></span> : null}
                     {turn.citations && turn.citations.length > 0 ? (
@@ -203,6 +210,7 @@ export function ChatPanel({ patientId, opening }: { patientId: string; opening?:
                       </div>
                     ) : null}
                   </div>
+                  )}
 
                   {turn.proposals && turn.proposals.length > 0 ? (
                     <div className="mt-2 space-y-2">

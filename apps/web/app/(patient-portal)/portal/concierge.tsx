@@ -39,7 +39,7 @@ type CardData = {
   actions?: Action[];
 };
 type Node =
-  | { t: "ai"; text: string; streaming?: boolean; cites?: { ref: string; resource_type?: string }[] }
+  | { t: "ai"; text: string; streaming?: boolean; status?: string; cites?: { ref: string; resource_type?: string }[] }
   | { t: "me"; text: string }
   | { t: "image"; url: string }
   | { t: "typing" }
@@ -157,7 +157,8 @@ export function Concierge({ patientPhn, name, signals }: { patientPhn: string; n
           {
             signal: ctrl.signal,
             onEvent: (o) => {
-              if (o.type === "text-delta" && o.delta) { full += o.delta; bump((n) => ({ ...n, text: n.text + o.delta })); down(); }
+              if (o.type === "text-delta" && o.delta) { full += o.delta; bump((n) => ({ ...n, text: n.text + o.delta, status: undefined })); down(); }
+              else if (o.type === "data-status" && typeof o.text === "string") { bump((n) => ({ ...n, status: o.text })); down(); }
               else if (o.type === "data-citations" && Array.isArray(o.data)) { const cites = o.data as { ref: string; resource_type?: string }[]; bump((n) => ({ ...n, cites })); down(); }
               else if (o.type === "data-cards" && Array.isArray(o.data)) {
                 for (const c of o.data as { tone?: Tone; title?: string; points?: string[] }[]) {
@@ -512,7 +513,11 @@ export function Concierge({ patientPhn, name, signals }: { patientPhn: string; n
                 <div className="mh-ai-row">
                   <span className="mh-av"><Sparkles className="h-4 w-4" /></span>
                   <div className="min-w-0">
-                    <div className="mh-bubble">{n.text ? <FormattedText text={n.text} /> : (n.streaming ? "…" : "")}</div>
+                    {!n.text && n.streaming && n.status ? (
+                      <div className="mh-think" aria-live="polite"><Sparkles className="h-3.5 w-3.5" /><span>{n.status}</span><i /><i /><i /></div>
+                    ) : (
+                      <div className="mh-bubble">{n.text ? <FormattedText text={n.text} /> : (n.streaming ? "…" : "")}</div>
+                    )}
                     {n.cites?.length ? (
                       <div className="mh-srcs">
                         <span className="mh-srcs-lbl">✓ Grounded in your record</span>

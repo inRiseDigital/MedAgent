@@ -276,6 +276,44 @@ def _context_widgets(context_text: str) -> list[dict[str, Any]]:
     return out
 
 
+# Live reasoning trace (P2c "think-itself"): as the agent invokes tools, we stream
+# a short human-readable status so the person SEES it working through the record.
+_RECORD_NOUN = {
+    "get_patient_summary": "the basics", "get_record_overview": "the whole record",
+    "get_conditions": "conditions", "get_medications": "medications", "get_allergies": "allergies",
+    "get_vitals": "vitals", "get_lab_results": "lab results", "get_immunizations": "immunisations",
+    "get_encounters": "visit history", "get_clinical_notes": "clinical notes",
+    "get_procedures": "procedures", "get_appointments": "appointments",
+    "get_family_history": "family history", "get_social_history": "lifestyle & social history",
+}
+_ACTION_PHRASE = {
+    "screen_medication": "Screening the medicine for interactions",
+    "draft_prescription": "Preparing the prescription for sign-off",
+    "web_search": "Searching up-to-date medical references",
+    "present_card": "Putting together a summary", "render_widget": "Preparing a visual",
+    "request_refill": "Preparing the refill", "book_appointment": "Setting up the booking",
+    "start_video": "Getting the video visit ready", "remember": "Noting that for next time",
+}
+
+
+def _tool_status(name: str, audience: str) -> str | None:
+    """A short 'what I'm doing now' line for a tool call, in the persona's voice."""
+    if name in _RECORD_NOUN:
+        noun = _RECORD_NOUN[name]
+        return f"Looking at your {noun}" if audience == "patient" else f"Reviewing {noun}"
+    return _ACTION_PHRASE.get(name)
+
+
+def _tool_names(message: Any) -> list[str]:
+    """Tool-call names on an AI message (LangChain dict-or-object tool_calls)."""
+    out: list[str] = []
+    for tc in getattr(message, "tool_calls", None) or []:
+        nm = tc.get("name") if isinstance(tc, dict) else getattr(tc, "name", None)
+        if nm:
+            out.append(nm)
+    return out
+
+
 def _delta_text(chunk: Any) -> str:
     """Pull text from an AIMessageChunk whose content may be a str or a block list."""
     content = getattr(chunk, "content", "")
@@ -508,6 +546,7 @@ async def chat(
             # stream the post-tool-call answer through langgraph, so those token
             # chunks are empty — for them we fall back to the final message content
             # from "values". `streamed` guards against emitting both (no duplication).
+            announced: set[str] = set()  # tool names we've already narrated
             async with asyncio.timeout(settings.agent_run_timeout_seconds):
                 async for mode, data in agent.astream(
                     {"messages": agent_messages or [{"role": "user", "content": question}]},
@@ -523,6 +562,15 @@ async def chat(
                                 yield _sse({"type": "text-delta", "id": text_id, "delta": delta})
                     elif mode == "values":
                         msgs = data.get("messages", []) if isinstance(data, dict) else []
+                        # Live reasoning trace: narrate any newly-called tools as the
+                        # agent works, so a multi-step answer shows its thinking.
+                        for m in msgs:
+                            for nm in _tool_names(m):
+                                if nm not in announced:
+                                    announced.add(nm)
+                                    label = _tool_status(nm, body.audience)
+                                    if label:
+                                        yield _sse({"type": "data-status", "text": label})
                         if msgs and getattr(msgs[-1], "type", "") == "ai":
                             text = _delta_text(msgs[-1])
                             if text:

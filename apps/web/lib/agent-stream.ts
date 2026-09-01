@@ -13,6 +13,8 @@ export interface AgentEvent {
   data?: unknown;
   /** `data-widget` frames carry a generative-UI widget spec at the top level. */
   widget?: unknown;
+  /** `data-status` frames carry a short "what the agent is doing now" line. */
+  text?: string;
 }
 
 export interface StreamHandlers {

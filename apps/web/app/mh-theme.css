@@ -104,6 +104,17 @@
   box-shadow: var(--mh-shadow); animation: mh-rise 0.3s both; transition: transform 0.12s; }
 .mh-chip:active { transform: scale(0.95); }
 
+/* live reasoning trace — "what the agent is doing now" while it works the record */
+.mh-think { display: inline-flex; align-items: center; gap: 7px; padding: 9px 14px; background: var(--mh-surface);
+  border-radius: 20px 20px 20px 7px; box-shadow: var(--mh-shadow); color: var(--mh-ink-2);
+  font: 600 13px/1 var(--font, inherit); }
+.mh-think svg { color: var(--mh-tint-ink); }
+.mh-think span { animation: mh-shim 1.6s ease-in-out infinite; }
+.mh-think i { width: 4px; height: 4px; border-radius: 50%; background: var(--mh-tint); animation: mh-blink 1.3s infinite; }
+.mh-think i:nth-child(4) { animation-delay: 0.2s; } .mh-think i:nth-child(5) { animation-delay: 0.4s; }
+@keyframes mh-shim { 0%, 100% { opacity: 0.65; } 50% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .mh-think span, .mh-think i { animation: none; } }
+
 .mh-typing { display: inline-flex; gap: 4px; padding: 14px 16px; background: var(--mh-surface); border-radius: 20px 20px 20px 7px; box-shadow: var(--mh-shadow); }
 .mh-typing i { width: 7px; height: 7px; border-radius: 50%; background: var(--mh-ink-3); animation: mh-blink 1.3s infinite; }
 .mh-typing i:nth-child(2) { animation-delay: 0.2s; }
