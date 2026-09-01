@@ -1,0 +1,87 @@
+# Rx-safety golden set — EXTRA coverage (04 §6). Verdicts come from the
+# DETERMINISTIC engine (app/rxsafety), graded exact-match; the gate is 100% so any
+# miss fails CI. Every `expected` below was validated by calling app.rxsafety.screen()
+# directly against the curated dev dataset (drug_classes / interactions / dose_ranges).
+# These cases extend rx_safety.yaml onto safety surface it does not already exercise:
+# direct-ingredient allergy match, the NSAID hard-allergy class, moderate DDIs, the
+# serotonergic/MAOI rule via a non-SSRI opioid, class-based DDI matching with
+# alternate ingredients, the dose boundary (> not >=), a multi-finding block, and
+# input-normalization / unknown-drug edges.
+class: rx_safety
+seed_version: v0
+grader: exact
+cases:
+  # --- clean pass: known drug, nothing to flag -------------------------------
+  - id: rx-x-clean-pass-atorvastatin
+    input: { proposed_drug: atorvastatin, current_meds: [], allergies: [] }
+    expected: { verdict: pass }
+
+  # --- allergy: direct ingredient match (not just class) ---------------------
+  - id: rx-x-allergy-direct-match-ibuprofen
+    input: { proposed_drug: ibuprofen, current_meds: [], allergies: [{ substance: ibuprofen, criticality: high }] }
+    expected: { verdict: block, codes_include: [ALLERGY_MATCH] }
+
+  # --- allergy: NSAID hard-class match (naproxen vs documented ibuprofen) -----
+  - id: rx-x-nsaid-class-allergy-naproxen
+    input: { proposed_drug: naproxen, current_meds: [], allergies: [{ substance: ibuprofen, criticality: high }] }
+    expected: { verdict: block, codes_include: [ALLERGY_CLASS] }
+
+  # --- allergy: penicillin -> cephalosporin partial cross-reactivity (warn) ---
+  - id: rx-x-cross-cephalosporin-ceftriaxone
+    input: { proposed_drug: ceftriaxone, current_meds: [], allergies: [{ substance: Penicillin, criticality: high }] }
+    expected: { verdict: warn, codes_include: [ALLERGY_CROSS] }
+
+  # --- DDI: warfarin + macrolide (class match via erythromycin) --------------
+  - id: rx-x-warfarin-erythromycin
+    input: { proposed_drug: erythromycin, current_meds: [warfarin], allergies: [] }
+    expected: { verdict: block, codes_include: [DDI_MAJOR] }
+
+  # --- DDI: moderate SSRI + NSAID (GI bleeding) -> warn -----------------------
+  - id: rx-x-ssri-nsaid-moderate
+    input: { proposed_drug: sertraline, current_meds: [ibuprofen], allergies: [] }
+    expected: { verdict: warn, codes_include: [DDI_MODERATE] }
+
+  # --- DDI: serotonergic + MAOI via a non-SSRI opioid (contraindicated) ------
+  - id: rx-x-tramadol-maoi-serotonin
+    input: { proposed_drug: tramadol, current_meds: [phenelzine], allergies: [] }
+    expected: { verdict: block, codes_include: [DDI_CONTRAINDICATED] }
+
+  # --- DDI: methotrexate + NSAID (reduced clearance) -> major -----------------
+  - id: rx-x-methotrexate-nsaid
+    input: { proposed_drug: ibuprofen, current_meds: [methotrexate], allergies: [] }
+    expected: { verdict: block, codes_include: [DDI_MAJOR] }
+
+  # --- DDI: potassium supplement + potassium-sparing diuretic ----------------
+  - id: rx-x-potassium-spironolactone
+    input: { proposed_drug: potassium, current_meds: [spironolactone], allergies: [] }
+    expected: { verdict: block, codes_include: [DDI_MAJOR] }
+
+  # --- dose: over adult reference max -> warn ---------------------------------
+  - id: rx-x-dose-paracetamol-exceeded
+    input: { proposed_drug: paracetamol, current_meds: [], allergies: [], dose_mg_per_day: 5000 }
+    expected: { verdict: warn, codes_include: [DOSE_EXCEEDED] }
+
+  # --- dose boundary: exactly at max is NOT exceeded (engine uses >) -> pass --
+  - id: rx-x-dose-ibuprofen-at-max-pass
+    input: { proposed_drug: ibuprofen, current_meds: [], allergies: [], dose_mg_per_day: 2400 }
+    expected: { verdict: pass }
+
+  # --- duplicate therapy: dual RAAS blockade (ACE-inhibitor + ARB) -> block ---
+  - id: rx-x-dual-raas-duplicate-enalapril-valsartan
+    input: { proposed_drug: enalapril, current_meds: [valsartan], allergies: [] }
+    expected: { verdict: block, codes_include: [DDI_MAJOR] }
+
+  # --- multi-finding: direct allergy AND a major DDI in one screen -> block ---
+  - id: rx-x-multi-finding-aspirin-warfarin-allergy
+    input: { proposed_drug: aspirin, current_meds: [warfarin], allergies: [{ substance: aspirin, criticality: high }] }
+    expected: { verdict: block, codes_include: [ALLERGY_MATCH, DDI_MAJOR] }
+
+  # --- edge: unknown drug still flagged even alongside meds/allergies ---------
+  - id: rx-x-unknown-drug-with-meds
+    input: { proposed_drug: novadrugxyz, current_meds: [metformin], allergies: [{ substance: penicillin, criticality: low }] }
+    expected: { verdict: warn, codes_include: [UNKNOWN_DRUG] }
+
+  # --- edge: input normalization (mixed case) still resolves the DDI ----------
+  - id: rx-x-case-insensitive-warfarin-nsaid
+    input: { proposed_drug: Ibuprofen, current_meds: [Warfarin], allergies: [] }
+    expected: { verdict: block, codes_include: [DDI_MAJOR] }
