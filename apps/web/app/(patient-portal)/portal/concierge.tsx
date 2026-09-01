@@ -15,6 +15,7 @@ import {
   FileText,
   MessageSquareText,
   Mic,
+  Paperclip,
   Send,
   Sparkles,
   Syringe,
@@ -40,6 +41,7 @@ type CardData = {
 type Node =
   | { t: "ai"; text: string; streaming?: boolean; cites?: { ref: string; resource_type?: string }[] }
   | { t: "me"; text: string }
+  | { t: "image"; url: string }
   | { t: "typing" }
   | { t: "card"; data: CardData }
   | { t: "services" }
@@ -88,6 +90,7 @@ export function Concierge({ patientPhn, name, signals }: { patientPhn: string; n
   const [inVideo, setInVideo] = useState(false);
   const [voiceOpen, setVoiceOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
   const ran = useRef(false);
   const videoRoom = `medagent-${patientPhn}`; // deterministic: doctor + patient meet here
 
@@ -191,6 +194,61 @@ export function Concierge({ patientPhn, name, signals }: { patientPhn: string; n
       return full;
     },
     [busy, msgs, patientPhn, down, locale],
+  );
+
+  // ---- multimodal (P4b): share a photo (lab report, medicine box, symptom) and
+  // the agent reads it on a vision model, streaming a plain-language explanation.
+  const sendImage = useCallback(
+    async (file: File) => {
+      if (busy) return;
+      if (!file.type.startsWith("image/")) return;
+      if (file.size > 5_000_000) {
+        push({ t: "ai", text: "That photo is a bit large — please share one under 5 MB. 🙏" });
+        return;
+      }
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const r = new FileReader();
+        r.onload = () => resolve(String(r.result));
+        r.onerror = () => reject(new Error("read failed"));
+        r.readAsDataURL(file);
+      }).catch(() => "");
+      if (!dataUrl) return;
+      const base64 = dataUrl.split(",")[1] ?? "";
+      setBusy(true);
+      push({ t: "image", url: dataUrl });
+      setMsgs((m) => [...m, { t: "ai", text: "", streaming: true }]);
+      down();
+      const bump = (fn: (t: Node & { t: "ai" }) => Node) =>
+        setMsgs((m) => {
+          for (let i = m.length - 1; i >= 0; i--) if (m[i]!.t === "ai") return m.map((n, k) => (k === i && n.t === "ai" ? fn(n) : n));
+          return m;
+        });
+      let got = "";
+      const ctrl = new AbortController();
+      const timer = window.setTimeout(() => ctrl.abort(), 120_000);
+      try {
+        const result = await streamAgentChat(
+          { image_base64: base64, mime: file.type, question: "" },
+          {
+            endpoint: "/api/portal/vision",
+            signal: ctrl.signal,
+            onEvent: (o) => {
+              if (o.type === "text-delta" && o.delta) { got += o.delta; bump((n) => ({ ...n, text: n.text + o.delta })); down(); }
+            },
+          },
+        );
+        if (!result.ok) bump((n) => ({ ...n, text: "Sorry — I couldn't read that image just now.", streaming: false }));
+      } catch {
+        bump((n) => ({ ...n, text: "Sorry — something went wrong reading that image.", streaming: false }));
+      } finally {
+        window.clearTimeout(timer);
+        setBusy(false);
+        bump((n) => ({ ...n, streaming: false, text: n.text || "Sorry — I couldn't read that image. Please try another photo." }));
+        void got;
+        down();
+      }
+    },
+    [busy, push, down],
   );
 
   // ---- scripted conversational-commerce flows ----
@@ -440,6 +498,13 @@ export function Concierge({ patientPhn, name, signals }: { patientPhn: string; n
       <div ref={scrollRef} className="flex flex-1 flex-col gap-3 overflow-y-auto p-3.5">
         {msgs.map((n, i) => {
           if (n.t === "me") return <div key={i} className="mh-msg me"><div className="mh-bubble">{n.text}</div></div>;
+          if (n.t === "image")
+            return (
+              <div key={i} className="mh-msg me">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={n.url} alt="Shared photo" className="max-h-56 rounded-2xl object-cover" style={{ boxShadow: "var(--mh-shadow)" }} />
+              </div>
+            );
           if (n.t === "typing") return <div key={i} className="mh-msg ai"><div className="mh-ai-row"><span className="mh-av"><Sparkles className="h-4 w-4" /></span><div className="mh-typing"><i /><i /><i /></div></div></div>;
           if (n.t === "ai")
             return (
@@ -549,6 +614,16 @@ export function Concierge({ patientPhn, name, signals }: { patientPhn: string; n
         className="mh-composer"
         onSubmit={(e) => { e.preventDefault(); const v = input.trim(); if (!v) return; setInput(""); handleFree(v); }}
       >
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/png,image/jpeg,image/webp,image/gif"
+          className="hidden"
+          onChange={(e) => { const f = e.target.files?.[0]; if (f) void sendImage(f); e.target.value = ""; }}
+        />
+        <button type="button" onClick={() => fileRef.current?.click()} disabled={busy} aria-label="Share a photo" className="mh-circ mic">
+          <Paperclip className="h-5 w-5" />
+        </button>
         <button type="button" onClick={() => setVoiceOpen(true)} aria-label="Voice mode" className="mh-circ mic">
           <Mic className="h-5 w-5" />
         </button>

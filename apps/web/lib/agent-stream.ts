@@ -19,19 +19,22 @@ export interface StreamHandlers {
   onEvent: (event: AgentEvent) => void;
   /** Optional abort signal (e.g. a client-side stall timeout). */
   signal?: AbortSignal;
+  /** Override the BFF endpoint (default /api/chat; e.g. /api/portal/vision). */
+  endpoint?: string;
 }
 
 /**
- * POST `body` to /api/chat and invoke `onEvent` for every SSE data frame until
- * the stream closes. Returns `{ ok: false }` when the response is not a readable
- * event-stream (the caller renders its own error); throws only if the caller's
- * signal aborts or the network fails, so callers keep their try/catch.
+ * POST `body` to the BFF SSE endpoint (default /api/chat) and invoke `onEvent`
+ * for every SSE data frame until the stream closes. Returns `{ ok: false }` when
+ * the response is not a readable event-stream (the caller renders its own error);
+ * throws only if the caller's signal aborts or the network fails, so callers keep
+ * their try/catch.
  */
 export async function streamAgentChat(
   body: unknown,
   handlers: StreamHandlers,
 ): Promise<{ ok: boolean }> {
-  const res = await fetch("/api/chat", {
+  const res = await fetch(handlers.endpoint ?? "/api/chat", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
