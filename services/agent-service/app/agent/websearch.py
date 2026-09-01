@@ -14,6 +14,8 @@ import urllib.parse
 
 import httpx
 
+from app.agent.safety_guards import sanitize_web_query
+
 _ANCHOR = re.compile(r'<a[^>]*class="result__a"[^>]*>(.*?)</a>', re.S)
 _HREF = re.compile(r'href="([^"]+)"')
 _SNIPPET = re.compile(r'class="result__snippet"[^>]*>(.*?)</a>', re.S)
@@ -33,7 +35,13 @@ def _real_url(href: str) -> str:
 
 async def web_search(query: str, k: int = 4) -> list[dict[str, str]]:
     """Return up to `k` web results ({title,url,snippet}) for `query`, best-effort."""
-    q = (query or "").strip()
+    # Deterministic PHI/PII guard runs FIRST — scrub or block before any query
+    # crosses to the third-party engine. None means the query was essentially
+    # patient data: refuse to search rather than leak it.
+    safe, _note = sanitize_web_query(query or "")
+    if safe is None:
+        return []
+    q = safe.strip()
     if not q:
         return []
     try:
