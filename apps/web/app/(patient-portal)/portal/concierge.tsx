@@ -508,7 +508,9 @@ export function Concierge({ patientPhn, name, signals }: { patientPhn: string; n
                   onAction={(id) => streamAgent(id.includes("/") ? `Tell me about this record item (${id}).` : id)}
                   onConfirm={async (action, params) => {
                     // Human-in-the-loop: the agent proposed a confirm card; the tap
-                    // executes it via the existing consent-gated BFF route (P3).
+                    // commits it (P3). Refill goes straight to its gated BFF route;
+                    // booking/video hand off to the real scripted commerce flows
+                    // (slot picker → gated booking route; secure video room).
                     try {
                       if (action === "refill") {
                         const res = await fetch("/api/portal/refill", {
@@ -516,6 +518,14 @@ export function Concierge({ patientPhn, name, signals }: { patientPhn: string; n
                           body: JSON.stringify({ medication: params.medication }),
                         });
                         return res.ok;
+                      }
+                      if (action === "book") {
+                        book(typeof params.reason === "string" && params.reason ? params.reason : "a visit");
+                        return true;
+                      }
+                      if (action === "video") {
+                        startVideo();
+                        return true;
                       }
                     } catch { /* fall through */ }
                     return false;

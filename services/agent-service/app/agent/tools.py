@@ -462,6 +462,38 @@ def build_patient_tools(
                 "tell them to review and confirm; do NOT claim it is already done.")
 
     @tool
+    async def book_appointment(reason: str) -> str:
+        """Offer to book an appointment for the patient. Use when they want to book/see
+        a doctor/schedule a visit/follow-up. This does NOT book anything — it shows a
+        Confirm card; tapping it opens the real available-times picker (a gated backend
+        route books the chosen slot). Give a short natural reason (e.g. "a follow-up",
+        "a check-up", "a vaccination"). Never say an appointment is already booked."""
+        why = (reason or "a visit").strip()[:80]
+        widget_sink.append({
+            "id": f"w_{len(widget_sink)}", "kind": "confirm-action", "title": "Book an appointment",
+            "data": {"action": "book", "params": {"reason": why},
+                     "prompt": f"Find available times for {why}?", "confirmLabel": "Show me times",
+                     "doneLabel": "Finding available times…"},
+        })
+        return (f"I've offered to book {why}. The patient taps Confirm to see real available times and "
+                "pick one; do NOT claim anything is booked yet.")
+
+    @tool
+    async def start_video(reason: str = "") -> str:
+        """Offer to start a secure video visit for the patient. Use when they ask to
+        see/talk to a doctor by video / start a video call / video consultation. This
+        does NOT start a call — it shows a Confirm card; tapping it connects them to a
+        secure room their clinician joins. Never say the call has started."""
+        widget_sink.append({
+            "id": f"w_{len(widget_sink)}", "kind": "confirm-action", "title": "Video visit",
+            "data": {"action": "video", "params": {},
+                     "prompt": "Start a secure video visit now?", "confirmLabel": "Start video visit",
+                     "doneLabel": "Connecting to a secure room…"},
+        })
+        return ("I've offered a video visit. The patient taps Confirm to connect to a secure room; "
+                "do NOT claim the call has started.")
+
+    @tool
     async def remember(note: str) -> str:
         """Remember a short PREFERENCE or recurring context about this person for next
         time — e.g. "prefers simple, plain-language explanations", "usually asks in
@@ -510,5 +542,6 @@ def build_patient_tools(
     # tools; clinicians never receive the patient-facing summary-card tool. Both
     # get render_widget (a display tool — no write side effects).
     if audience == "patient":
-        return [*read_tools, present_card, render_widget, remember, web_search, request_refill]
+        return [*read_tools, present_card, render_widget, remember, web_search,
+                request_refill, book_appointment, start_video]
     return [*read_tools, screen_medication, draft_prescription, render_widget, remember, web_search]
