@@ -137,6 +137,94 @@ def _overview_from_context(record_context: str) -> str:
     return "Here's the 360° picture straight from the record:\n\n" + "\n".join(out)
 
 
+# ---- patient ACTION intent (refill / book / video) --------------------------
+# A clear action request is answered INSTANTLY with a Confirm card (the same
+# widget the tools stage), skipping the slow tool loop. The model still only
+# proposes — the card commits nothing until the patient taps it.
+_REFILL_KW = ("refill", "re-fill", "renew")
+_BOOK_KW = ("book a", "book an", "book me", "book my", "schedule a", "schedule an",
+            "schedule me", "make an appointment", "set up an appointment",
+            "arrange an appointment", "get an appointment")
+_VIDEO_KW = ("video call", "video visit", "video consult", "video appointment",
+             "start a video", "video with", "call by video", "see a doctor by video")
+# If the ask carries clinical nuance, defer to the full agent (it may need to
+# reason/answer, not just stage a card).
+_ACTION_GUARD = ("should i", "should we", "can i stop", "do i still", "side effect",
+                 "instead of", "or stop", "or should", "is it safe", "why am i", "what is",
+                 "what's", "how does", "interact")
+
+
+def _active_meds(record_context: str) -> list[str]:
+    """Active medication display strings from the pre-loaded context (names + dose)."""
+    for line in record_context.splitlines():
+        if "Active medications:" in line:
+            seg = line.split("Active medications:", 1)[1]
+            meds = []
+            for item in seg.split(";"):
+                name = re.sub(r"\s*\[source:[^\]]*\]", "", item).strip().strip(".").strip()
+                if name:
+                    meds.append(name)
+            return meds
+    return []
+
+
+def _detect_patient_action(question: str, record_context: str) -> dict[str, str] | None:
+    """Detect a clear refill/book/video request → an action to stage as a Confirm
+    card, or None to let the full agent handle it. Conservative: clinical-nuance
+    phrasing defers to the agent, and an un-named refill among several meds defers."""
+    q = (question or "").lower()
+    if not q.strip() or any(g in q for g in _ACTION_GUARD):
+        return None
+    if any(k in q for k in _VIDEO_KW):
+        return {"kind": "video"}
+    if any(k in q for k in _REFILL_KW):
+        meds = _active_meds(record_context)
+        for m in meds:  # a named medicine wins
+            drug = (m.split() or [""])[0].lower()
+            if len(drug) >= 4 and drug in q:
+                return {"kind": "refill", "med": m}
+        if len(meds) == 1:  # only one active med → unambiguous
+            return {"kind": "refill", "med": meds[0]}
+        return None  # ambiguous — let the agent ask which one
+    if any(k in q for k in _BOOK_KW):
+        reason = "a follow-up" if ("follow" in q or "review" in q) else "a visit"
+        return {"kind": "book", "reason": reason}
+    return None
+
+
+def _action_widget(action: dict[str, str]) -> tuple[dict[str, Any], str]:
+    """Build the confirm-action widget + a short friendly reply for a patient action."""
+    kind = action["kind"]
+    if kind == "refill":
+        med = action["med"]
+        return (
+            {"id": "w_act", "kind": "confirm-action", "title": "Refill request",
+             "data": {"action": "refill", "params": {"medication": med},
+                      "prompt": f"Request a refill for {med}?", "confirmLabel": "Confirm refill",
+                      "doneLabel": f"Refill requested for {med}"}},
+            f"Sure — I can request a refill for **{med}**. Tap **Confirm** below and I'll send it to "
+            "your prescriber's team. 💊",
+        )
+    if kind == "book":
+        reason = action.get("reason", "a visit")
+        return (
+            {"id": "w_act", "kind": "confirm-action", "title": "Book an appointment",
+             "data": {"action": "book", "params": {"reason": reason},
+                      "prompt": f"Find available times for {reason}?", "confirmLabel": "Show me times",
+                      "doneLabel": "Finding available times…"}},
+            f"Happy to help you book {reason}. Tap **Confirm** and I'll pull up the next available "
+            "times to choose from. 📅",
+        )
+    return (
+        {"id": "w_act", "kind": "confirm-action", "title": "Video visit",
+         "data": {"action": "video", "params": {},
+                  "prompt": "Start a secure video visit now?", "confirmLabel": "Start video visit",
+                  "doneLabel": "Connecting to a secure room…"}},
+        "I can connect you to a secure video visit — your clinician joins from their side. Tap "
+        "**Confirm** when you're ready. 🎥",
+    )
+
+
 _SOURCE_RE = re.compile(r"\[source:\s*([A-Za-z]+)/([A-Za-z0-9._-]+)\]")
 
 
@@ -392,6 +480,21 @@ async def chat(
             yield _sse({"type": "finish"})
             yield "data: [DONE]\n\n"
             return
+
+        # ACTION FAST PATH — a clear patient refill/book/video request is answered
+        # INSTANTLY with a Confirm card, skipping the (slow, multi-round-trip) tool
+        # loop. The model still only proposes; the card commits nothing until the
+        # patient taps it (P3 invariant). Clinical-nuance phrasing defers to the agent.
+        if body.audience == "patient":
+            action = _detect_patient_action(question, record_context)
+            if action is not None:
+                widget, reply = _action_widget(action)
+                yield _sse({"type": "text-delta", "id": text_id, "delta": reply})
+                yield _sse({"type": "data-widget", "widget": widget})
+                yield _sse({"type": "text-end", "id": text_id})
+                yield _sse({"type": "finish"})
+                yield "data: [DONE]\n\n"
+                return
 
         agent = build_agent(
             settings, fhir_id, sources, proposals,
