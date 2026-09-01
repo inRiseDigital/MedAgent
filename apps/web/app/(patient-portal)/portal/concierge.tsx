@@ -259,6 +259,7 @@ export function Concierge({ patientPhn, name, signals }: { patientPhn: string; n
     { label: tc("chipDue"), act: () => dueCheck() },
     { label: tc("chipVideo"), act: () => startVideo() },
     { label: tc("chipWho"), act: () => whoSaw() },
+    { label: "🔒 Privacy & consent", act: () => consent() },
   ], []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Agent-first: every typed question goes to the LIVE patient-persona agent,
@@ -432,15 +433,58 @@ export function Concierge({ patientPhn, name, signals }: { patientPhn: string; n
   function whoSaw() {
     me("Who saw my record?");
     typing(() => {
-      const rows = signals.accessRecent.slice(0, 4);
-      push({ t: "card", data: { tone: "info", kicker: "Transparency", title: "Recent access to your record",
-        facts: rows.length
-          ? rows.map((r) => ({ t: r.title.startsWith("You") ? "good" : undefined, x: `${r.title}${r.when ? ` — ${r.when}` : ""}` }))
-          : [{ x: "No recent access recorded." }],
-        text: "Every view is logged and tamper-proof. See the full list and revoke access in ‘Me’.",
-        actions: [{ kind: "ghost", icon: <FileText className="h-4 w-4" />, label: "Open access log", act: () => window.dispatchEvent(new CustomEvent("mh:tab", { detail: "me" })) }] } });
+      const rows = signals.accessRecent.slice(0, 6);
+      // Render the real audit trail as the access-log transparency widget (H0/S2).
+      push({ t: "ai", text: rows.length
+        ? "Here's who has looked at your record recently. Every view is logged and tamper-proof. 🛡️"
+        : "No one has accessed your record recently — and every view is always logged. 🛡️" });
+      if (rows.length) {
+        push({ t: "widget", spec: {
+          id: "w_access", kind: "access-log", title: "Who has seen your record",
+          data: { items: rows.map((r) => ({
+            who: r.title.replace(/^You\b/, "You"),
+            when: r.when ?? "",
+            you: r.title.startsWith("You"),
+          })) },
+        } });
+      }
       setQuicks(menu());
-    }, 850);
+    }, 700);
+  }
+
+  // ---- consent (H0/S2): view & change who can access the record, end-to-end via
+  // the gated /api/portal/consent route. One real scope today (face recognition);
+  // the panel grows as the backend exposes more.
+  const CONSENT_LABELS: Record<string, { label: string; detail: string }> = {
+    face_recognition: { label: "Face recognition at check-in", detail: "Lets check-in kiosks verify you by your face." },
+  };
+  async function fetchConsent(): Promise<Record<string, boolean>> {
+    try { const r = await fetch("/api/portal/consent", { cache: "no-store" }); return r.ok ? await r.json() : {}; }
+    catch { return {}; }
+  }
+  function pushConsentPanel(state: Record<string, boolean>) {
+    const scopes = Object.keys(CONSENT_LABELS).map((k) => ({
+      id: `consent:${k}`, label: CONSENT_LABELS[k]!.label, detail: CONSENT_LABELS[k]!.detail, granted: !!state[k],
+    }));
+    push({ t: "widget", spec: { id: "w_consent", kind: "consent-panel", title: "Who can access your record", data: { scopes } } });
+  }
+  function consent() {
+    me("Privacy & consent");
+    void (async () => {
+      const state = await fetchConsent();
+      push({ t: "ai", text: "Here's what you've allowed. Tap a switch to change it — every view of your record is always logged. 🔒" });
+      pushConsentPanel(state);
+      setQuicks(menu());
+    })();
+  }
+  async function toggleConsent(key: string) {
+    const cur = await fetchConsent();
+    const next = !cur[key];
+    try {
+      const r = await fetch("/api/portal/consent", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...cur, [key]: next }) });
+      if (r.ok) { pushConsentPanel((await r.json()) as Record<string, boolean>); push({ t: "ai", text: `Updated — ${CONSENT_LABELS[key]?.label ?? key} is now ${next ? "on" : "off"}. ✅` }); }
+      else push({ t: "ai", text: "Sorry — I couldn't update that just now." });
+    } catch { push({ t: "ai", text: "Sorry — something went wrong updating that." }); }
   }
 
   // ---- greeting (proactive, driven by REAL record signals) ----
@@ -575,7 +619,10 @@ export function Concierge({ patientPhn, name, signals }: { patientPhn: string; n
             : n.t === "widget" ? (
                 <Widget
                   spec={n.spec}
-                  onAction={(id) => streamAgent(id.includes("/") ? `Tell me about this record item (${id}).` : id)}
+                  onAction={(id) => {
+                    if (id.startsWith("consent:")) { void toggleConsent(id.slice("consent:".length)); return; }
+                    void streamAgent(id.includes("/") ? `Tell me about this record item (${id}).` : id);
+                  }}
                   onConfirm={async (action, params) => {
                     // Human-in-the-loop: the agent proposed a confirm card; the tap
                     // commits it (P3). Refill goes straight to its gated BFF route;
