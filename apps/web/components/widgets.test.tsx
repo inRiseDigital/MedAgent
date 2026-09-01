@@ -10,7 +10,7 @@ const spec = (kind: string, data: Record<string, unknown>, extra: Partial<Widget
 describe("Widget registry", () => {
   it("exposes the expected kinds", () => {
     expect(WIDGET_KINDS).toEqual(
-      expect.arrayContaining(["safety-alert", "record-links", "metric-trend", "stat-grid", "next-best-action", "timeline", "summary"]),
+      expect.arrayContaining(["safety-alert", "record-links", "metric-trend", "stat-grid", "next-best-action", "timeline", "summary", "access-log", "consent-panel"]),
     );
   });
 
@@ -66,5 +66,41 @@ describe("Widget registry", () => {
     expect(onConfirm).toHaveBeenCalledWith("refill", { medication: "Metformin" });
     // the model only proposed; the tap is what commits — the done receipt reflects that
     expect(await screen.findByText(/Refill requested for Metformin/)).toBeInTheDocument();
+  });
+
+  it("access-log renders its viewers and marks the you:true row", () => {
+    render(
+      <Widget
+        spec={spec("access-log", {
+          items: [
+            { who: "Dr. Amara Okoye", when: "2h ago", kind: "Encounter" },
+            { who: "You", when: "just now", you: true },
+          ],
+        })}
+      />,
+    );
+    expect(screen.getByText("Dr. Amara Okoye")).toBeInTheDocument();
+    expect(screen.getByText("2h ago")).toBeInTheDocument();
+    expect(screen.getByText("Encounter")).toBeInTheDocument(); // kind chip
+    expect(screen.getByText("you")).toBeInTheDocument(); // self pill
+  });
+
+  it("consent-panel renders scopes and fires onAction with the scope id on tap", () => {
+    const onAction = vi.fn();
+    render(
+      <Widget
+        spec={spec("consent-panel", {
+          scopes: [
+            { id: "care-team", label: "Your care team", detail: "Doctors treating you", granted: true },
+            { id: "research", label: "Anonymised research", granted: false },
+          ],
+        })}
+        onAction={onAction}
+      />,
+    );
+    expect(screen.getByText("Your care team")).toBeInTheDocument();
+    expect(screen.getByText("Anonymised research")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Anonymised research/ }));
+    expect(onAction).toHaveBeenCalledWith("research");
   });
 });

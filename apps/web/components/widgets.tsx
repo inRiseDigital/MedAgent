@@ -12,8 +12,10 @@ import {
   Activity,
   CheckCircle2,
   ChevronRight,
+  Eye,
   Info,
   Loader2,
+  ShieldCheck,
   Sparkles,
 } from "lucide-react";
 import { type ReactNode, useState } from "react";
@@ -242,6 +244,66 @@ function ConfirmAction({ spec, onConfirm }: WidgetProps) {
   );
 }
 
+// "Who has seen your record" — a calm, trustworthy access ledger.
+function AccessLog({ spec }: { spec: WidgetSpec }) {
+  const items = Array.isArray(spec.data.items)
+    ? (spec.data.items as { who: string; when: string; kind?: string; you?: boolean }[])
+    : [];
+  return (
+    <Shell icon={<Eye className="h-4 w-4" />} title={spec.title ?? "Who has seen your record"}>
+      <ul className="flex flex-col gap-1.5">
+        {items.map((it, i) => (
+          <li key={i} className="flex items-center gap-2 text-[13px] leading-snug">
+            <ShieldCheck className="h-3.5 w-3.5 shrink-0" style={{ color: "var(--muted-foreground)" }} />
+            <span className="font-semibold">{it.who}</span>
+            {it.you ? (
+              <span className="inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium"
+                style={{ background: "var(--muted)", color: "var(--success)" }}>you</span>
+            ) : null}
+            {it.kind ? <RefChip refId={it.kind} /> : null}
+            <span className="ml-auto shrink-0 text-[11px] tabular-nums" style={{ color: "var(--muted-foreground)" }}>{it.when}</span>
+          </li>
+        ))}
+      </ul>
+    </Shell>
+  );
+}
+
+// "Who can access your record" — tap a scope to grant/revoke (parent wires the route).
+function ConsentPanel({ spec, onAction }: WidgetProps) {
+  const scopes = Array.isArray(spec.data.scopes)
+    ? (spec.data.scopes as { id: string; label: string; granted: boolean; detail?: string }[])
+    : [];
+  return (
+    <Shell tone="good" icon={<ShieldCheck className="h-4 w-4" />} title={spec.title ?? "Who can access your record"}>
+      <div className="flex flex-col gap-0.5">
+        {scopes.map((s) => (
+          <button key={s.id} type="button" aria-pressed={s.granted} onClick={() => onAction?.(s.id)}
+            className="group flex items-center justify-between gap-3 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-[var(--muted)]">
+            <span className="flex min-w-0 flex-col">
+              <span className="text-[13px] font-medium">{s.label}</span>
+              {s.detail ? <span className="text-[11px]" style={{ color: "var(--muted-foreground)" }}>{s.detail}</span> : null}
+            </span>
+            <span className="flex shrink-0 items-center gap-1.5">
+              <span className="text-[11px] font-medium" style={{ color: s.granted ? "var(--success)" : "var(--muted-foreground)" }}>
+                {s.granted ? "Granted" : "Revoked"}
+              </span>
+              <span className="relative inline-flex h-5 w-9 items-center rounded-full transition-colors"
+                style={{ background: s.granted ? "var(--success)" : "var(--muted)" }}>
+                <span className="h-4 w-4 rounded-full transition-transform"
+                  style={{ background: "var(--card)", transform: s.granted ? "translateX(18px)" : "translateX(2px)" }} />
+              </span>
+            </span>
+          </button>
+        ))}
+      </div>
+      <p className="mt-2 text-[11px]" style={{ color: "var(--muted-foreground)" }}>
+        Every view is logged; you can change this anytime.
+      </p>
+    </Shell>
+  );
+}
+
 interface WidgetProps {
   spec: WidgetSpec;
   onAction?: (id: string) => void;
@@ -255,6 +317,8 @@ const REGISTRY: Record<string, (p: WidgetProps) => ReactNode> = {
   "stat-grid": StatGrid,
   "next-best-action": NextBestAction,
   "confirm-action": ConfirmAction,
+  "access-log": AccessLog,
+  "consent-panel": ConsentPanel,
   timeline: TimelineW,
   summary: SummaryWidget,
 };
