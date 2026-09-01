@@ -253,15 +253,20 @@ async def chat(
         # and as the resilient overview fallback if the model can't synthesise in time.
         record_context = context_text
 
-        # Long-term memory (P2): recall durable preferences/context for this record
-        # and inject them; the agent persists new ones via the `remember` tool.
+        # Long-term memory (P2): recall durable preferences/context and inject them;
+        # the agent persists new ones via the `remember` tool. Scope: a PATIENT's
+        # notes follow the patient (across their sessions, key = patient_id); a
+        # CLINICIAN's response-style notes follow the DOCTOR (across every patient
+        # they view, key = clin:<subject>), so the two personas that share a patient
+        # never bleed preferences into each other.
         _redis = getattr(request.app.state, "redis", None)
-        _mem = render_memory_block(await recall_memory(_redis, body.patient_id))
+        mem_subject = body.patient_id if body.audience == "patient" else f"clin:{principal.subject}"
+        _mem = render_memory_block(await recall_memory(_redis, mem_subject))
         if _mem:
             context_text = (context_text + "\n\n" + _mem) if context_text else _mem
 
         async def _remember(note: str) -> bool:
-            return await remember_memory(_redis, body.patient_id, note)
+            return await remember_memory(_redis, mem_subject, note)
 
         # State tracked across the run so we can GUARANTEE an answer floor: every
         # 200 stream must carry at least one text-delta. A tool-heavy request (e.g.
