@@ -31,6 +31,7 @@ from app.agent.context import build_patient_context
 from app.agent.memory import recall as recall_memory
 from app.agent.memory import remember as remember_memory
 from app.agent.memory import render_memory_block
+from app.agent.telemetry import record_turn
 from app.auth import Principal, require_user
 from app.config import Settings
 
@@ -409,20 +410,37 @@ async def chat(
         final_answer = ""  # last non-empty AI message content (non-streaming providers)
         errored = False  # an error note was already emitted as the reply
         timed_out = False
+        token_total = 0  # LLM tokens used this turn (best-effort, from usage_metadata)
 
-        def _finish_log(path: str) -> None:
-            """One structured line per turn: which path answered, how long, how much
-            work, and on which provider — the raw material for latency/cost telemetry."""
+        def _add_usage(obj: Any) -> None:
+            """Fold an AI message/chunk's token usage into the turn total (best-effort;
+            usage_metadata is cumulative per call, so the last value for a call wins)."""
+            nonlocal token_total
+            um = getattr(obj, "usage_metadata", None)
+            if isinstance(um, dict):
+                tot = um.get("total_tokens")
+                if isinstance(tot, int) and tot > token_total:
+                    token_total = tot
+
+        async def _finish_log(path: str) -> None:
+            """One structured line per turn + a PHI-free telemetry record: which path
+            answered, how long, how much work, tokens, and on which provider — the raw
+            material for the latency/cost dashboards (S4). Best-effort; never blocks."""
             provider = (
                 "anthropic"
                 if settings.agent_react_provider == "anthropic" and settings.anthropic_api_key
                 else settings.agent_llm_mode
             )
+            ms = int((time.monotonic() - _t0) * 1000)
             logger.info(
-                "chat_turn path=%s audience=%s mode=%s ms=%d sources=%d "
+                "chat_turn path=%s audience=%s mode=%s ms=%d sources=%d tokens=%d "
                 "streamed=%s timed_out=%s errored=%s loop_provider=%s",
-                path, body.audience, body.mode, int((time.monotonic() - _t0) * 1000),
-                len(sources), streamed, timed_out, errored, provider,
+                path, body.audience, body.mode, ms, len(sources), token_total,
+                streamed, timed_out, errored, provider,
+            )
+            await record_turn(
+                _redis, path=path, audience=body.audience, ms=ms, provider=provider,
+                tokens=token_total, streamed=streamed, timed_out=timed_out, errored=errored,
             )
 
         # PROACTIVE (P5): an agent-authored grounded greeting/nudge on portal-open —
@@ -455,6 +473,7 @@ async def chat(
                 llm = build_chat_llm(settings, streaming=True)
                 async with asyncio.timeout(settings.agent_run_timeout_seconds):
                     async for chunk in llm.astream(pro_msgs):
+                        _add_usage(chunk)
                         d = _delta_text(chunk)
                         if d:
                             streamed = True
@@ -479,7 +498,7 @@ async def chat(
             yield _sse({"type": "text-end", "id": text_id})
             yield _sse({"type": "finish"})
             yield "data: [DONE]\n\n"
-            _finish_log("proactive")
+            await _finish_log("proactive")
             return
 
         # FAST PATH — a broad "overview / 360 / full profile" is synthesised directly
@@ -511,6 +530,7 @@ async def chat(
                 llm = build_chat_llm(settings, streaming=True)
                 async with asyncio.timeout(synth_budget):
                     async for chunk in llm.astream(msgs):
+                        _add_usage(chunk)
                         delta = _delta_text(chunk)
                         if delta:
                             streamed = True
@@ -539,7 +559,7 @@ async def chat(
             yield _sse({"type": "text-end", "id": text_id})
             yield _sse({"type": "finish"})
             yield "data: [DONE]\n\n"
-            _finish_log("overview")
+            await _finish_log("overview")
             return
 
         # ACTION FAST PATH — a clear patient refill/book/video request is answered
@@ -555,7 +575,7 @@ async def chat(
                 yield _sse({"type": "text-end", "id": text_id})
                 yield _sse({"type": "finish"})
                 yield "data: [DONE]\n\n"
-                _finish_log("action")
+                await _finish_log("action")
                 return
 
         agent = build_agent(
@@ -580,6 +600,7 @@ async def chat(
                     if mode == "messages":
                         token = data[0]
                         if token.__class__.__name__ == "AIMessageChunk":
+                            _add_usage(token)
                             delta = _delta_text(token)
                             if delta:
                                 streamed = True
@@ -596,6 +617,7 @@ async def chat(
                                     if label:
                                         yield _sse({"type": "data-status", "text": label})
                         if msgs and getattr(msgs[-1], "type", "") == "ai":
+                            _add_usage(msgs[-1])
                             text = _delta_text(msgs[-1])
                             if text:
                                 final_answer = text
@@ -657,7 +679,7 @@ async def chat(
             yield _sse({"type": "data-widget", "widget": w})
         yield _sse({"type": "finish"})
         yield "data: [DONE]\n\n"
-        _finish_log("react")
+        await _finish_log("react")
 
     return StreamingResponse(
         stream(),

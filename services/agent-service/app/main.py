@@ -14,7 +14,7 @@ from redis.asyncio import Redis
 from app.auth import JWKSCache
 from app.config import Settings
 from app.logging_config import configure_logging
-from app.routers import chat, feedback, rx_safety, vision
+from app.routers import chat, feedback, rx_safety, telemetry, vision
 from app.telemetry import configure_telemetry
 
 API_V1_PREFIX = "/api/v1"
@@ -81,6 +81,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(vision.router, prefix=API_V1_PREFIX)
     app.include_router(rx_safety.router, prefix=API_V1_PREFIX)
     app.include_router(feedback.router, prefix=API_V1_PREFIX)
+    app.include_router(telemetry.router, prefix=API_V1_PREFIX)
 
     @app.get("/healthz", tags=["health"])
     async def healthz() -> dict[str, str]:
