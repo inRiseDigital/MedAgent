@@ -12,6 +12,7 @@ import asyncio
 import json
 import logging
 import re
+import time
 import uuid
 from collections.abc import AsyncIterator
 from typing import Annotated, Any
@@ -339,6 +340,11 @@ async def chat(
     agent_messages = _to_agent_messages(body.messages)
 
     async def stream() -> AsyncIterator[str]:
+        # Per-turn observability (S1/S4): time the turn, record which path answered
+        # it and the shape of the work, and log one structured line at every exit —
+        # the foundation for latency/cost dashboards. Never changes response behaviour.
+        _t0 = time.monotonic()
+
         yield _sse({"type": "start", "messageId": message_id})
         yield _sse({"type": "text-start", "id": text_id})
 
@@ -404,6 +410,21 @@ async def chat(
         errored = False  # an error note was already emitted as the reply
         timed_out = False
 
+        def _finish_log(path: str) -> None:
+            """One structured line per turn: which path answered, how long, how much
+            work, and on which provider — the raw material for latency/cost telemetry."""
+            provider = (
+                "anthropic"
+                if settings.agent_react_provider == "anthropic" and settings.anthropic_api_key
+                else settings.agent_llm_mode
+            )
+            logger.info(
+                "chat_turn path=%s audience=%s mode=%s ms=%d sources=%d "
+                "streamed=%s timed_out=%s errored=%s loop_provider=%s",
+                path, body.audience, body.mode, int((time.monotonic() - _t0) * 1000),
+                len(sources), streamed, timed_out, errored, provider,
+            )
+
         # PROACTIVE (P5): an agent-authored grounded greeting/nudge on portal-open —
         # not a reply to a user turn. Synthesise a warm, brief greeting from the
         # context + memory, then always render the safety/record widgets + a few
@@ -458,6 +479,7 @@ async def chat(
             yield _sse({"type": "text-end", "id": text_id})
             yield _sse({"type": "finish"})
             yield "data: [DONE]\n\n"
+            _finish_log("proactive")
             return
 
         # FAST PATH — a broad "overview / 360 / full profile" is synthesised directly
@@ -517,6 +539,7 @@ async def chat(
             yield _sse({"type": "text-end", "id": text_id})
             yield _sse({"type": "finish"})
             yield "data: [DONE]\n\n"
+            _finish_log("overview")
             return
 
         # ACTION FAST PATH — a clear patient refill/book/video request is answered
@@ -532,6 +555,7 @@ async def chat(
                 yield _sse({"type": "text-end", "id": text_id})
                 yield _sse({"type": "finish"})
                 yield "data: [DONE]\n\n"
+                _finish_log("action")
                 return
 
         agent = build_agent(
@@ -633,6 +657,7 @@ async def chat(
             yield _sse({"type": "data-widget", "widget": w})
         yield _sse({"type": "finish"})
         yield "data: [DONE]\n\n"
+        _finish_log("react")
 
     return StreamingResponse(
         stream(),
