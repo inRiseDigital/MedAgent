@@ -174,6 +174,29 @@ def build_chat_llm(settings: Settings, streaming: bool = False) -> Any:
     )
 
 
+def build_react_llm(settings: Settings) -> Any:
+    """The model for the tool-using ReAct loop (specific Q&A that needs read tools).
+
+    Prefer Anthropic Claude here EVEN WHEN the configured chat mode is Groq/OpenAI:
+    an OpenAI-compatible reasoning model (Qwen) doesn't stream the post-tool answer
+    through LangGraph and takes ~15-45s per round-trip, so a multi-tool ask blanks
+    for up to the timeout. Claude streams the answer token by token (it appears
+    immediately, no timeout floor) and needs fewer round-trips. The instant fast
+    paths (overview synthesis, proactive greeting, deterministic actions) stay on
+    the configured model — this only swaps the slow tool loop. Falls back to the
+    configured model when Anthropic isn't available (no key / stub mode)."""
+    if settings.agent_react_provider == "anthropic" and settings.anthropic_api_key:
+        return ChatAnthropic(
+            model=settings.anthropic_model,
+            api_key=settings.anthropic_api_key,
+            max_tokens=settings.agent_max_tokens,
+            max_retries=settings.llm_max_retries,
+            default_request_timeout=settings.llm_timeout_seconds,
+            thinking={"type": "disabled"},
+        )
+    return build_chat_llm(settings)
+
+
 def build_agent(
     settings: Settings,
     patient_fhir_id: str,
@@ -193,7 +216,7 @@ def build_agent(
     is a pre-loaded, cited snapshot of the record (grounding by construction) — it
     is appended to the system prompt so the agent starts from the chart."""
     system_prompt = build_system_prompt(audience, locale, context_text)
-    llm = build_chat_llm(settings)  # ReAct loop: streaming off (see build_chat_llm)
+    llm = build_react_llm(settings)  # tool loop → Claude (streams; see build_react_llm)
     tools = build_patient_tools(
         settings.fhir_base_url, patient_fhir_id, sources, proposals, cards, widgets,
         remember_fn=remember_fn, audience=audience,

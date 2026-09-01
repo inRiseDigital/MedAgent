@@ -66,6 +66,13 @@ class Settings(BaseSettings):
     # Stub mode lets the chat be demoed when the provider is unavailable.
     agent_llm_mode: str = "live"
 
+    # Which model runs the tool-using ReAct loop (specific Q&A). "anthropic" (default)
+    # routes it to Claude even when agent_llm_mode is "openai"/Groq — Claude streams
+    # the post-tool answer token by token (no timeout floor) and needs fewer round
+    # trips, so tool-heavy asks feel fast. The instant fast paths stay on the
+    # configured model. Set to "configured" to run the loop on agent_llm_mode too.
+    agent_react_provider: str = "anthropic"
+
     # OpenAI-compatible fallback provider (used when agent_llm_mode == "openai").
     # The model MUST support tool/function calling (the agent is a ReAct+tools
     # graph). Example (Groq): base_url=https://api.groq.com/openai/v1,
