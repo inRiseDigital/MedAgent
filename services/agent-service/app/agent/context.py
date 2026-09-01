@@ -89,6 +89,16 @@ def _render(summary: dict[str, Any], brief: dict[str, Any] | None) -> str:
         + (" (CRITICAL)" if r.get("critical") else "")
         + f" [source: {r.get('ref', '')}]",
     )
+    # Appointments are in the summary and often asked about ("when's my next
+    # visit?") — including them here lets the agent answer from context instead of
+    # spending a get_appointments round-trip.
+    appts = [a for a in (summary.get("appointments") or []) if a.get("start")]
+    if appts:
+        rendered = "; ".join(
+            f"{a.get('start')}" + (f" ({a['status']})" if a.get("status") else "")
+            for a in appts[: _MAX.get("appointments", 6)]
+        )
+        lines.append(f"- Appointments: {rendered}.")
     return "\n".join(lines)
 
 
