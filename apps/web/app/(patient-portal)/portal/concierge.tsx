@@ -101,6 +101,8 @@ export function Concierge({ patientPhn, name, signals }: { patientPhn: string; n
   const [voiceOpen, setVoiceOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  // The confirm-action card awaiting a decision — so voice can act on "yes, book it".
+  const pendingConfirm = useRef<{ action: string; params: Record<string, unknown> } | null>(null);
   const ran = useRef(false);
   const videoRoom = `medagent-${patientPhn}`; // deterministic: doctor + patient meet here
 
@@ -177,7 +179,14 @@ export function Concierge({ patientPhn, name, signals }: { patientPhn: string; n
                   push({ t: "card", data: { tone: c.tone ?? "info", kicker: "Summary", title: c.title, facts: (c.points ?? []).map((x) => ({ x })) } });
                 }
               }
-              else if (o.type === "data-widget" && o.widget) { push({ t: "widget", spec: o.widget as WidgetSpec }); down(); }
+              else if (o.type === "data-widget" && o.widget) {
+                const spec = o.widget as WidgetSpec;
+                // Remember a confirm card so voice ("yes, book it") can act on it.
+                if (spec.kind === "confirm-action") {
+                  pendingConfirm.current = { action: String(spec.data.action ?? ""), params: (spec.data.params as Record<string, unknown>) ?? {} };
+                }
+                push({ t: "widget", spec }); down();
+              }
             },
           },
         );
@@ -501,6 +510,53 @@ export function Concierge({ patientPhn, name, signals }: { patientPhn: string; n
     } catch { push({ t: "ai", text: "Sorry — something went wrong updating that." }); }
   }
 
+  // Execute a proposed confirm-action (refill/book/video) — shared by the card's
+  // Confirm button AND voice ("yes, book it"). The model proposes; this commits
+  // via the gated flows (P3 invariant). Returns whether it succeeded.
+  async function runConfirm(action: string, params: Record<string, unknown>): Promise<boolean> {
+    pendingConfirm.current = null;
+    try {
+      if (action === "refill") {
+        const res = await fetch("/api/portal/refill", {
+          method: "POST", headers: { "content-type": "application/json" },
+          body: JSON.stringify({ medication: params.medication }),
+        });
+        if (!res.ok) return false;
+        const d = (await res.json().catch(() => ({}))) as { medication?: string };
+        const med = d.medication ?? String(params.medication ?? "your medicine");
+        push({ t: "widget", spec: { id: `order-${Date.now()}`, kind: "order-status", title: "Refill request", data: {
+          label: med,
+          steps: [
+            { key: "requested", label: "Requested", state: "active" },
+            { key: "review", label: "Pharmacy review", state: "pending" },
+            { key: "ready", label: "Ready to collect", state: "pending" },
+          ],
+        } } });
+        return true;
+      }
+      if (action === "book") {
+        book(typeof params.reason === "string" && params.reason ? params.reason : "a visit");
+        return true;
+      }
+      if (action === "video") {
+        startVideo();
+        return true;
+      }
+    } catch { /* fall through */ }
+    return false;
+  }
+
+  // Voice turn: if a confirm card is pending and the patient says "yes/confirm/go
+  // ahead", execute it hands-free; otherwise route the utterance to the agent.
+  async function voiceAsk(text: string): Promise<string> {
+    const p = pendingConfirm.current;
+    if (p && /\b(yes|yeah|yep|confirm|go ahead|do it|please do|okay|ok|sure|book it|send it)\b/i.test(text)) {
+      const ok = await runConfirm(p.action, p.params);
+      return ok ? "Done — I've taken care of that for you. ✅" : "Sorry, I couldn't complete that just now.";
+    }
+    return streamAgent(text);
+  }
+
   // ---- greeting (proactive, driven by REAL record signals) ----
   useEffect(() => {
     if (ran.current) return;
@@ -553,7 +609,7 @@ export function Concierge({ patientPhn, name, signals }: { patientPhn: string; n
   return (
     <div className="mh flex h-[calc(100dvh-9rem)] flex-col overflow-hidden md:h-[calc(100dvh-5.5rem)]">
       {inVideo ? <VideoRoom room={videoRoom} displayName={name} onClose={() => setInVideo(false)} /> : null}
-      {voiceOpen ? <VoiceMode locale={locale} name={name} ask={(t) => streamAgent(t)} onClose={() => setVoiceOpen(false)} /> : null}
+      {voiceOpen ? <VoiceMode locale={locale} name={name} ask={voiceAsk} onClose={() => setVoiceOpen(false)} /> : null}
       <div ref={scrollRef} className="flex flex-1 flex-col gap-3 overflow-y-auto p-3.5">
         {msgs.map((n, i) => {
           if (n.t === "me") return <div key={i} className="mh-msg me"><div className="mh-bubble">{n.text}</div></div>;
@@ -645,42 +701,7 @@ export function Concierge({ patientPhn, name, signals }: { patientPhn: string; n
                     if (id.startsWith("consent:")) { void toggleConsent(id.slice("consent:".length)); return; }
                     void streamAgent(id.includes("/") ? `Tell me about this record item (${id}).` : id);
                   }}
-                  onConfirm={async (action, params) => {
-                    // Human-in-the-loop: the agent proposed a confirm card; the tap
-                    // commits it (P3). Refill goes straight to its gated BFF route;
-                    // booking/video hand off to the real scripted commerce flows
-                    // (slot picker → gated booking route; secure video room).
-                    try {
-                      if (action === "refill") {
-                        const res = await fetch("/api/portal/refill", {
-                          method: "POST", headers: { "content-type": "application/json" },
-                          body: JSON.stringify({ medication: params.medication }),
-                        });
-                        if (!res.ok) return false;
-                        // Show the refill as a TRACKED order (S8): requested → review → ready.
-                        const d = (await res.json().catch(() => ({}))) as { medication?: string };
-                        const med = d.medication ?? String(params.medication ?? "your medicine");
-                        push({ t: "widget", spec: { id: `order-${Date.now()}`, kind: "order-status", title: "Refill request", data: {
-                          label: med,
-                          steps: [
-                            { key: "requested", label: "Requested", state: "active" },
-                            { key: "review", label: "Pharmacy review", state: "pending" },
-                            { key: "ready", label: "Ready to collect", state: "pending" },
-                          ],
-                        } } });
-                        return true;
-                      }
-                      if (action === "book") {
-                        book(typeof params.reason === "string" && params.reason ? params.reason : "a visit");
-                        return true;
-                      }
-                      if (action === "video") {
-                        startVideo();
-                        return true;
-                      }
-                    } catch { /* fall through */ }
-                    return false;
-                  }}
+                  onConfirm={runConfirm}
                 />
               )
             : null;
