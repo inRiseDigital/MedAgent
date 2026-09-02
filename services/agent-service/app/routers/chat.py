@@ -32,6 +32,7 @@ from app.agent.memory import recall as recall_memory
 from app.agent.memory import remember as remember_memory
 from app.agent.memory import render_memory_block
 from app.agent.telemetry import record_turn
+from app.agent.threads import append_turn, load_thread
 from app.auth import Principal, require_user
 from app.config import Settings
 
@@ -401,6 +402,16 @@ async def chat(
         async def _remember(note: str) -> bool:
             return await remember_memory(_redis, mem_subject, note)
 
+        # Server-owned thread (H0-S1): when a conversation_id is given, the SERVER is
+        # the source of truth for the history — build the turn from the stored thread
+        # + the newest user message, so the conversation survives a reload and the
+        # client no longer needs to re-send it. Falls back to the client's messages
+        # when there is no stored thread (e.g. the first turn).
+        turn_messages = agent_messages
+        _thread = await load_thread(_redis, body.conversation_id)
+        if _thread:
+            turn_messages = [*_thread, {"role": "user", "content": question}]
+
         # State tracked across the run so we can GUARANTEE an answer floor: every
         # 200 stream must carry at least one text-delta. A tool-heavy request (e.g.
         # "give me a full 360 profile") can otherwise finish with an empty final
@@ -411,6 +422,7 @@ async def chat(
         errored = False  # an error note was already emitted as the reply
         timed_out = False
         token_total = 0  # LLM tokens used this turn (best-effort, from usage_metadata)
+        answer_parts: list[str] = []  # assistant text this turn, for the server thread
 
         def _add_usage(obj: Any) -> None:
             """Fold an AI message/chunk's token usage into the turn total (best-effort;
@@ -442,6 +454,12 @@ async def chat(
                 _redis, path=path, audience=body.audience, ms=ms, provider=provider,
                 tokens=token_total, streamed=streamed, timed_out=timed_out, errored=errored,
             )
+            # Persist the exchange to the server-owned thread — but not the proactive
+            # greeting (agent-initiated, not a user turn), and only when a real answer
+            # was produced (never store an orphan user turn on an error/empty run).
+            answer = ("".join(answer_parts) or final_answer).strip()
+            if path != "proactive" and answer:
+                await append_turn(_redis, body.conversation_id, question, answer)
 
         # PROACTIVE (P5): an agent-authored grounded greeting/nudge on portal-open —
         # not a reply to a user turn. Synthesise a warm, brief greeting from the
@@ -522,7 +540,7 @@ async def chat(
                     "[source: …] citations exactly as given. Be concise and clinical."
                 )
                 msgs: list[Any] = [SystemMessage(content=sys_prompt)]
-                for m in agent_messages:
+                for m in turn_messages:
                     msgs.append(
                         HumanMessage(content=m["content"]) if m["role"] == "user"
                         else AIMessage(content=m["content"])
@@ -534,6 +552,7 @@ async def chat(
                         delta = _delta_text(chunk)
                         if delta:
                             streamed = True
+                            answer_parts.append(delta)
                             yield _sse({"type": "text-delta", "id": text_id, "delta": delta})
             except (TimeoutError, asyncio.TimeoutError):
                 timed_out = True
@@ -548,6 +567,7 @@ async def chat(
                 fallback = _overview_from_context(record_context)
                 if fallback:
                     streamed = True
+                    answer_parts.append(fallback)
                     yield _sse({"type": "text-delta", "id": text_id, "delta": fallback})
             cites = _context_citations(record_context)
             if cites:
@@ -570,6 +590,7 @@ async def chat(
             action = _detect_patient_action(question, record_context)
             if action is not None:
                 widget, reply = _action_widget(action)
+                answer_parts.append(reply)
                 yield _sse({"type": "text-delta", "id": text_id, "delta": reply})
                 yield _sse({"type": "data-widget", "widget": widget})
                 yield _sse({"type": "text-end", "id": text_id})
@@ -593,7 +614,7 @@ async def chat(
             announced: set[str] = set()  # tool names we've already narrated
             async with asyncio.timeout(settings.agent_run_timeout_seconds):
                 async for mode, data in agent.astream(
-                    {"messages": agent_messages or [{"role": "user", "content": question}]},
+                    {"messages": turn_messages or [{"role": "user", "content": question}]},
                     stream_mode=["messages", "values"],
                     config={"recursion_limit": settings.agent_recursion_limit},
                 ):
@@ -604,6 +625,7 @@ async def chat(
                             delta = _delta_text(token)
                             if delta:
                                 streamed = True
+                                answer_parts.append(delta)
                                 yield _sse({"type": "text-delta", "id": text_id, "delta": delta})
                     elif mode == "values":
                         msgs = data.get("messages", []) if isinstance(data, dict) else []
