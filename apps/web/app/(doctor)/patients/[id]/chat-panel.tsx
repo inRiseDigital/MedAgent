@@ -285,10 +285,33 @@ export function ChatPanel({ patientId, opening }: { patientId: string; opening?:
                           onAction={(id) => void send(id.includes("/") ? `Tell me about ${id}` : id)}
                           onConfirm={async (action, params) => {
                             if (action === "consult-complete") {
+                              // Sign & file (S7): the confirmed items become a real,
+                              // gated FHIR Encounter + note. The doctor confirmed each
+                              // item — Complete is the deliberate sign-off.
                               const ids = Array.isArray(params.confirmed) ? (params.confirmed as string[]) : [];
                               const labels = ids.map((id) => consultItems.current[id]).filter(Boolean);
-                              void send(`Draft a concise consultation note for this patient covering the items I confirmed today: ${labels.join("; ")}. Ground it in the record and cite where relevant. This is a DRAFT for my review — I sign the final note.`);
-                              return true;
+                              try {
+                                const res = await fetch("/api/consult/commit", {
+                                  method: "POST", headers: { "content-type": "application/json" },
+                                  body: JSON.stringify({ patient_id: patientId, items: labels }),
+                                });
+                                if (!res.ok) return false;
+                                const d = (await res.json()) as { encounter_id?: string };
+                                setTurns((prev) => [...prev, {
+                                  role: "assistant", text: "",
+                                  widgets: [{ id: `consult-receipt-${Date.now()}`, kind: "summary", title: "Consultation filed", data: {
+                                    tone: "good",
+                                    points: [
+                                      d.encounter_id ? `Encounter recorded — ${d.encounter_id}` : "Encounter recorded",
+                                      `${labels.length} item(s) documented to the note`,
+                                      "Filed to the patient's record",
+                                    ],
+                                  } }],
+                                }]);
+                                return true;
+                              } catch {
+                                return false;
+                              }
                             }
                             return false;
                           }} />
