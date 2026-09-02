@@ -513,6 +513,23 @@ def build_patient_tools(
                 "do NOT claim the call has started.")
 
     @tool
+    async def order_lab(test: str) -> str:
+        """Propose a LABORATORY order for the doctor to CONFIRM. Use when the doctor asks
+        to order/request a lab test (e.g. "order a full blood count", "request a lipid
+        panel", "get renal function"). This does NOT place the order — it shows a Confirm
+        card; the ServiceRequest is created ONLY when the doctor taps Confirm (a gated
+        backend route). Give the exact test name. Never say the order is already placed."""
+        t = (test or "").strip()[:120]
+        widget_sink.append({
+            "id": f"w_{len(widget_sink)}", "kind": "confirm-action", "title": "Lab order",
+            "data": {"action": "lab-order", "params": {"test": t},
+                     "prompt": f"Order “{t}” for this patient?", "confirmLabel": "Confirm order",
+                     "doneLabel": f"{t} ordered"},
+        })
+        return (f"I've prepared a lab order for {t}. The doctor must tap Confirm to place it — "
+                "do NOT claim it is already ordered.")
+
+    @tool
     async def remember(note: str) -> str:
         """Remember a short PREFERENCE or recurring context about this person for next
         time — e.g. "prefers simple, plain-language explanations", "usually asks in
@@ -563,4 +580,5 @@ def build_patient_tools(
     if audience == "patient":
         return [*read_tools, present_card, render_widget, remember, web_search,
                 request_refill, book_appointment, start_video]
-    return [*read_tools, screen_medication, draft_prescription, render_widget, remember, web_search]
+    return [*read_tools, screen_medication, draft_prescription, order_lab,
+            render_widget, remember, web_search]

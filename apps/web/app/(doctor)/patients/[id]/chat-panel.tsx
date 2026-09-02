@@ -284,6 +284,30 @@ export function ChatPanel({ patientId, opening }: { patientId: string; opening?:
                         <Widget key={w.id} spec={w}
                           onAction={(id) => void send(id.includes("/") ? `Tell me about ${id}` : id)}
                           onConfirm={async (action, params) => {
+                            if (action === "lab-order") {
+                              // Agent-driven ordering: the model proposed; this tap
+                              // commits a real FHIR ServiceRequest via the gated route.
+                              const test = String(params.test ?? "");
+                              try {
+                                const res = await fetch("/api/lab/order", {
+                                  method: "POST", headers: { "content-type": "application/json" },
+                                  body: JSON.stringify({ patient_id: patientId, test }),
+                                });
+                                if (!res.ok) return false;
+                                setTurns((prev) => [...prev, {
+                                  role: "assistant", text: "",
+                                  widgets: [{ id: `lab-${Date.now()}`, kind: "order-status", title: "Lab order", data: {
+                                    label: test,
+                                    steps: [
+                                      { key: "ordered", label: "Ordered", state: "active" },
+                                      { key: "collected", label: "Sample collected", state: "pending" },
+                                      { key: "resulted", label: "Resulted", state: "pending" },
+                                    ],
+                                  } }],
+                                }]);
+                                return true;
+                              } catch { return false; }
+                            }
                             if (action === "consult-complete") {
                               // Sign & file (S7): the confirmed items become a real,
                               // gated FHIR Encounter + note. The doctor confirmed each
