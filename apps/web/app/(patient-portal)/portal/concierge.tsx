@@ -41,7 +41,7 @@ type CardData = {
 type Node =
   | { t: "ai"; text: string; streaming?: boolean; status?: string; cites?: { ref: string; resource_type?: string }[] }
   | { t: "me"; text: string }
-  | { t: "image"; url: string }
+  | { t: "image"; url: string; name?: string; pdf?: boolean }
   | { t: "typing" }
   | { t: "card"; data: CardData }
   | { t: "services" }
@@ -213,9 +213,10 @@ export function Concierge({ patientPhn, name, signals }: { patientPhn: string; n
   const sendImage = useCallback(
     async (file: File) => {
       if (busy) return;
-      if (!file.type.startsWith("image/")) return;
-      if (file.size > 5_000_000) {
-        push({ t: "ai", text: "That photo is a bit large — please share one under 5 MB. 🙏" });
+      const isPdf = file.type === "application/pdf";
+      if (!file.type.startsWith("image/") && !isPdf) return;
+      if (file.size > 6_000_000) {
+        push({ t: "ai", text: "That file is a bit large — please share one under 6 MB. 🙏" });
         return;
       }
       const dataUrl = await new Promise<string>((resolve, reject) => {
@@ -227,7 +228,7 @@ export function Concierge({ patientPhn, name, signals }: { patientPhn: string; n
       if (!dataUrl) return;
       const base64 = dataUrl.split(",")[1] ?? "";
       setBusy(true);
-      push({ t: "image", url: dataUrl });
+      push({ t: "image", url: dataUrl, name: file.name, pdf: isPdf });
       setMsgs((m) => [...m, { t: "ai", text: "", streaming: true }]);
       down();
       const bump = (fn: (t: Node & { t: "ai" }) => Node) =>
@@ -559,8 +560,16 @@ export function Concierge({ patientPhn, name, signals }: { patientPhn: string; n
           if (n.t === "image")
             return (
               <div key={i} className="mh-msg me">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={n.url} alt="Shared photo" className="max-h-56 rounded-2xl object-cover" style={{ boxShadow: "var(--mh-shadow)" }} />
+                {n.pdf ? (
+                  <div className="flex items-center gap-2.5 rounded-2xl px-3.5 py-3 text-[13px] font-semibold"
+                    style={{ background: "var(--mh-tint-2)", color: "#fff", boxShadow: "var(--mh-shadow)" }}>
+                    <FileText className="h-5 w-5" />
+                    <span className="max-w-[220px] truncate">{n.name ?? "Document.pdf"}</span>
+                  </div>
+                ) : (
+                  /* eslint-disable-next-line @next/next/no-img-element */
+                  <img src={n.url} alt="Shared photo" className="max-h-56 rounded-2xl object-cover" style={{ boxShadow: "var(--mh-shadow)" }} />
+                )}
               </div>
             );
           if (n.t === "typing") return <div key={i} className="mh-msg ai"><div className="mh-ai-row"><span className="mh-av"><Sparkles className="h-4 w-4" /></span><div className="mh-typing"><i /><i /><i /></div></div></div>;
@@ -694,7 +703,7 @@ export function Concierge({ patientPhn, name, signals }: { patientPhn: string; n
         <input
           ref={fileRef}
           type="file"
-          accept="image/png,image/jpeg,image/webp,image/gif"
+          accept="image/png,image/jpeg,image/webp,image/gif,application/pdf"
           className="hidden"
           onChange={(e) => { const f = e.target.files?.[0]; if (f) void sendImage(f); e.target.value = ""; }}
         />

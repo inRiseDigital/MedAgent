@@ -23,14 +23,23 @@ from app.config import Settings
 
 logger = logging.getLogger(__name__)
 
-_ALLOWED_MIME = {"image/png", "image/jpeg", "image/webp", "image/gif"}
-_MAX_B64 = 7_000_000  # ~5 MB raw; Anthropic caps images and we keep requests small
+_IMAGE_MIME = {"image/png", "image/jpeg", "image/webp", "image/gif"}
+_PDF_MIME = "application/pdf"
+_ALLOWED_MIME = _IMAGE_MIME | {_PDF_MIME}
+_MAX_B64 = 9_000_000  # ~6.5 MB raw; PDFs run larger than photos, still bounded
+
+
+def _media_block(mime: str, data: str) -> dict[str, Any]:
+    """The Anthropic content block for the shared media — a document for PDFs, an
+    image otherwise. Both are read natively by the vision model."""
+    kind = "document" if mime == _PDF_MIME else "image"
+    return {"type": kind, "source": {"type": "base64", "media_type": mime, "data": data}}
 
 _PATIENT_PROMPT = (
     "You are a warm, reassuring health concierge speaking DIRECTLY to a patient (say 'you'/'your'). "
-    "They shared an image — often a photo of a lab report, a prescription or medicine box, or a visible "
-    "symptom. In plain, kind, low-reading-level language:\n"
-    "- Say what you can SEE and READ in the image. If it's a report or label, list the values/names you can "
+    "They shared an image or a PDF — often a lab report, a prescription or medicine box, or a photo of a "
+    "visible symptom. In plain, kind, low-reading-level language:\n"
+    "- Say what you can SEE and READ in it. If it's a report or label, list the values/names you can "
     "make out.\n"
     "- Be calm and reassuring. If something looks like it needs attention, say so gently and encourage them "
     "to check with their doctor or care team.\n"
@@ -51,11 +60,12 @@ _LANG = {"si": "Sinhala (සිංහල)", "ta": "Tamil (தமிழ்)"}
 
 
 def validate_image(image_base64: str, mime: str) -> str | None:
-    """Return an error string if the image is unusable, else None."""
+    """Return an error string if the upload is unusable, else None. Accepts common
+    image types and PDF documents (lab reports are often PDFs)."""
     if mime not in _ALLOWED_MIME:
-        return f"Unsupported image type '{mime}'. Please share a PNG, JPEG, WEBP or GIF."
+        return f"Unsupported file type '{mime}'. Please share a photo (PNG, JPEG, WEBP, GIF) or a PDF."
     if not image_base64 or len(image_base64) > _MAX_B64:
-        return "That image is too large — please share a smaller photo (under ~5 MB)."
+        return "That file is too large — please share a smaller photo or PDF (under ~6 MB)."
     return None
 
 
@@ -104,7 +114,7 @@ async def stream_image_analysis(
         SystemMessage(content=prompt),
         HumanMessage(content=[
             {"type": "text", "text": ask},
-            {"type": "image", "source": {"type": "base64", "media_type": mime, "data": image_base64}},
+            _media_block(mime, image_base64),
         ]),
     ]
     try:
@@ -157,7 +167,7 @@ async def extract_report_values(settings: Settings, image_base64: str, mime: str
     )
     msg = HumanMessage(content=[
         {"type": "text", "text": "Extract the measured results as JSON."},
-        {"type": "image", "source": {"type": "base64", "media_type": mime, "data": image_base64}},
+        _media_block(mime, image_base64),
     ])
     try:
         resp = await llm.ainvoke([SystemMessage(content=sys), msg])
