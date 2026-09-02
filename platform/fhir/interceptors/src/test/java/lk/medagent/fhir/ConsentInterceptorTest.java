@@ -5,7 +5,9 @@ import org.hl7.fhir.r4.model.Observation;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -25,15 +27,40 @@ class ConsentInterceptorTest {
     }
 
     @Test
-    void preshowSkeletonIsANoOpPassThrough() {
-        // S1 contract: must not throw and must not mutate results.
+    void preshowIsANoOpWhenNoResultsToEvaluate() {
+        // Must not throw on a null show-details (no results to evaluate).
         new ConsentInterceptor().applyConsentToShownResources(null, null);
     }
 
     @Test
-    @Disabled("S2: provision evaluation — actor class / purpose / period / category verdicts (03 §5.2)")
-    void activeConsentProvisionsProduceCorrectVerdicts() {
-        // TODO(S2)
+    void resolvesTheSubjectPatientForCompartmentTypes() {
+        Observation obs = new Observation();
+        obs.getSubject().setReference("Patient/456");
+        assertEquals("456", ConsentInterceptor.subjectPatientId(obs));
+
+        // A resource with no patient linkage is not consent-scoped here.
+        org.hl7.fhir.r4.model.Organization org = new org.hl7.fhir.r4.model.Organization();
+        assertNull(ConsentInterceptor.subjectPatientId(org));
+        assertNull(ConsentInterceptor.subjectPatientId(null));
+    }
+
+    @Test
+    void faceRecognitionConsentIsNotARecordSharingWithdrawal() {
+        // A biometric (face-recognition) consent uses provision.type=deny to mean
+        // "no face check-in" — it must NEVER mask clinical resources.
+        Consent face = new Consent();
+        face.addCategory().addCoding()
+                .setSystem("https://fhir.medagent.health.lk/cs/consent-category").setCode("face-recognition");
+        assertFalse(ConsentInterceptor.isRecordSharingConsent(face));
+
+        // A consent without a non-sharing category is treated as a record-sharing scope.
+        assertTrue(ConsentInterceptor.isRecordSharingConsent(new Consent()));
+    }
+
+    @Test
+    @Disabled("S2/S3: live deny-provision evaluation over the store (integration — needs a running server)")
+    void activeDenyConsentMasksTheResource() {
+        // TODO: integration-level — covered live in the enforce overlay smoke test.
     }
 
     @Test
