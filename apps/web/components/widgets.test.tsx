@@ -12,7 +12,7 @@ const spec = (kind: string, data: Record<string, unknown>, extra: Partial<Widget
 describe("Widget registry", () => {
   it("exposes the expected kinds", () => {
     expect(WIDGET_KINDS).toEqual(
-      expect.arrayContaining(["safety-alert", "record-links", "metric-trend", "stat-grid", "next-best-action", "timeline", "summary", "access-log", "consent-panel", "consult-session", "order-status", "receipt"]),
+      expect.arrayContaining(["safety-alert", "record-links", "metric-trend", "stat-grid", "next-best-action", "timeline", "summary", "access-log", "consent-panel", "consult-session", "order-status", "plan-steps", "receipt"]),
     );
   });
 
@@ -171,6 +171,47 @@ describe("Widget registry", () => {
     // the active step is the one marked aria-current="step"
     const active = screen.getByText("Dispensing").closest("li");
     expect(active).toHaveAttribute("aria-current", "step");
+  });
+
+  it("plan-steps renders its step labels in order with numbered badges", () => {
+    render(
+      <Widget
+        spec={spec("plan-steps", {
+          steps: [
+            { label: "Check your allergy list" },
+            { label: "Review the new prescription" },
+            { label: "Flag any interactions" },
+          ],
+        })}
+      />,
+    );
+    expect(screen.getByText("Check your allergy list")).toBeInTheDocument();
+    expect(screen.getByText("Review the new prescription")).toBeInTheDocument();
+    expect(screen.getByText("Flag any interactions")).toBeInTheDocument();
+    // a clean plan (no per-step state) shows the ordered numbers 1..N in its badges
+    expect(screen.getByText("1")).toBeInTheDocument();
+    expect(screen.getByText("2")).toBeInTheDocument();
+    expect(screen.getByText("3")).toBeInTheDocument();
+  });
+
+  it("plan-steps reflects an active step distinctly (aria-current)", () => {
+    render(
+      <Widget
+        spec={spec("plan-steps", {
+          steps: [
+            { label: "Pull your record", state: "done" },
+            { label: "Check interactions", state: "active" },
+            { label: "Summarise for you", state: "pending" },
+          ],
+        })}
+      />,
+    );
+    expect(screen.getByText("Check interactions")).toBeInTheDocument();
+    // the active step is the one marked aria-current="step"
+    const active = screen.getByText("Check interactions").closest("li");
+    expect(active).toHaveAttribute("aria-current", "step");
+    // a done step is not marked active
+    expect(screen.getByText("Pull your record").closest("li")).not.toHaveAttribute("aria-current");
   });
 
   it("receipt renders its lines (label + value) and the title", () => {

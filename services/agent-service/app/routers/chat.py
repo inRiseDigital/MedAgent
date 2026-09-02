@@ -228,6 +228,49 @@ def _action_widget(action: dict[str, str]) -> tuple[dict[str, Any], str]:
     )
 
 
+# ---- planner (S5): decompose a multi-part ask into a visible plan --------------
+_PLAN_HINTS = (" and also ", " and then ", ", and ", " then ", "as well as",
+               "along with", "after that")
+_PLAN_VERBS = ("explain", "show", "book", "refill", "check", "tell me", "what",
+               "when", "list", "summar", "review", "compare", "order", "find", "give me")
+
+
+def _is_multipart(question: str) -> bool:
+    """A request with several distinct parts — worth planning out loud. Conservative:
+    a single-intent ask never triggers the planner (and its extra call)."""
+    q = (question or "").lower()
+    if q.count("?") >= 2:
+        return True
+    verb_hits = sum(1 for v in _PLAN_VERBS if v in q)
+    if verb_hits >= 2 and (" and " in q or " then " in q):
+        return True
+    return len(q) > 45 and any(h in q for h in _PLAN_HINTS)
+
+
+async def _make_plan(settings: Settings, question: str) -> list[str]:
+    """A short ordered plan (2–5 steps) the agent will follow — one quick, bounded,
+    best-effort model call. Returns [] on any miss (the agent just proceeds)."""
+    try:
+        from langchain_core.messages import HumanMessage, SystemMessage
+        llm = build_chat_llm(settings, streaming=False)
+        sys = (
+            "You are planning how to answer a clinician/patient question about ONE patient's "
+            "record. Break the request into 2 to 5 short, ordered steps you will take. Reply with "
+            "ONLY a numbered list, one short step per line (max ~8 words each). No preamble, no prose."
+        )
+        async with asyncio.timeout(30):
+            resp = await llm.ainvoke([SystemMessage(content=sys), HumanMessage(content=question)])
+        steps: list[str] = []
+        for line in _delta_text(resp).splitlines():
+            m = re.match(r"^\s*(?:\d+[.)]|[-*•])\s*(.+)$", line.strip())
+            if m:
+                steps.append(m.group(1).strip()[:80])
+        return steps[:5]
+    except Exception:  # noqa: BLE001 — planning is best-effort; never blocks the answer
+        logger.exception("plan generation failed")
+        return []
+
+
 _SOURCE_RE = re.compile(r"\[source:\s*([A-Za-z]+)/([A-Za-z0-9._-]+)\]")
 
 
@@ -598,6 +641,17 @@ async def chat(
                 yield "data: [DONE]\n\n"
                 await _finish_log("action")
                 return
+
+        # PLANNER (S5): for a genuinely multi-part ask, decompose it into a short
+        # ordered plan and stream it as a plan-steps widget BEFORE working — the
+        # visible "think-itself: plan, then do". Best-effort and bounded; the ReAct
+        # agent below still does the actual, grounded, safety-checked work.
+        if _is_multipart(question):
+            plan = await _make_plan(settings, question)
+            if len(plan) >= 2:
+                yield _sse({"type": "data-widget", "widget": {
+                    "id": "w_plan", "kind": "plan-steps", "title": "My plan",
+                    "data": {"steps": [{"label": s} for s in plan]}}})
 
         agent = build_agent(
             settings, fhir_id, sources, proposals,

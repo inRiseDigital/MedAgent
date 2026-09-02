@@ -19,6 +19,7 @@ import {
   Eye,
   FlaskConical,
   Info,
+  ListChecks,
   Loader2,
   PackageCheck,
   Pill,
@@ -474,6 +475,44 @@ function Receipt({ spec }: { spec: WidgetSpec }) {
   );
 }
 
+// Horizon-1 / S5 planner — the visible "think-itself" plan. Before it answers a
+// multi-part request, the agent shows the ordered steps it will take, so the
+// user sees it reason first. A clean numbered plan; when a step carries state it
+// reflects progress (done / active / pending).
+type PlanStep = { label: string; state?: "done" | "active" | "pending" };
+
+function PlanSteps({ spec }: { spec: WidgetSpec }) {
+  const steps = Array.isArray(spec.data.steps) ? (spec.data.steps as PlanStep[]) : [];
+  return (
+    <Shell tone="info" icon={<ListChecks className="h-4 w-4" />} title={spec.title ?? "My plan"}>
+      <ol className="flex flex-col gap-1.5">
+        {steps.map((st, i) => {
+          const done = st.state === "done";
+          const active = st.state === "active";
+          return (
+            <li key={i} aria-current={active ? "step" : undefined}
+              className="flex items-start gap-2.5 text-[13px] leading-snug">
+              <span className="mt-px flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] font-medium font-mono tabular-nums"
+                style={{
+                  background: active ? "var(--primary)" : "var(--muted)",
+                  color: active
+                    ? "var(--primary-foreground)"
+                    : done ? "var(--muted-foreground)" : "var(--foreground)",
+                }}>
+                {done ? <Check className="h-3 w-3" /> : i + 1}
+              </span>
+              <span style={{
+                color: done ? "var(--muted-foreground)" : "var(--foreground)",
+                fontWeight: active ? 600 : 400,
+              }}>{st.label}</span>
+            </li>
+          );
+        })}
+      </ol>
+    </Shell>
+  );
+}
+
 interface WidgetProps {
   spec: WidgetSpec;
   onAction?: (id: string) => void;
@@ -491,6 +530,7 @@ const REGISTRY: Record<string, (p: WidgetProps) => ReactNode> = {
   "consent-panel": ConsentPanel,
   "consult-session": ConsultSession,
   "order-status": OrderStatus,
+  "plan-steps": PlanSteps,
   receipt: Receipt,
   timeline: TimelineW,
   summary: SummaryWidget,
