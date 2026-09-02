@@ -1,0 +1,50 @@
+# FHIR fail-closed ENFORCE overlay (H0-S3).
+#
+# Opt-in: apply ONLY when you intend the data layer to be fail-closed. It does NOT
+# touch the default dev stack — bring it up EXPLICITLY and WITHOUT the dev-fhir
+# override (which swaps in stock HAPI):
+#
+#   docker compose -f infra/compose/docker-compose.yml \
+#                  -f infra/compose/docker-compose.fhir-enforce.yml up -d --build
+#
+# What it does:
+#  - fhir: runs the CUSTOM interceptor image (base build), registers the 3
+#    interceptors via env (HAPI_FHIR_CUSTOM_INTERCEPTOR_CLASSES_*) so the base
+#    image's known-good search routing is kept (the full application.yaml is NOT
+#    loaded — that reintroduced a search-routing regression), and turns Authz to
+#    ENFORCE with a shared service key. Publishes 18091 so credential-less denial
+#    can be black-box tested from the host.
+#  - core-api + agent-service: receive the SAME MEDAGENT_SERVICE_KEY so their FHIR
+#    calls carry the trusted-service credential (fhir_headers() / _service_headers()).
+#
+# Roll back to the working dev stack at any time:
+#   docker compose -f infra/compose/docker-compose.yml \
+#                  -f infra/compose/docker-compose.dev-fhir.yml up -d
+services:
+  fhir:
+    environment:
+      MEDAGENT_AUTHZ_MODE: enforce
+      MEDAGENT_AUTHZ_PERMISSIVE_READ: "false"
+      MEDAGENT_SERVICE_KEY: ${MEDAGENT_SERVICE_KEY:-dev-fhir-service-key}
+      # Register the pipeline via targeted env keys (list binding), NOT the full
+      # application.yaml, so JPA/search routing stays on the base image's config.
+      HAPI_FHIR_CUSTOM_INTERCEPTOR_CLASSES_0: lk.medagent.fhir.AuthzInterceptor
+      HAPI_FHIR_CUSTOM_INTERCEPTOR_CLASSES_1: lk.medagent.fhir.ConsentInterceptor
+      HAPI_FHIR_CUSTOM_INTERCEPTOR_CLASSES_2: lk.medagent.fhir.AuditInterceptor
+    ports:
+      - "18091:8080"   # host-only, for black-box credential-less denial tests
+    # The fhir image is distroless — no sh, curl, or wget — so no in-container
+    # healthcheck command can run (the base curl healthcheck is inert here too).
+    # Disable it: fhir's dependents gate on `service_started` (not service_healthy),
+    # and readiness is proven by core-api/agent-service /readyz checks. A proper
+    # health probe (a tiny static health binary in the image) is a follow-up.
+    healthcheck:
+      disable: true
+
+  core-api:
+    environment:
+      MEDAGENT_SERVICE_KEY: ${MEDAGENT_SERVICE_KEY:-dev-fhir-service-key}
+
+  agent-service:
+    environment:
+      MEDAGENT_SERVICE_KEY: ${MEDAGENT_SERVICE_KEY:-dev-fhir-service-key}
