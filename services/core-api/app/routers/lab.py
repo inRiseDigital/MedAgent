@@ -502,7 +502,12 @@ async def release(
             raise HTTPException(status_code=status.HTTP_409_CONFLICT,
                                 detail=f"order is '{_state_of(sr)}', must be 'resulted' to release")
 
-        obs_list = await fhir.search("Observation", {"based-on": f"ServiceRequest/{sr_id}"})
+        # Patient-scope the search (no-trawl: the fail-closed FHIR interceptor rejects
+        # a compartment-type search without a patient parameter; pid is in scope above).
+        obs_params = {"based-on": f"ServiceRequest/{sr_id}"}
+        if pid:
+            obs_params["patient"] = pid
+        obs_list = await fhir.search("Observation", obs_params)
         if not obs_list:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="no result to release")
         obs = obs_list[-1]

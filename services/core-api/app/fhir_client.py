@@ -16,10 +16,28 @@ connection so a stale-keepalive race self-heals instead of failing the request.
 
 from __future__ import annotations
 
+import os
 from types import TracebackType
 from typing import Any
 
 import httpx
+
+# Trusted-service credential for the fail-closed FHIR interceptor (03 §5.1). core-api
+# is the trusted gateway that already enforces roles at its own API layer, so it
+# presents the SYSTEM writer role here; when a service key is configured it forwards
+# the X-MedAgent-* boundary headers the interceptor's ENFORCE mode checks. INERT
+# until that mode is enabled (skeleton/stock HAPI ignore unknown headers).
+_SERVICE_KEY = os.getenv("MEDAGENT_SERVICE_KEY", "")
+
+
+def _service_headers() -> dict[str, str]:
+    if not _SERVICE_KEY:
+        return {}
+    return {
+        "X-MedAgent-Service-Key": _SERVICE_KEY,
+        "X-MedAgent-Roles": "system",
+        "X-MedAgent-Purpose": "TREAT",
+    }
 
 # One shared client per base URL, reused for the process lifetime. asyncio is
 # single-threaded and there is no await between the get and the set below, so
@@ -44,7 +62,7 @@ def _get_client(base_url: str, timeout: float) -> httpx.AsyncClient:
             base_url=key,
             timeout=timeout,
             limits=_LIMITS,
-            headers={"Accept": "application/fhir+json"},
+            headers={"Accept": "application/fhir+json", **_service_headers()},
         )
         _shared_clients[key] = client
     return client
