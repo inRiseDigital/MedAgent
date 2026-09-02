@@ -10,13 +10,20 @@
 import {
   AlertTriangle,
   Activity,
+  Bell,
+  CalendarClock,
+  Check,
   CheckCircle2,
   ChevronRight,
+  ClipboardList,
   Eye,
+  FlaskConical,
   Info,
   Loader2,
+  Pill,
   ShieldCheck,
   Sparkles,
+  Stethoscope,
 } from "lucide-react";
 import { type ReactNode, useState } from "react";
 
@@ -304,6 +311,91 @@ function ConsentPanel({ spec, onAction }: WidgetProps) {
   );
 }
 
+// The doctor consult session — the agent streams a grounded agenda; the doctor
+// confirms each item (a real tap) before it counts, then completes the visit.
+type ConsultItem = { id: string; type: string; label: string; detail?: string; ref?: string };
+
+const CONSULT_ICON: Record<string, typeof Activity> = {
+  reason: Stethoscope,
+  problem: Activity,
+  medication: Pill,
+  result: FlaskConical,
+  overdue: Bell,
+  followup: CalendarClock,
+};
+
+function ConsultSession({ spec, onConfirm }: WidgetProps) {
+  const items = Array.isArray(spec.data.items) ? (spec.data.items as ConsultItem[]) : [];
+  const [confirmed, setConfirmed] = useState<Set<string>>(() => new Set());
+  const [state, setState] = useState<"active" | "submitting" | "done">("active");
+
+  const toggle = (id: string) =>
+    setConfirmed((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
+  const count = confirmed.size;
+  const total = items.length;
+
+  if (state === "done") {
+    return (
+      <Shell tone="good" icon={<CheckCircle2 className="h-4 w-4" />} title={spec.title ?? "Consultation"}>
+        <p className="text-[13px]">Consultation summarised ✓</p>
+      </Shell>
+    );
+  }
+
+  return (
+    <Shell tone="info" icon={<ClipboardList className="h-4 w-4" />} title={spec.title ?? "Consultation"}>
+      <ul className="flex flex-col gap-0.5">
+        {items.map((it) => {
+          const on = confirmed.has(it.id);
+          const Icon = CONSULT_ICON[it.type] ?? Info;
+          return (
+            <li key={it.id}>
+              <button type="button" aria-pressed={on} onClick={() => toggle(it.id)}
+                className="group flex w-full items-start gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-[var(--muted)]">
+                <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-[5px] border transition-colors"
+                  style={{ borderColor: on ? "var(--success)" : "var(--border)", background: on ? "var(--success)" : "transparent" }}>
+                  {on ? <Check className="h-3 w-3" style={{ color: "var(--card)" }} /> : null}
+                </span>
+                <span className="flex min-w-0 flex-col gap-0.5">
+                  <span className="flex flex-wrap items-center gap-1.5">
+                    <Icon className="h-3.5 w-3.5 shrink-0" style={{ color: "var(--muted-foreground)" }} />
+                    <span className="inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium font-mono tracking-tight"
+                      style={{ background: "var(--muted)", color: "var(--muted-foreground)" }}>{it.type}</span>
+                    <span className="text-[13px] leading-snug"
+                      style={on ? { textDecoration: "line-through", color: "var(--muted-foreground)" } : undefined}>{it.label}</span>
+                    {it.ref ? <RefChip refId={it.ref} /> : null}
+                  </span>
+                  {it.detail ? <span className="text-[11px]" style={{ color: "var(--muted-foreground)" }}>{it.detail}</span> : null}
+                </span>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+      <div className="mt-3 flex items-center justify-between gap-3 border-t pt-3" style={{ borderColor: "var(--border)" }}>
+        <span className="text-[12px] tabular-nums" style={{ color: "var(--muted-foreground)" }}>{count} of {total} confirmed</span>
+        <button type="button" disabled={count < 1 || state === "submitting"}
+          className="inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[13px] font-semibold text-[var(--primary-foreground)] disabled:opacity-50"
+          style={{ background: "var(--primary)" }}
+          onClick={async () => {
+            setState("submitting");
+            const ok = onConfirm ? await onConfirm("consult-complete", { confirmed: [...confirmed], count }) : false;
+            setState(ok ? "done" : "active");
+          }}>
+          {state === "submitting" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+          Complete consultation
+        </button>
+      </div>
+    </Shell>
+  );
+}
+
 interface WidgetProps {
   spec: WidgetSpec;
   onAction?: (id: string) => void;
@@ -319,6 +411,7 @@ const REGISTRY: Record<string, (p: WidgetProps) => ReactNode> = {
   "confirm-action": ConfirmAction,
   "access-log": AccessLog,
   "consent-panel": ConsentPanel,
+  "consult-session": ConsultSession,
   timeline: TimelineW,
   summary: SummaryWidget,
 };

@@ -1,5 +1,7 @@
-import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+afterEach(cleanup);
 
 import { Widget, WIDGET_KINDS, type WidgetSpec } from "@/components/widgets";
 
@@ -10,7 +12,7 @@ const spec = (kind: string, data: Record<string, unknown>, extra: Partial<Widget
 describe("Widget registry", () => {
   it("exposes the expected kinds", () => {
     expect(WIDGET_KINDS).toEqual(
-      expect.arrayContaining(["safety-alert", "record-links", "metric-trend", "stat-grid", "next-best-action", "timeline", "summary", "access-log", "consent-panel"]),
+      expect.arrayContaining(["safety-alert", "record-links", "metric-trend", "stat-grid", "next-best-action", "timeline", "summary", "access-log", "consent-panel", "consult-session"]),
     );
   });
 
@@ -102,5 +104,49 @@ describe("Widget registry", () => {
     expect(screen.getByText("Anonymised research")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /Anonymised research/ }));
     expect(onAction).toHaveBeenCalledWith("research");
+  });
+
+  const consultData = {
+    items: [
+      { id: "i1", type: "reason", label: "Chest tightness on exertion" },
+      { id: "i2", type: "medication", label: "Atorvastatin 20mg", detail: "Started 3 months ago", ref: "MedicationRequest/7" },
+      { id: "i3", type: "overdue", label: "HbA1c due" },
+    ],
+  };
+
+  it("consult-session renders its items and the type chips", () => {
+    render(<Widget spec={spec("consult-session", consultData)} />);
+    expect(screen.getByText("Chest tightness on exertion")).toBeInTheDocument();
+    expect(screen.getByText("Atorvastatin 20mg")).toBeInTheDocument();
+    expect(screen.getByText("reason")).toBeInTheDocument(); // type chip
+    expect(screen.getByText("medication")).toBeInTheDocument();
+    expect(screen.getByText("overdue")).toBeInTheDocument();
+    expect(screen.getByText("MedicationRequest")).toBeInTheDocument(); // ref chip
+    expect(screen.getByText("0 of 3 confirmed")).toBeInTheDocument();
+  });
+
+  it("consult-session toggles an item's confirmed state on tap", () => {
+    render(<Widget spec={spec("consult-session", consultData)} />);
+    const row = screen.getByRole("button", { name: /Chest tightness/ });
+    expect(row).toHaveAttribute("aria-pressed", "false");
+    fireEvent.click(row);
+    expect(row).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByText("1 of 3 confirmed")).toBeInTheDocument();
+    fireEvent.click(row); // toggles back off
+    expect(row).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByText("0 of 3 confirmed")).toBeInTheDocument();
+  });
+
+  it("consult-session's Complete button is gated until an item is confirmed, then fires onConfirm (HITL)", async () => {
+    const onConfirm = vi.fn().mockResolvedValue(true);
+    render(<Widget spec={spec("consult-session", consultData)} onConfirm={onConfirm} />);
+    const complete = screen.getByRole("button", { name: /Complete consultation/ });
+    expect(complete).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: /Atorvastatin 20mg/ }));
+    fireEvent.click(screen.getByRole("button", { name: /HbA1c due/ }));
+    expect(complete).toBeEnabled();
+    fireEvent.click(complete);
+    expect(onConfirm).toHaveBeenCalledWith("consult-complete", { confirmed: ["i2", "i3"], count: 2 });
+    expect(await screen.findByText(/Consultation summarised/)).toBeInTheDocument();
   });
 });

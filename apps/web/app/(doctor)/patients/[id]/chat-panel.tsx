@@ -82,6 +82,33 @@ export function ChatPanel({ patientId, opening }: { patientId: string; opening?:
   const [busy, setBusy] = useState(false);
   const [signState, setSignState] = useState<Record<string, string>>({});
   const logRef = useRef<HTMLDivElement>(null);
+  const consultItems = useRef<Record<string, string>>({}); // agenda id → label, for the session summary
+
+  // Consult session (H1): fetch a grounded agenda and render it as a checklist the
+  // doctor confirms item by item; "Complete" drafts a session note from the
+  // confirmed items (a draft for the doctor to review and sign — never auto-filed).
+  async function startConsult() {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const res = await fetch("/api/consult/agenda", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ patient_id: patientId }),
+      });
+      const data = res.ok ? ((await res.json()) as { items?: { id: string; label: string }[] }) : { items: [] };
+      const items = data.items ?? [];
+      consultItems.current = Object.fromEntries(items.map((i) => [i.id, i.label]));
+      setTurns((prev) => [...prev, {
+        role: "assistant",
+        text: "Here's the consultation agenda, grounded in the chart. Confirm each item as you address it, then complete the session to draft a note.",
+        widgets: [{ id: "consult", kind: "consult-session", title: "Consultation", data: { items } }],
+      }]);
+    } catch {
+      setTurns((prev) => [...prev, { role: "assistant", text: t("chatError") }]);
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function signProposal(key: string, p: Proposal) {
     setSignState((s) => ({ ...s, [key]: "signing" }));
@@ -254,7 +281,17 @@ export function ChatPanel({ patientId, opening }: { patientId: string; opening?:
                   {turn.widgets && turn.widgets.length > 0 ? (
                     <div className="mt-2 flex flex-col gap-2">
                       {turn.widgets.map((w) => (
-                        <Widget key={w.id} spec={w} onAction={(id) => void send(id.includes("/") ? `Tell me about ${id}` : id)} />
+                        <Widget key={w.id} spec={w}
+                          onAction={(id) => void send(id.includes("/") ? `Tell me about ${id}` : id)}
+                          onConfirm={async (action, params) => {
+                            if (action === "consult-complete") {
+                              const ids = Array.isArray(params.confirmed) ? (params.confirmed as string[]) : [];
+                              const labels = ids.map((id) => consultItems.current[id]).filter(Boolean);
+                              void send(`Draft a concise consultation note for this patient covering the items I confirmed today: ${labels.join("; ")}. Ground it in the record and cite where relevant. This is a DRAFT for my review — I sign the final note.`);
+                              return true;
+                            }
+                            return false;
+                          }} />
                       ))}
                     </div>
                   ) : null}
@@ -265,9 +302,13 @@ export function ChatPanel({ patientId, opening }: { patientId: string; opening?:
         )}
       </div>
 
-      {/* quick-reply chips (conversational-commerce style) — before any turn */}
+      {/* quick-reply chips — before any turn; lead with the consult session (H1) */}
       {turns.length === 0 ? (
         <div className="mh-quick">
+          <button type="button" className="mh-chip" onClick={() => void startConsult()}
+            style={{ color: "var(--primary-foreground)", background: "var(--primary)" }}>
+            🩺 Start consult session
+          </button>
           {QUICK_PROMPTS.map((p) => (<button key={p} type="button" className="mh-chip" onClick={() => void send(p)}>{p}</button>))}
         </div>
       ) : null}
