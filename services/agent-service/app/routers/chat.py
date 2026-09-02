@@ -271,6 +271,33 @@ async def _make_plan(settings: Settings, question: str) -> list[str]:
         return []
 
 
+async def _reflect(settings: Settings, plan: list[str], answer: str) -> str:
+    """Self-critique (S5): given the plan and the answer produced, return a short
+    note naming the ONE most important plan step the answer did NOT address, or ""
+    if it's complete. Bounded, best-effort; runs only for planned multi-part asks so
+    a genuine gap in a complex answer gets surfaced without re-answering."""
+    if not plan or not answer.strip():
+        return ""
+    try:
+        from langchain_core.messages import HumanMessage, SystemMessage
+        llm = build_chat_llm(settings, streaming=False)
+        sys = (
+            "You are a terse reviewer checking whether an ANSWER covered its PLAN. If every plan "
+            "step is addressed, reply with exactly COMPLETE. Otherwise reply with ONE short sentence "
+            "naming the single most important step that was missed. No other text."
+        )
+        msg = "PLAN:\n" + "\n".join(f"- {s}" for s in plan) + f"\n\nANSWER:\n{answer[:2500]}"
+        async with asyncio.timeout(25):
+            resp = await llm.ainvoke([SystemMessage(content=sys), HumanMessage(content=msg)])
+        verdict = _delta_text(resp).strip()
+        if verdict and "COMPLETE" not in verdict.upper()[:12]:
+            return verdict[:220]
+        return ""
+    except Exception:  # noqa: BLE001 — reflection is best-effort; never breaks the turn
+        logger.exception("reflection failed")
+        return ""
+
+
 _SOURCE_RE = re.compile(r"\[source:\s*([A-Za-z]+)/([A-Za-z0-9._-]+)\]")
 
 
@@ -646,12 +673,15 @@ async def chat(
         # ordered plan and stream it as a plan-steps widget BEFORE working — the
         # visible "think-itself: plan, then do". Best-effort and bounded; the ReAct
         # agent below still does the actual, grounded, safety-checked work.
+        plan_steps: list[str] = []
         if _is_multipart(question):
-            plan = await _make_plan(settings, question)
-            if len(plan) >= 2:
+            plan_steps = await _make_plan(settings, question)
+            if len(plan_steps) >= 2:
                 yield _sse({"type": "data-widget", "widget": {
                     "id": "w_plan", "kind": "plan-steps", "title": "My plan",
-                    "data": {"steps": [{"label": s} for s in plan]}}})
+                    "data": {"steps": [{"label": s} for s in plan_steps]}}})
+            else:
+                plan_steps = []
 
         agent = build_agent(
             settings, fhir_id, sources, proposals,
@@ -739,6 +769,15 @@ async def chat(
                 if sources:
                     floor += f"\n\n(Reviewed {len(sources)} record source(s).)"
                 yield _sse({"type": "text-delta", "id": text_id, "delta": floor})
+
+        # REFLECT (S5): for a planned multi-part ask that answered cleanly, self-check
+        # the answer against the plan and, only if a real step was missed, append a
+        # short reflection (never re-answers, never fires when complete or on error).
+        if plan_steps and streamed and not errored and not timed_out:
+            gap = await _reflect(settings, plan_steps, "".join(answer_parts) or final_answer)
+            if gap:
+                yield _sse({"type": "text-delta", "id": text_id,
+                            "delta": f"\n\n**On reflection —** one thing to add: {gap}"})
 
         yield _sse({"type": "text-end", "id": text_id})
         if sources:  # citation chips (FR-3.4): resources the tools read
