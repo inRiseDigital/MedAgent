@@ -299,12 +299,13 @@ export function ChatPanel({ patientId, opening }: { patientId: string; opening?:
                                 const d = (await res.json()) as { encounter_id?: string };
                                 setTurns((prev) => [...prev, {
                                   role: "assistant", text: "",
-                                  widgets: [{ id: `consult-receipt-${Date.now()}`, kind: "summary", title: "Consultation filed", data: {
+                                  widgets: [{ id: `consult-receipt-${Date.now()}`, kind: "receipt", title: "Consultation filed", data: {
                                     tone: "good",
-                                    points: [
-                                      d.encounter_id ? `Encounter recorded — ${d.encounter_id}` : "Encounter recorded",
-                                      `${labels.length} item(s) documented to the note`,
-                                      "Filed to the patient's record",
+                                    ref: d.encounter_id,
+                                    lines: [
+                                      { label: "Encounter", value: d.encounter_id ?? "recorded" },
+                                      { label: "Items documented", value: String(labels.length) },
+                                      { label: "Status", value: "Filed to the record" },
                                     ],
                                   } }],
                                 }]);

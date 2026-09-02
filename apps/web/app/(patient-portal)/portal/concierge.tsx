@@ -645,7 +645,19 @@ export function Concierge({ patientPhn, name, signals }: { patientPhn: string; n
                           method: "POST", headers: { "content-type": "application/json" },
                           body: JSON.stringify({ medication: params.medication }),
                         });
-                        return res.ok;
+                        if (!res.ok) return false;
+                        // Show the refill as a TRACKED order (S8): requested → review → ready.
+                        const d = (await res.json().catch(() => ({}))) as { medication?: string };
+                        const med = d.medication ?? String(params.medication ?? "your medicine");
+                        push({ t: "widget", spec: { id: `order-${Date.now()}`, kind: "order-status", title: "Refill request", data: {
+                          label: med,
+                          steps: [
+                            { key: "requested", label: "Requested", state: "active" },
+                            { key: "review", label: "Pharmacy review", state: "pending" },
+                            { key: "ready", label: "Ready to collect", state: "pending" },
+                          ],
+                        } } });
+                        return true;
                       }
                       if (action === "book") {
                         book(typeof params.reason === "string" && params.reason ? params.reason : "a visit");

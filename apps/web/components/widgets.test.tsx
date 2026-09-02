@@ -12,7 +12,7 @@ const spec = (kind: string, data: Record<string, unknown>, extra: Partial<Widget
 describe("Widget registry", () => {
   it("exposes the expected kinds", () => {
     expect(WIDGET_KINDS).toEqual(
-      expect.arrayContaining(["safety-alert", "record-links", "metric-trend", "stat-grid", "next-best-action", "timeline", "summary", "access-log", "consent-panel", "consult-session"]),
+      expect.arrayContaining(["safety-alert", "record-links", "metric-trend", "stat-grid", "next-best-action", "timeline", "summary", "access-log", "consent-panel", "consult-session", "order-status", "receipt"]),
     );
   });
 
@@ -148,5 +148,54 @@ describe("Widget registry", () => {
     fireEvent.click(complete);
     expect(onConfirm).toHaveBeenCalledWith("consult-complete", { confirmed: ["i2", "i3"], count: 2 });
     expect(await screen.findByText(/Consultation summarised/)).toBeInTheDocument();
+  });
+
+  it("order-status renders its step labels and marks the active step (aria-current)", () => {
+    render(
+      <Widget
+        spec={spec("order-status", {
+          label: "Metformin 500mg",
+          ref: "MedicationRequest/9",
+          steps: [
+            { key: "ordered", label: "Ordered", state: "done" },
+            { key: "dispensing", label: "Dispensing", state: "active" },
+            { key: "ready", label: "Ready for pickup", state: "pending" },
+          ],
+        })}
+      />,
+    );
+    expect(screen.getByText("Metformin 500mg")).toBeInTheDocument();
+    expect(screen.getByText("MedicationRequest")).toBeInTheDocument(); // ref chip = resource type
+    expect(screen.getByText("Ordered")).toBeInTheDocument();
+    expect(screen.getByText("Ready for pickup")).toBeInTheDocument();
+    // the active step is the one marked aria-current="step"
+    const active = screen.getByText("Dispensing").closest("li");
+    expect(active).toHaveAttribute("aria-current", "step");
+  });
+
+  it("receipt renders its lines (label + value) and the title", () => {
+    render(
+      <Widget
+        spec={spec(
+          "receipt",
+          {
+            lines: [
+              { label: "Medication", value: "Metformin 500mg" },
+              { label: "Quantity", value: "60 tablets" },
+              { label: "Total", value: "$0.00" },
+            ],
+            ref: "MedicationDispense/12",
+          },
+          { title: "Refill confirmed" },
+        )}
+      />,
+    );
+    expect(screen.getByText("Refill confirmed")).toBeInTheDocument();
+    expect(screen.getByText("Medication")).toBeInTheDocument();
+    expect(screen.getByText("Metformin 500mg")).toBeInTheDocument();
+    expect(screen.getByText("Quantity")).toBeInTheDocument();
+    expect(screen.getByText("60 tablets")).toBeInTheDocument();
+    expect(screen.getByText("$0.00")).toBeInTheDocument();
+    expect(screen.getByText("MedicationDispense")).toBeInTheDocument(); // ref chip
   });
 });

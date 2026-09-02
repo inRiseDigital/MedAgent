@@ -20,7 +20,9 @@ import {
   FlaskConical,
   Info,
   Loader2,
+  PackageCheck,
   Pill,
+  ReceiptText,
   ShieldCheck,
   Sparkles,
   Stethoscope,
@@ -396,6 +398,82 @@ function ConsultSession({ spec, onConfirm }: WidgetProps) {
   );
 }
 
+// Order lifecycle tracker — a calm horizontal stepper (wraps on narrow).
+type OrderStep = { key: string; label: string; state: "done" | "active" | "pending" };
+
+function OrderStatus({ spec }: { spec: WidgetSpec }) {
+  const label = spec.data.label ? String(spec.data.label) : "";
+  const ref = spec.data.ref ? String(spec.data.ref) : "";
+  const steps = Array.isArray(spec.data.steps) ? (spec.data.steps as OrderStep[]) : [];
+  const color = (s: OrderStep["state"]) =>
+    s === "done" ? "var(--success)" : s === "active" ? "var(--primary)" : "var(--border)";
+  return (
+    <Shell tone="info" icon={<PackageCheck className="h-4 w-4" />} title={spec.title ?? "Order status"}>
+      {label || ref ? (
+        <div className="mb-3 flex items-center gap-1 text-[13px] font-medium">
+          <span>{label}</span>{ref ? <RefChip refId={ref} /> : null}
+        </div>
+      ) : null}
+      <ol className="flex flex-wrap items-start">
+        {steps.map((st, i) => {
+          const active = st.state === "active";
+          const done = st.state === "done";
+          const dot = color(st.state);
+          const next = steps[i + 1];
+          return (
+            <li key={st.key} aria-current={active ? "step" : undefined}
+              className="flex flex-1 flex-col items-center gap-1.5" style={{ minWidth: 64 }}>
+              <div className="flex w-full items-center">
+                <span className="h-px flex-1" style={{ background: i === 0 ? "transparent" : dot }} />
+                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border transition-colors"
+                  style={{
+                    borderColor: dot,
+                    background: done || active ? dot : "var(--card)",
+                    boxShadow: active ? "0 0 0 3px color-mix(in srgb, var(--primary) 22%, transparent)" : undefined,
+                  }}>
+                  {done ? <Check className="h-3 w-3" style={{ color: "var(--card)" }} /> : null}
+                  {active ? <span className="h-1.5 w-1.5 rounded-full" style={{ background: "var(--card)" }} /> : null}
+                </span>
+                <span className="h-px flex-1" style={{ background: !next ? "transparent" : color(next.state === "pending" ? "pending" : "active") }} />
+              </div>
+              <span className="px-1 text-center text-[11px] leading-tight"
+                style={{
+                  color: st.state === "pending" ? "var(--muted-foreground)" : "var(--foreground)",
+                  fontWeight: active ? 600 : 400,
+                }}>{st.label}</span>
+            </li>
+          );
+        })}
+      </ol>
+    </Shell>
+  );
+}
+
+// Confirmation receipt — a clean label → value list.
+function Receipt({ spec }: { spec: WidgetSpec }) {
+  const lines = Array.isArray(spec.data.lines) ? (spec.data.lines as { label: string; value: string }[]) : [];
+  const ref = spec.data.ref ? String(spec.data.ref) : "";
+  const tone: "good" | "info" = spec.data.tone === "info" ? "info" : "good";
+  const title = spec.title ?? (spec.data.title ? String(spec.data.title) : "Receipt");
+  return (
+    <Shell tone={tone} icon={<ReceiptText className="h-4 w-4" />} title={title}>
+      <dl className="flex flex-col gap-1.5">
+        {lines.map((ln, i) => (
+          <div key={i} className="flex items-baseline justify-between gap-3 text-[13px]">
+            <dt className="shrink-0" style={{ color: "var(--muted-foreground)" }}>{ln.label}</dt>
+            <dd className="text-right font-semibold tabular-nums">{ln.value}</dd>
+          </div>
+        ))}
+      </dl>
+      {ref ? (
+        <div className="mt-2.5 flex justify-end border-t pt-2.5" style={{ borderColor: "var(--border)" }}>
+          <RefChip refId={ref} />
+        </div>
+      ) : null}
+    </Shell>
+  );
+}
+
 interface WidgetProps {
   spec: WidgetSpec;
   onAction?: (id: string) => void;
@@ -412,6 +490,8 @@ const REGISTRY: Record<string, (p: WidgetProps) => ReactNode> = {
   "access-log": AccessLog,
   "consent-panel": ConsentPanel,
   "consult-session": ConsultSession,
+  "order-status": OrderStatus,
+  receipt: Receipt,
   timeline: TimelineW,
   summary: SummaryWidget,
 };
