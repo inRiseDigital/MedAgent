@@ -19,7 +19,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.agent.context import build_patient_context
-from app.agent.vision import stream_image_analysis, validate_image
+from app.agent.vision import extract_report_values, stream_image_analysis, validate_image
 from app.auth import Principal, require_user
 from app.config import Settings
 from app.routers.chat import _sse
@@ -71,6 +71,18 @@ async def vision(
             if not streamed:
                 yield _sse({"type": "text-delta", "id": text_id,
                             "delta": "I couldn't read that image — please try another photo."})
+            # S9: structured extraction — if the image is a report with measured values,
+            # render them as a stat-grid widget alongside the plain-language reading.
+            values = await extract_report_values(settings, body.image_base64, body.mime)
+            if values:
+                yield _sse({"type": "data-widget", "widget": {
+                    "id": "w_report", "kind": "stat-grid", "title": "Values I could read",
+                    "data": {"stats": [
+                        {"label": f"{v['name']}{(' (' + v['unit'] + ')') if v['unit'] else ''}",
+                         "value": v["value"],
+                         "tone": ("warn" if v["flag"] in ("high", "low") else "good" if v["flag"] == "normal" else "")}
+                        for v in values
+                    ]}}})
 
         yield _sse({"type": "text-end", "id": text_id})
         yield _sse({"type": "finish"})

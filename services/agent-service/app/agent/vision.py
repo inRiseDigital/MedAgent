@@ -15,6 +15,7 @@ Hard boundaries (same discipline as the rest of the agent):
 from __future__ import annotations
 
 import logging
+import re
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -119,3 +120,60 @@ async def stream_image_analysis(
     except Exception:  # noqa: BLE001 — never leak a stack trace to the UI
         logger.exception("image analysis failed")
         yield "\n\nSorry — I couldn't read that image just now. Please try another photo."
+
+
+def _content_text(msg: Any) -> str:
+    content = getattr(msg, "content", "")
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "".join(b.get("text", "") for b in content if isinstance(b, dict) and b.get("type") == "text")
+    return ""
+
+
+async def extract_report_values(settings: Settings, image_base64: str, mime: str) -> list[dict[str, str]]:
+    """Best-effort STRUCTURED extraction of measured results from a lab/report image
+    (S9). Returns [{name, value, unit, flag}] (flag ∈ high|low|normal|""), or [] if
+    the image isn't a report or extraction fails — never raises. A separate, tightly
+    prompted vision call so the streamed prose stays clean."""
+    import json
+
+    if not settings.anthropic_api_key:
+        return []
+    from langchain_anthropic import ChatAnthropic
+    from langchain_core.messages import HumanMessage, SystemMessage
+
+    sys = (
+        "You read a photographed medical report and extract the measured RESULTS. "
+        "Return ONLY a JSON array (no prose, no code fence) of objects "
+        '{"name": str, "value": str, "unit": str, "flag": "high"|"low"|"normal"|""} '
+        "— one per numeric test result you can read. If the image is not a report with "
+        "measured values, return []. At most 12 items."
+    )
+    llm = ChatAnthropic(
+        model=settings.anthropic_model, api_key=settings.anthropic_api_key,
+        max_tokens=1024, max_retries=settings.llm_max_retries,
+        default_request_timeout=settings.llm_timeout_seconds, thinking={"type": "disabled"},
+    )
+    msg = HumanMessage(content=[
+        {"type": "text", "text": "Extract the measured results as JSON."},
+        {"type": "image", "source": {"type": "base64", "media_type": mime, "data": image_base64}},
+    ])
+    try:
+        resp = await llm.ainvoke([SystemMessage(content=sys), msg])
+        text = _content_text(resp)
+        m = re.search(r"\[.*\]", text, re.S)
+        rows = json.loads(m.group(0)) if m else []
+        out: list[dict[str, str]] = []
+        for d in rows[:12]:
+            if isinstance(d, dict) and d.get("name") and str(d.get("value", "")).strip():
+                out.append({
+                    "name": str(d["name"])[:44],
+                    "value": str(d["value"])[:24],
+                    "unit": str(d.get("unit", ""))[:16],
+                    "flag": str(d.get("flag", "")).lower().strip(),
+                })
+        return out
+    except Exception:  # noqa: BLE001 — best-effort; prose analysis already streamed
+        logger.exception("value extraction failed")
+        return []

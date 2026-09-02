@@ -246,6 +246,8 @@ export function Concierge({ patientPhn, name, signals }: { patientPhn: string; n
             signal: ctrl.signal,
             onEvent: (o) => {
               if (o.type === "text-delta" && o.delta) { got += o.delta; bump((n) => ({ ...n, text: n.text + o.delta })); down(); }
+              // S9: extracted report values arrive as a stat-grid widget.
+              else if (o.type === "data-widget" && o.widget) { push({ t: "widget", spec: o.widget as WidgetSpec }); down(); }
             },
           },
         );
