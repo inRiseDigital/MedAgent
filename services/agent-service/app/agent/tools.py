@@ -15,12 +15,31 @@ path so consent/authz apply (04 §1) — same tool surface.
 from __future__ import annotations
 
 import json
+import os
 from typing import Any
 
 import httpx
 from langchain_core.tools import BaseTool, tool
 
 from app.rxsafety import screen as rx_screen
+
+# Trusted-service credential for the fail-closed FHIR interceptor (03 §5.1). The
+# agent is a SYSTEM-scoped reader; when a service key is configured it forwards the
+# X-MedAgent-* boundary headers the interceptor's ENFORCE mode checks. INERT until
+# that mode is enabled (skeleton/stock HAPI ignore unknown headers), so this is a
+# safe prerequisite that changes nothing today.
+_SERVICE_KEY = os.getenv("MEDAGENT_SERVICE_KEY", "")
+
+
+def fhir_headers() -> dict[str, str]:
+    """FHIR request headers — Accept plus, when a service key is set, the trusted-
+    service credential + role/purpose the boundary interceptor gates on."""
+    h = {"Accept": "application/fhir+json"}
+    if _SERVICE_KEY:
+        h["X-MedAgent-Service-Key"] = _SERVICE_KEY
+        h["X-MedAgent-Roles"] = "system"
+        h["X-MedAgent-Purpose"] = "TREAT"
+    return h
 
 PHN_SYSTEM = "https://fhir.medagent.health.lk/id/phn"
 
@@ -45,7 +64,7 @@ class FhirClient:
             resp = await client.get(
                 f"{self._base}/{resource_type}",
                 params={**params, "_count": "50"},
-                headers={"Accept": "application/fhir+json"},
+                headers=fhir_headers(),
             )
             resp.raise_for_status()
             bundle = resp.json()
@@ -58,7 +77,7 @@ class FhirClient:
         async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.get(
                 f"{self._base}/{resource_type}/{rid}",
-                headers={"Accept": "application/fhir+json"},
+                headers=fhir_headers(),
             )
             if resp.status_code == 404:
                 return None

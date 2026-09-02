@@ -15,7 +15,7 @@ from langchain_core.messages import SystemMessage
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.prebuilt import create_react_agent
 
-from app.agent.tools import PHN_SYSTEM, build_patient_tools
+from app.agent.tools import PHN_SYSTEM, build_patient_tools, fhir_headers
 from app.config import Settings
 
 SYSTEM_PROMPT = """You are a clinical AI assistant helping a doctor review ONE specific patient's medical record in real time. You read the record through FHIR tools and give the doctor everything they need to make decisions — quickly, accurately, and with sources.
@@ -105,7 +105,7 @@ async def resolve_patient_fhir_id(fhir_base_url: str, patient_ref: str) -> str |
             resp = await client.get(
                 f"{base}/Patient",
                 params={"identifier": f"{PHN_SYSTEM}|{patient_ref}"},
-                headers={"Accept": "application/fhir+json"},
+                headers=fhir_headers(),
             )
             resp.raise_for_status()
             entries = resp.json().get("entry", [])
@@ -113,7 +113,7 @@ async def resolve_patient_fhir_id(fhir_base_url: str, patient_ref: str) -> str |
                 return str(entries[0]["resource"]["id"])
             # fall through: maybe it really is a numeric FHIR id
         resp = await client.get(
-            f"{base}/Patient/{patient_ref}", headers={"Accept": "application/fhir+json"}
+            f"{base}/Patient/{patient_ref}", headers=fhir_headers()
         )
         if resp.status_code == 200:
             return str(resp.json()["id"])
