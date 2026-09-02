@@ -7,7 +7,7 @@
  * agent over the BFF SSE (/api/chat); the guided flows are scripted UX. Styling
  * comes from the `.mh` premium theme.
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import {
   Bell,
@@ -81,6 +81,16 @@ export type ConciergeSignals = {
 export function Concierge({ patientPhn, name, signals }: { patientPhn: string; name: string; signals: ConciergeSignals }) {
   const first = name.split(" ")[0] ?? "there";
   const locale = useLocale();
+  // Stable conversation id (H0-S1): the server owns the thread keyed by this, so the
+  // conversation survives a reload. Persisted per patient in localStorage.
+  const convId = useMemo(() => {
+    try {
+      const k = `mh:conv:${patientPhn}`;
+      let v = localStorage.getItem(k);
+      if (!v) { v = crypto.randomUUID?.() ?? `c-${Date.now()}-${Math.random().toString(36).slice(2)}`; localStorage.setItem(k, v); }
+      return v;
+    } catch { return `conv-${patientPhn}`; }
+  }, [patientPhn]);
   const tnav = useTranslations("patientNav");
   const tc = useTranslations("concierge");
   const [msgs, setMsgs] = useState<Node[]>([]);
@@ -149,6 +159,7 @@ export function Concierge({ patientPhn, name, signals }: { patientPhn: string; n
             patient_id: patientPhn,
             audience: "patient",
             locale,
+            conversation_id: convId,
             mode: proactive ? "proactive" : "chat",
             messages: proactive
               ? [{ role: "user", content: "(open)" }]
@@ -194,7 +205,7 @@ export function Concierge({ patientPhn, name, signals }: { patientPhn: string; n
       }
       return full;
     },
-    [busy, msgs, patientPhn, down, locale],
+    [busy, msgs, patientPhn, down, locale, convId],
   );
 
   // ---- multimodal (P4b): share a photo (lab report, medicine box, symptom) and

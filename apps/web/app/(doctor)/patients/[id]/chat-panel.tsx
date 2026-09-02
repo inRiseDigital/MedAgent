@@ -7,7 +7,7 @@
  * reader over the AI SDK data-protocol frames (text-delta / data-citations /
  * data-proposals / finish).
  */
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { useTranslations } from "next-intl";
 import { Send, Sparkles } from "lucide-react";
@@ -67,6 +67,16 @@ interface OpeningBrief {
 
 export function ChatPanel({ patientId, opening }: { patientId: string; opening?: OpeningBrief }) {
   const t = useTranslations("patient");
+  // Stable conversation id (H0-S1) — the server owns the thread keyed by this, so the
+  // copilot conversation survives a reload. Persisted per patient.
+  const convId = useMemo(() => {
+    try {
+      const k = `md:conv:${patientId}`;
+      let v = localStorage.getItem(k);
+      if (!v) { v = crypto.randomUUID?.() ?? `c-${Date.now()}-${Math.random().toString(36).slice(2)}`; localStorage.setItem(k, v); }
+      return v;
+    } catch { return `conv-${patientId}`; }
+  }, [patientId]);
   const [turns, setTurns] = useState<Turn[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
@@ -117,7 +127,7 @@ export function ChatPanel({ patientId, opening }: { patientId: string; opening?:
 
       try {
         const result = await streamAgentChat(
-          { patient_id: patientId, messages: history.map((m) => ({ role: m.role, content: m.text })) },
+          { patient_id: patientId, conversation_id: convId, messages: history.map((m) => ({ role: m.role, content: m.text })) },
           {
             onEvent: (evt) => {
               if (evt.type === "text-delta" && typeof evt.delta === "string") {
@@ -150,7 +160,7 @@ export function ChatPanel({ patientId, opening }: { patientId: string; opening?:
         setBusy(false);
       }
     },
-    [busy, patientId, t, turns],
+    [busy, patientId, t, turns, convId],
   );
 
   const flagCls = (sev: string) =>
