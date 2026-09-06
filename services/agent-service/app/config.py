@@ -85,4 +85,8 @@ class Settings(BaseSettings):
     # model=llama-3.3-70b-versatile.
     llm_openai_base_url: str = "https://api.groq.com/openai/v1"
     llm_openai_api_key: str = ""
-    llm_openai_model: str = "qwen/qwen3.6-27b"   # Groq; follows tool-discipline for the ReAct loop
+    # Groq; qwen3.8-27b (newer than 3.6) reliably STRUCTURES tool-calls AND produces
+    # clean grounded prose on the tool-free synthesis path — 3.6 leaked a hallucinated
+    # tool-call as text there (fixed empirically 2026-09-06). Any OpenAI-compatible
+    # tool-calling model works; the reasoning_format param is auto-gated in build.py.
+    llm_openai_model: str = "qwen/qwen3.8-27b"

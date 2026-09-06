@@ -146,6 +146,18 @@ def build_chat_llm(settings: Settings, streaming: bool = False) -> Any:
     if settings.agent_llm_mode == "openai":
         from langchain_openai import ChatOpenAI
 
+        # `reasoning_format=hidden` hides a reasoning model's chain-of-thought
+        # (otherwise emitted inline as <think>…</think>) — but it is a Groq param
+        # VALID ONLY for reasoning models (Qwen, gpt-oss, DeepSeek-R1). Groq REJECTS
+        # it (HTTP 400) for a plain chat model such as Llama. Send it only for a
+        # reasoning family, so the model/provider can be swapped by config alone with
+        # no code change (the whole point of the OpenAI-compatible shim).
+        model_l = settings.llm_openai_model.lower()
+        extra_body = (
+            {"reasoning_format": "hidden"}
+            if any(k in model_l for k in ("qwen", "gpt-oss", "deepseek", "-r1", "reasoning", "thinking"))
+            else {}
+        )
         return ChatOpenAI(
             model=settings.llm_openai_model,
             api_key=settings.llm_openai_api_key,
@@ -157,12 +169,9 @@ def build_chat_llm(settings: Settings, streaming: bool = False) -> Any:
             max_retries=settings.llm_max_retries,
             request_timeout=settings.llm_timeout_seconds,
             streaming=streaming,
-            # Reasoning models (Qwen, gpt-oss) otherwise emit their chain-of-thought
-            # inline as <think>…</think>; Groq's reasoning_format=hidden returns only
-            # the final answer. Passed via extra_body (a raw request-body field) —
-            # the OpenAI SDK rejects it as a top-level arg. Ignored by providers that
-            # don't know it.
-            extra_body={"reasoning_format": "hidden"},
+            # extra_body carries raw request-body fields the OpenAI SDK rejects as
+            # top-level args; empty for non-reasoning models (see above).
+            extra_body=extra_body,
         )
     # NOTE: newer Claude models reject `temperature`; determinism for the safety
     # paths comes from the deterministic Rx engine (04 ADR AG-2), not temperature.
