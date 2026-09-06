@@ -23,6 +23,29 @@ to connect to. Those are marked 🧱 with exactly what unblocks them — never c
 
 ---
 
+## Sweep log — 2026-09-06 ("complete the rest")
+Completed & committed this sweep (each verified):
+- ✅ **vLLM production overlay** (`docker-compose.vllm.yml`) — server-GPU self-hosting with
+  guided decoding; config-only swap. Compose validated.
+- ✅ **Audit hash-chain continued across restarts** — bootstrap re-derives the head hash from
+  the store; fail-safe to genesis. Maven BUILD SUCCESS, 27 tests.
+- ✅ **Observability alerts + perf harness** — prometheus alert rules (6, promtool-valid) +
+  k6 `chat-concurrency.js`/`soak.js` (the two S6 scenarios).
+- ✅ **Self-improvement loop** — auto eval-set growth (governed, human-confirm) + `/api/v1/quality`
+  drift endpoint. Eval gate stays 38/38.
+- ✅ **National integration facades + simulator** (NDHX/SLUDI/HHIMS) — feature-flagged, verified
+  end-to-end against the sim.
+- ✅ **SNOMED CT adapter** — licensed-server client + non-authoritative offline subset; never
+  guesses a code (unknown+unlicensed → 503).
+- ✅ **Security residual risks R-1/R-3 narrowed** to reality; **clinical-validation protocol**
+  written (harness done, execution externally gated).
+- ✅ **Consolidated this ROADMAP.**
+- 🔨 **Emergency escalation** + **per-purpose consent** — in progress (parallel agents).
+- ⏭️ **OTLP traces/logs** — left as next-pass (metrics + dashboards + alerts already deliver
+  strong observability; distributed tracing is the incremental add).
+
+---
+
 ## 1 · Core platform & agent — ✅ DONE
 - ✅ Monorepo, Docker stack (12 services), Postgres/Redis/MinIO/Keycloak/Traefik/HAPI FHIR
 - ✅ Identity spine (OIDC BFF, split-horizon JWKS, roles/clients), live queue, MPI search
