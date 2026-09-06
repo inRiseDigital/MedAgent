@@ -20,7 +20,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any
+from datetime import datetime
+from typing import Any, Callable, Iterable
 
 import httpx
 
@@ -28,6 +29,44 @@ logger = logging.getLogger(__name__)
 
 # Keep the injected block bounded so it never crowds out the conversation.
 _MAX = {"problems": 10, "medications": 12, "allergies": 12, "vitals": 6, "results": 6, "flags": 8}
+
+
+def _fmt_date(iso: str | None, *, with_time: bool = False) -> str:
+    """Human-friendly date ('20 Jul 2026' / '27 Jul 2026, 11:41') from an ISO string;
+    falls back to the raw value so a malformed date is never dropped silently. Raw
+    microsecond timestamps like '2026-07-27T11:41:23.738939+00:00' read as noise in
+    a summary — this is what makes the appointment/vital dates legible."""
+    if not iso:
+        return ""
+    try:
+        dt = datetime.fromisoformat(str(iso).replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        return str(iso)
+    return dt.strftime("%d %b %Y, %H:%M") if with_time else dt.strftime("%d %b %Y")
+
+
+def _num(v: Any) -> str:
+    """Tidy numeric display: 6.0 -> '6', 6.4 -> '6.4' (drops noise trailing zeros)."""
+    if isinstance(v, bool) or v is None:
+        return ""
+    if isinstance(v, float) and v.is_integer():
+        return str(int(v))
+    return str(v)
+
+
+def _dedup(rows: Iterable[dict[str, Any]], key: Callable[[dict[str, Any]], Any]) -> list[dict[str, Any]]:
+    """Keep the first row per key (case-insensitive), preserving order. FHIR often
+    holds several resources that render to the same display text (two identical
+    active 'Paracetamol' MedicationRequests, a chest X-ray reported twice); listing
+    each verbatim reads as a data glitch, so we collapse duplicates by display."""
+    seen: set[str] = set()
+    out: list[dict[str, Any]] = []
+    for r in rows:
+        k = str(key(r) or "").strip().lower()
+        if k and k not in seen:
+            seen.add(k)
+            out.append(r)
+    return out
 
 
 async def _get(client: httpx.AsyncClient, url: str, bearer: str) -> dict[str, Any] | None:
@@ -63,41 +102,54 @@ def _render(summary: dict[str, Any], brief: dict[str, Any] | None) -> str:
         )
         lines.append(f"- SAFETY FLAGS (deterministic): {rendered}.")
 
-    def _items(key: str, label: str, fmt) -> None:  # noqa: ANN001
+    def _items(key: str, label: str, fmt, *, dedup_on=None) -> None:  # noqa: ANN001
         rows = summary.get(key) or []
+        if dedup_on is not None:
+            rows = _dedup(rows, dedup_on)
         if not rows:
             return
         rendered = "; ".join(fmt(r) for r in rows[: _MAX[key]])
         lines.append(f"- {label}: {rendered}.")
 
-    _items("problems", "Active problems", lambda r: f"{r.get('text', '?')} [source: {r.get('ref', '')}]")
-    _items("medications", "Active medications", lambda r: f"{r.get('text', '?')} [source: {r.get('ref', '')}]")
+    _items("problems", "Active problems", lambda r: f"{r.get('text', '?')} [source: {r.get('ref', '')}]",
+           dedup_on=lambda r: r.get("text"))
+    _items("medications", "Active medications", lambda r: f"{r.get('text', '?')} [source: {r.get('ref', '')}]",
+           dedup_on=lambda r: r.get("text"))
     _items(
         "allergies",
         "Allergies",
         lambda r: f"{r.get('text', '?')} ({r.get('criticality', 'unknown')}) [source: {r.get('ref', '')}]",
+        dedup_on=lambda r: r.get("text"),
     )
-    _items(
-        "vitals",
-        "Recent vitals",
-        lambda r: f"{r.get('text', '?')} {r.get('value', '')}{r.get('unit', '')}".strip(),
-    )
+
+    def _vital(r: dict[str, Any]) -> str:
+        meas = f"{_num(r.get('value'))} {r.get('unit') or ''}".strip()
+        when = _fmt_date(r.get("when"))
+        s = f"{r.get('text', '?')} {meas}".strip()
+        return f"{s} ({when})" if when else s
+
+    # Collapse to the latest reading per vital type (rows arrive newest-first from
+    # core-api's `_sort=-date`) so we don't list weight/height twice — a snapshot,
+    # not a jumbled log; trends are still available via the vitals tool.
+    _items("vitals", "Recent vitals", _vital, dedup_on=lambda r: r.get("text"))
     _items(
         "results",
         "Recent results",
         lambda r: f"{r.get('text', '?')}"
         + (" (CRITICAL)" if r.get("critical") else "")
         + f" [source: {r.get('ref', '')}]",
+        dedup_on=lambda r: r.get("text"),
     )
     # Appointments are in the summary and often asked about ("when's my next
     # visit?") — including them here lets the agent answer from context instead of
-    # spending a get_appointments round-trip.
+    # spending a get_appointments round-trip. ISO timestamps are formatted so the
+    # summary reads as a date, not a machine string.
     appts = [a for a in (summary.get("appointments") or []) if a.get("start")]
     if appts:
-        rendered = "; ".join(
-            f"{a.get('start')}" + (f" ({a['status']})" if a.get("status") else "")
-            for a in appts[: _MAX.get("appointments", 6)]
-        )
+        def _appt(a: dict[str, Any]) -> str:
+            return f"{_fmt_date(a.get('start'), with_time=True)}" + (f" ({a['status']})" if a.get("status") else "")
+
+        rendered = "; ".join(_appt(a) for a in _dedup(appts, _appt)[: _MAX.get("appointments", 6)])
         lines.append(f"- Appointments: {rendered}.")
     return "\n".join(lines)
 

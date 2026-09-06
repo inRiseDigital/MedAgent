@@ -119,25 +119,68 @@ def _is_broad_overview(question: str) -> bool:
     return any(k in q for k in _OVERVIEW_KW)
 
 
-def _overview_from_context(record_context: str) -> str:
-    """A grounded overview assembled DIRECTLY from the pre-loaded cited context — the
+def _overview_from_context(record_context: str, audience: str = "patient") -> str:
+    """A grounded 360 assembled DIRECTLY from the pre-loaded cited context — the
     resilient fallback when the model can't synthesise in time. The context is already
-    a structured, cited snapshot of the chart, so we present it as-is under a plain
-    lead-in, dropping the model-facing preamble line. Guarantees a useful, grounded
-    360 even when the language model is slow or unavailable — never a bare error."""
-    out: list[str] = []
+    a cited snapshot of the chart; here we PARSE its labelled lines and re-present them
+    as a clean, sectioned profile (Who · Safety · Physical health · Care), grouped by
+    dimension rather than dumped as-is. Guarantees a useful, well-structured, grounded
+    360 even when the language model is slow or unavailable — never a raw data glitch.
+
+    It is also honest: mental-health and social history are not separate structured
+    fields in this record, so the absence of them here is not evidence of wellbeing —
+    we say so plainly rather than implying the clinical data is the whole person."""
+    # Parse "- Label: body." lines from the cited context into a label→body map,
+    # stripping the inline [source: …] markers (citations stream separately as chips).
+    sections: dict[str, str] = {}
     for ln in record_context.splitlines():
-        s = ln.strip()
+        s = ln.strip().lstrip("-").strip()
         if not s or s.startswith("CURRENT PATIENT CONTEXT"):
             continue
-        # Drop inline [source: …] markers (citations stream separately as chips) and
-        # tidy the space-before-punctuation the removal leaves behind.
         s = re.sub(r"\s*\[source:[^\]]*\]", "", s)
-        s = re.sub(r"\s+([;.,])", r"\1", s)
-        out.append(s)
-    if not out:
+        s = re.sub(r"\s+([;.,])", r"\1", s).strip().rstrip(".")
+        label, sep, body = s.partition(":")
+        if sep and body.strip():
+            sections[label.strip()] = body.strip()
+    if not sections:
         return ""
-    return "Here's the 360° picture straight from the record:\n\n" + "\n".join(out)
+
+    who = sections.get("Patient", "")
+    name = who.split(",")[0].strip() if who else "this patient"
+    patient_facing = audience != "clinician"
+
+    lines: list[str] = [f"Here's a 360° view of **{name}**, straight from the record:", ""]
+
+    def add(header: str, rows: list[tuple[str, str | None]]) -> None:
+        body = [f"- **{lbl}:** {val}" for lbl, val in rows if val]
+        if body:
+            lines.append(f"**{header}**")
+            lines.extend(body)
+            lines.append("")
+
+    add("Who", [("Details", who)] if who else [])
+    add("Safety", [
+        ("Alerts", sections.get("SAFETY FLAGS (deterministic)")),
+        ("Allergies", sections.get("Allergies")),
+    ])
+    add("Physical health", [
+        ("Active problems", sections.get("Active problems")),
+        ("Medications", sections.get("Active medications")),
+        ("Recent vitals", sections.get("Recent vitals")),
+        ("Recent results", sections.get("Recent results")),
+    ])
+    add("Upcoming care", [("Appointments", sections.get("Appointments"))])
+
+    note = (
+        "Not captured as separate structured fields in this record — the above is the "
+        "clinical data on file, so this section being empty is not a sign that all is well. "
+        + ("Tell me if you'd like to talk about how you're doing."
+           if patient_facing else
+           "Consider a psychosocial history if clinically relevant.")
+    )
+    lines.append("**Mental & social wellbeing**")
+    lines.append(f"- {note}")
+    return "\n".join(lines).strip()
 
 
 # ---- patient ACTION intent (refill / book / video) --------------------------
@@ -676,7 +719,7 @@ async def chat(
             # the model. A broad overview ALWAYS answers here; it never falls into the
             # multi-tool crawl, which reliably blows the time budget on a whole-record ask.
             if not streamed:
-                fallback = _overview_from_context(record_context)
+                fallback = _overview_from_context(record_context, body.audience)
                 if fallback:
                     streamed = True
                     answer_parts.append(fallback)
