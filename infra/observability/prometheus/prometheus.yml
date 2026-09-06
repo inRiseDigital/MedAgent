@@ -3,6 +3,10 @@ global:
   scrape_interval: 15s
   evaluation_interval: 15s
 
+# Alert rules (S6). Mounted alongside this file into the prometheus container.
+rule_files:
+  - /etc/prometheus/alerts.yml
+
 scrape_configs:
   # Python app services expose /metrics on their app port (8000 in-container)
   - job_name: core-api

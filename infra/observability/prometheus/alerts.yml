@@ -1,0 +1,69 @@
+# Prometheus alert rules (S6 hardening — the "alert rules remain" item).
+#
+# Evaluated by Prometheus itself (visible under /alerts and via the ALERTS series);
+# route to Alertmanager/Grafana OnCall in staging/prod. Metric names + the `service`
+# label match the live instrumentator + the Golden-Signals dashboard
+# (prometheus-fastapi-instrumentator: http_requests_total, http_request_duration_seconds_bucket).
+groups:
+  - name: medagent-availability
+    rules:
+      - alert: ServiceDown
+        expr: up{job=~"core-api|agent-service|notify-service"} == 0
+        for: 1m
+        labels: { severity: critical }
+        annotations:
+          summary: "{{ $labels.job }} is DOWN"
+          description: "Prometheus cannot scrape {{ $labels.job }} for >1m. Patient/clinician flows for that service are unavailable."
+
+      - alert: GatewayDown
+        expr: up{job="gateway"} == 0
+        for: 1m
+        labels: { severity: critical }
+        annotations:
+          summary: "Edge gateway is DOWN"
+          description: "Traefik gateway unreachable for >1m — the whole app is inaccessible from the edge."
+
+  - name: medagent-slo
+    rules:
+      # 5xx ratio per service. 5% warns, 20% pages. status label matches both "5xx"
+      # bucketed and raw 5nn codes via the 3-char regex.
+      - alert: HighErrorRate
+        expr: |
+          sum by (service) (rate(http_requests_total{status=~"5.."}[5m]))
+            / sum by (service) (rate(http_requests_total[5m])) > 0.05
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "Elevated 5xx on {{ $labels.service }}"
+          description: "{{ $labels.service }} 5xx ratio >5% for 5m ({{ $value | humanizePercentage }})."
+
+      - alert: CriticalErrorRate
+        expr: |
+          sum by (service) (rate(http_requests_total{status=~"5.."}[5m]))
+            / sum by (service) (rate(http_requests_total[5m])) > 0.20
+        for: 2m
+        labels: { severity: critical }
+        annotations:
+          summary: "CRITICAL 5xx on {{ $labels.service }}"
+          description: "{{ $labels.service }} 5xx ratio >20% for 2m ({{ $value | humanizePercentage }}) — likely an outage."
+
+      # NFR-2: patient summary p95 < 2s. Alert on sustained breach across a service.
+      - alert: HighRequestLatencyP95
+        expr: |
+          histogram_quantile(0.95,
+            sum by (service, le) (rate(http_request_duration_seconds_bucket[10m]))) > 2
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "p95 latency >2s on {{ $labels.service }}"
+          description: "{{ $labels.service }} request p95 has exceeded the 2s NFR for 10m ({{ $value }}s)."
+
+  - name: medagent-meta
+    rules:
+      - alert: PrometheusTargetMissing
+        expr: up == 0
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "Scrape target missing: {{ $labels.job }}"
+          description: "Prometheus has failed to scrape {{ $labels.job }} for >5m — metrics/alerts for it are blind."

@@ -1,0 +1,108 @@
+# vLLM self-hosted LLM overlay (sovereign · production-tier · guided decoding) — OPT-IN.
+#
+# The PRODUCTION endgame of the self-hosted path: where docker-compose.ollama.yml is
+# the on-ramp (a 7B on a 6GB laptop GPU), this runs the model on vLLM — the serving
+# engine for a REAL GPU server — and points agent-service at it through the SAME
+# OpenAI-compatible endpoint, NO agent code change, only env. It is the identical
+# architecture as the Ollama overlay: a config-only swap of base_url + model.
+#
+# Why vLLM over Ollama for prod: continuous batching (many concurrent clinicians),
+# and — the reason it matters here — GUIDED / CONSTRAINED DECODING. With
+# `--enable-auto-tool-choice` vLLM constrains generation to the tool schema via
+# xgrammar, so the model CANNOT emit malformed tool JSON — the agent's tool loop
+# gets guaranteed-valid arguments every call, not best-effort JSON it must repair.
+#
+# Bring up (layer ON TOP of the base compose):
+#   docker compose -f docker-compose.yml -f docker-compose.vllm.yml up -d
+# First start downloads the model weights from Hugging Face into the `vllm-cache`
+# volume; later starts reuse the cache. Combine with the FHIR-enforce overlay by
+# adding its -f as usual.
+#
+# HARDWARE REALITY — READ THIS: vLLM is for a real GPU server, NOT the 6GB laptop.
+# The default model here (Qwen/Qwen2.5-1.5B-Instruct) is deliberately TINY — it is
+# a SMOKE TEST so this overlay validates + boots on a modest dev GPU. It is not the
+# production model. PRODUCTION serves Qwen/Qwen2.5-72B-Instruct (or Llama-3.3-70B),
+# which needs ~48–80GB VRAM (an A100/H100 80GB, or 2× 48GB) — override VLLM_MODEL:
+#   VLLM_MODEL=Qwen/Qwen2.5-72B-Instruct \
+#     docker compose -f docker-compose.yml -f docker-compose.vllm.yml up -d
+# (bump --max-model-len and add --tensor-parallel-size N for multi-GPU there.)
+#
+# GPU: needs an NVIDIA driver + the container GPU runtime (nvidia-container-toolkit,
+# or Docker Desktop WSL2 GPU passthrough). vLLM is CUDA-only — unlike Ollama there is
+# NO CPU fallback, so the `deploy:` block below is required, not optional.
+
+services:
+  vllm:
+    image: vllm/vllm-openai:latest
+    restart: unless-stopped
+    # [edge, internal]: `internal` is air-gapped (internal: true) so the SERVER —
+    # which is what fetches model weights from Hugging Face — needs `edge` for the
+    # one-time download. For an air-gapped production deploy, pre-load the
+    # `vllm-cache` volume (download the weights once, or copy them in) and drop
+    # `edge` so the LLM box has NO internet.
+    networks: [edge, internal]
+    ports:
+      - "8010:8000" # dev convenience: reach the OpenAI server directly from the host
+        # (8000 in-container; mapped to 8010 to avoid core-api's 8001 / agent's 8002)
+    volumes:
+      - vllm-cache:/root/.cache/huggingface # HF weights cache — survives restarts
+    environment:
+      # Some gated/private HF models need a token; blank by default (public models
+      # like Qwen2.5 download without one).
+      HUGGING_FACE_HUB_TOKEN: ${HUGGING_FACE_HUB_TOKEN:-}
+    # The OpenAI-compatible server is the image entrypoint; these are its flags.
+    command:
+      # SMOKE-TEST default; production overrides VLLM_MODEL (see header) to a 70B.
+      - --model
+      - ${VLLM_MODEL:-Qwen/Qwen2.5-1.5B-Instruct}
+      # Tool-calling + guided decoding: --enable-auto-tool-choice lets the model
+      # decide when to call a tool AND makes vLLM constrain the output to the tool
+      # schema (xgrammar) — the emitted tool JSON is guaranteed valid. The `hermes`
+      # parser is the correct tool-call parser for the Qwen2.5 family.
+      - --enable-auto-tool-choice
+      - --tool-call-parser
+      - hermes
+      # Headroom for the clinician system prompt + grounded patient context +
+      # history + a 2048-token answer (the same reasoning as the Ollama overlay's
+      # OLLAMA_CONTEXT_LENGTH=8192). A 70B on a server GPU can go much higher.
+      - --max-model-len
+      - "8192"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    healthcheck:
+      # The vllm-openai image has no reliable curl — use Python (always present) to
+      # hit the server's /health. Model load is slow (weights download + CUDA graph
+      # capture), so give a generous start_period and many retries before failing.
+      test:
+        [
+          "CMD-SHELL",
+          "python3 -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health').status==200 else 1)\"",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 180s
+
+  agent-service:
+    # Point the agent at the self-hosted vLLM model — overrides ./env/agent-service.env.
+    # AGENT_REACT_PROVIDER=configured runs the TOOL LOOP on the local model too, so
+    # the whole agent is sovereign (no Anthropic/Groq call leaves the box). vLLM's
+    # guided decoding means the tool loop receives guaranteed-valid tool JSON.
+    environment:
+      AGENT_LLM_MODE: openai
+      LLM_OPENAI_BASE_URL: http://vllm:8000/v1
+      LLM_OPENAI_MODEL: ${VLLM_MODEL:-Qwen/Qwen2.5-1.5B-Instruct}
+      LLM_OPENAI_API_KEY: vllm # any non-empty string; vLLM ignores it by default
+      LLM_OPENAI_MAX_TOKENS: "2048" # no Groq OTPM cap locally → allow fuller answers
+      AGENT_REACT_PROVIDER: configured
+    depends_on:
+      vllm:
+        condition: service_healthy
+
+volumes:
+  vllm-cache:

@@ -616,6 +616,7 @@ services:
       - "9090:9090" # dev convenience
     volumes:
       - ../observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ../observability/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
 
   tempo:
     <<: *service-defaults
