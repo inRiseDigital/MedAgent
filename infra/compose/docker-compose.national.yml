@@ -1,0 +1,70 @@
+# ============================================================================
+# National-integration facades + simulator — OPT-IN overlay
+# (09-integrations-national.md §2 NDHX / §3 HHIMS / §5 SLUDI)
+#
+#   docker compose -f docker-compose.yml -f docker-compose.national.yml up -d
+#
+# What it does:
+#   * runs `national-sim` (services/national-sim) on the INTERNAL network — a local
+#     stand-in for NDHX / SLUDI / HHIMS that returns plausible canned FHIR/JSON;
+#   * flips core-api's integration feature flags ON and points each *_BASE_URL at the
+#     sim, so the adapters in app/integrations/* are exercisable END-TO-END.
+#
+# THIS IS THE LOCAL, TESTABLE FACADE — the sim is a simulator, not a real national
+# system. In a REAL deployment you do NOT apply this overlay: instead you set
+# NDHX_BASE_URL / SLUDI_BASE_URL / HHIMS_BASE_URL to the actual national endpoints and
+# supply real credentials (NDHX_API_KEY, SLUDI_CLIENT_ID + SLUDI_API_KEY, HHIMS_API_KEY)
+# via the SOPS-injected env files (10 §5). The adapter code is identical either way.
+#
+# Without this overlay every integration is OFF (config.py defaults) and the endpoints
+# return a clear 503 "not enabled" — nothing here can block care.
+# ============================================================================
+
+services:
+  national-sim:
+    # Local simulator for the three national systems the adapters call.
+    # Stdlib-only Python HTTP server (mirrors face-sim: python:3.12-slim, no installs).
+    image: python:3.12-slim
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    command: ["python", "/opt/national-sim/sim.py"]
+    # On the internal network only (per §13 "mocks & simulators in the dev stack"):
+    # the adapters reach it in-cluster at http://national-sim:8000/{ndhx,sludi,hhims}.
+    # It publishes NO host port (an internal:true network cannot), matching the posture
+    # that nothing reaches national services except through core-api. To poke it from
+    # the host, exec through a cluster container, e.g.:
+    #   docker exec medagent-core-api-1 python -c \
+    #     "import urllib.request;print(urllib.request.urlopen('http://national-sim:8000/healthz').read())"
+    networks: [internal]
+    volumes:
+      - ../../services/national-sim:/opt/national-sim:ro
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=3).status == 200 else 1)",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 5s
+
+  core-api:
+    environment:
+      # Enable the facades and point them at the local sim (real deploy: real URLs+creds).
+      NDHX_ENABLED: "true"
+      NDHX_BASE_URL: http://national-sim:8000/ndhx
+      NDHX_API_KEY: ${NDHX_API_KEY:-dev-ndhx-key}
+      SLUDI_ENABLED: "true"
+      SLUDI_BASE_URL: http://national-sim:8000/sludi
+      SLUDI_CLIENT_ID: ${SLUDI_CLIENT_ID:-dev-sludi-partner}
+      SLUDI_API_KEY: ${SLUDI_API_KEY:-dev-sludi-key}
+      HHIMS_ENABLED: "true"
+      HHIMS_BASE_URL: http://national-sim:8000/hhims
+      HHIMS_API_KEY: ${HHIMS_API_KEY:-dev-hhims-key}
+    depends_on:
+      national-sim:
+        condition: service_healthy

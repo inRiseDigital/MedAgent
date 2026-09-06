@@ -25,8 +25,8 @@ from app.config import Settings
 from app.logging_config import configure_logging
 from app.routers import audit as audit_router
 from app.routers import (
-    analytics, authz, consent, consult, face_events, imaging, lab, lab_order, patients, proposals, queue,
-    referrals, registry, schedule, telemedicine,
+    analytics, authz, consent, consult, face_events, imaging, integrations, lab, lab_order, patients,
+    proposals, queue, referrals, registry, schedule, telemedicine,
 )
 from app.telemetry import configure_telemetry
 
@@ -95,6 +95,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(registry.router, prefix=API_V1_PREFIX)
     app.include_router(analytics.router, prefix=API_V1_PREFIX)
     app.include_router(consent.router, prefix=API_V1_PREFIX)
+    # National-integration facades (NDHX/SLUDI/HHIMS) — OFF by default (09 §2/§3/§5).
+    app.include_router(integrations.router, prefix=API_V1_PREFIX)
     app.include_router(audit_router.public_router, prefix=API_V1_PREFIX)
     app.include_router(audit_router.internal_router)
     # SSE ticket issuance lives in notify-service (02 §11) — it owns the full

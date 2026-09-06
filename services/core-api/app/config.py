@@ -62,3 +62,28 @@ class Settings(BaseSettings):
     # Telemedicine single-use join tokens (FR-9.7). Long enough to cover a late
     # join to a scheduled consult, short enough to bound a leaked link.
     telemedicine_join_ttl_seconds: int = 3600
+
+    # --- National health integrations (09-integrations-national.md) -----------
+    # HONEST FACADES, OFF by default. Each flag/URL below drives a real adapter
+    # client in app/integrations/*. Pointed at the local simulator today
+    # (infra/compose/docker-compose.national.yml) and at the real national
+    # endpoints when a base URL + credentials are supplied. An enabled flag with
+    # an empty base URL stays inert (the adapter returns a typed "disabled" result,
+    # never a 500) — nothing here can block care (spec §5.3/§6.2 invariants).
+    #
+    # NDHX / National EHR — FHIR R4 exchange node (§2). base_url is the FHIR root.
+    ndhx_enabled: bool = False
+    ndhx_base_url: str = ""
+    ndhx_api_key: str = ""
+    # SLUDI (MOSIP IDA / eKYC) — national digital identity (§5). client_id is the
+    # MOSIP relying-party / MISP partner id (§5.2). We store only the
+    # partner-specific token that verify returns — NEVER the UIN (ADR I-7).
+    sludi_enabled: bool = False
+    sludi_base_url: str = ""
+    sludi_client_id: str = ""
+    sludi_api_key: str = ""
+    # HHIMS — hospital HIS FHIR facade (§3). Read-only first; any write goes
+    # through HHIMS's own interface, never a direct DB write (ADR I-2).
+    hhims_enabled: bool = False
+    hhims_base_url: str = ""
+    hhims_api_key: str = ""
