@@ -20,11 +20,14 @@ import {
   FlaskConical,
   Info,
   ListChecks,
+  HeartHandshake,
   Loader2,
   PackageCheck,
+  Phone,
   Pill,
   ReceiptText,
   ShieldCheck,
+  Siren,
   Sparkles,
   Stethoscope,
 } from "lucide-react";
@@ -513,6 +516,81 @@ function PlanSteps({ spec }: { spec: WidgetSpec }) {
   );
 }
 
+// Emergency escalation — the deterministic red-flag detector surfaces this ahead
+// of the normal answer when the user's message or the grounded context contains an
+// emergency red flag. It triages / escalates only (never diagnoses): patient actions
+// are the Sri Lanka emergency ones (call 1990 Suwaseriya as a real tel: link / find
+// the nearest ETU; 1926 for mental health), clinician actions escalate to the ETU /
+// on-call team. Prominent + accessible (role="alert"); self-harm uses a gentler,
+// supportive palette, every other red flag an urgent one. Theme-token driven.
+type EscAction = { label: string; tel?: string; prompt?: string; action?: string };
+
+function Escalation({ spec, onAction, onConfirm }: WidgetProps) {
+  const category = String(spec.data.category ?? "");
+  const reason = spec.data.reason ? String(spec.data.reason) : "";
+  const note = spec.data.note ? String(spec.data.note) : "";
+  const actions = Array.isArray(spec.data.actions) ? (spec.data.actions as EscAction[]) : [];
+  const supportive = category === "self-harm";
+  const [flagged, setFlagged] = useState(false);
+  const accent = supportive ? "var(--primary)" : "var(--destructive)";
+  const accentFg = supportive ? "var(--primary-foreground)" : "var(--destructive-foreground)";
+  const Icon = supportive ? HeartHandshake : Siren;
+  const btn = "inline-flex items-center gap-1.5 rounded-full px-3.5 py-2 text-[13px] font-semibold no-underline transition-colors";
+  return (
+    <div role="alert" aria-live="assertive"
+      className="w-full max-w-[94%] overflow-hidden rounded-2xl border"
+      style={{
+        borderColor: accent,
+        background: `color-mix(in srgb, ${accent} 8%, var(--card))`,
+        boxShadow: "var(--mh-shadow, 0 1px 2px rgba(0,0,0,.06))",
+      }}>
+      <div className="flex items-center gap-2 px-3.5 py-2 text-[13px] font-bold"
+        style={{ background: accent, color: accentFg }}>
+        <Icon className="h-4 w-4 shrink-0" aria-hidden />
+        <span>{spec.title ?? (supportive ? "You matter — help is available" : "Emergency — act now")}</span>
+      </div>
+      <div className="flex flex-col gap-2.5 p-3.5">
+        {reason ? <p className="text-[13px] font-medium leading-snug">{reason}</p> : null}
+        {note ? <p className="text-[12px] leading-snug" style={{ color: "var(--muted-foreground)" }}>{note}</p> : null}
+        {flagged ? (
+          <p className="flex items-center gap-1.5 text-[13px] font-semibold" style={{ color: accent }}>
+            <Check className="h-4 w-4" /> Escalation flagged — contact the team now.
+          </p>
+        ) : actions.length ? (
+          <div className="flex flex-wrap gap-2">
+            {actions.map((a, i) => {
+              const primary = i === 0;
+              const style = primary
+                ? { background: accent, color: accentFg }
+                : { border: `1px solid ${accent}`, color: accent };
+              if (a.tel) {
+                return (
+                  <a key={i} href={`tel:${a.tel}`} className={btn} style={style}>
+                    <Phone className="h-3.5 w-3.5" aria-hidden />{a.label}
+                  </a>
+                );
+              }
+              return (
+                <button key={i} type="button" className={btn} style={style}
+                  onClick={async () => {
+                    if (a.action) {
+                      const ok = onConfirm ? await onConfirm(a.action, { category }) : false;
+                      if (ok) setFlagged(true);
+                    } else if (a.prompt) {
+                      onAction?.(a.prompt);
+                    }
+                  }}>
+                  {a.label}
+                </button>
+              );
+            })}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 interface WidgetProps {
   spec: WidgetSpec;
   onAction?: (id: string) => void;
@@ -531,6 +609,7 @@ const REGISTRY: Record<string, (p: WidgetProps) => ReactNode> = {
   "consult-session": ConsultSession,
   "order-status": OrderStatus,
   "plan-steps": PlanSteps,
+  escalation: Escalation,
   receipt: Receipt,
   timeline: TimelineW,
   summary: SummaryWidget,

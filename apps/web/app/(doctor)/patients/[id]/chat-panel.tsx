@@ -308,6 +308,24 @@ export function ChatPanel({ patientId, opening }: { patientId: string; opening?:
                                 return true;
                               } catch { return false; }
                             }
+                            if (action === "escalate") {
+                              // Emergency escalation (deterministic red flag): the
+                              // clinician acknowledges it. There is no automated paging
+                              // backend here, so this records the flag in the thread and
+                              // prompts contacting the ETU / rapid-response team now
+                              // (honest wording — it does not claim to have paged anyone).
+                              setTurns((prev) => [...prev, {
+                                role: "assistant", text: "",
+                                widgets: [{ id: `esc-ack-${Date.now()}`, kind: "receipt", title: "Escalation flagged", data: {
+                                  tone: "info",
+                                  lines: [
+                                    { label: "Action", value: "Contact ETU / rapid response now" },
+                                    { label: "Flagged by", value: "You" },
+                                  ],
+                                } }],
+                              }]);
+                              return true;
+                            }
                             if (action === "consult-complete") {
                               // Sign & file (S7): the confirmed items become a real,
                               // gated FHIR Encounter + note. The doctor confirmed each

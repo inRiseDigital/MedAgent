@@ -28,6 +28,7 @@ from app.agent.build import (
     resolve_patient_fhir_id,
 )
 from app.agent.context import build_patient_context
+from app.agent.escalation import detect_emergency
 from app.agent.memory import recall as recall_memory
 from app.agent.memory import remember as remember_memory
 from app.agent.memory import render_memory_block
@@ -606,6 +607,24 @@ async def chat(
         # The record-only context (no memory block) — used to derive citations/widgets
         # and as the resilient overview fallback if the model can't synthesise in time.
         record_context = context_text
+
+        # EMERGENCY ESCALATION (deterministic, additive) — before any answer path,
+        # run the red-flag detector over the user's message + the grounded context.
+        # If it fires, surface an ESCALATION widget and a brief spoken line FIRST.
+        # Safety is topology, not prompt: this mirrors the deterministic safety flags,
+        # never uses model judgement, and NEVER blocks or replaces the normal answer —
+        # it is purely additive and shown ahead of whatever the agent goes on to say.
+        try:
+            escalation = detect_emergency(question, record_context, body.audience)
+        except Exception:  # noqa: BLE001 — triage must never break a turn
+            logger.exception("emergency detection failed")
+            escalation = None
+        if escalation:
+            yield _sse({"type": "text-delta", "id": text_id,
+                        "delta": "🚨 " + escalation["spoken"] + "\n\n"})
+            yield _sse({"type": "data-widget", "widget": {
+                "id": "w_escalation", "kind": "escalation",
+                "title": escalation["title"], "data": escalation["widget"]}})
 
         # Long-term memory (P2): recall durable preferences/context and inject them;
         # the agent persists new ones via the `remember` tool. Scope: a PATIENT's
