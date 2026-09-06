@@ -23,8 +23,10 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Consent interceptor — second stage of the MedAgent pipeline
@@ -36,6 +38,16 @@ import java.util.Map;
  * has an active consent whose root {@code provision.type = deny} — they have
  * withdrawn sharing — MASK the resource, unless the access is break-glass
  * (purposeOfUse = BTG). Verdicts are cached per request (one lookup per patient).
+ *
+ * <p><b>Per-purpose sharing:</b> a deny provision may be scoped to a
+ * {@code provision.purpose} PurposeOfUse code (e.g. TREAT / HRESCH / HMARKT). A
+ * purpose-scoped deny masks only when the request's own purpose (the
+ * {@code X-MedAgent-Purpose} header, else the stamped {@link
+ * AuthzInterceptor#CTX_PURPOSE_OF_USE}, else {@link #DEFAULT_PURPOSE}) matches one
+ * of the deny's purposes. A deny with NO purpose is a global record-sharing
+ * withdrawal and masks every purpose (back-compat with the single-toggle model).
+ * Crucially this only ever ADDS conditions to masking: a purpose-scoped deny that
+ * does not match the request's purpose never masks a read that flows today.
  *
  * <p><b>Safety posture:</b> Authz is the fail-closed primary gate; consent is a
  * second, additive restriction. On an evaluation error this layer logs loudly and
@@ -52,8 +64,14 @@ public class ConsentInterceptor {
     static final String CACHE_KEY_TEMPLATE = "consent:%s:%s:%s"; // patient, purpose, actorClass
     private static final String REQ_CACHE = "medagent.consent.verdicts";
     static final String SERVICE_KEY_HEADER = "X-MedAgent-Service-Key";
+    static final String PURPOSE_HEADER = "X-MedAgent-Purpose";
     static final String FHIR_BASE_ENV = "MEDAGENT_FHIR_BASE";
     static final String SERVICE_KEY_ENV = "MEDAGENT_SERVICE_KEY";
+
+    /** The purpose of a request that carries no explicit purpose — a normal
+     *  treatment read. Chosen so the per-purpose logic degrades to today's
+     *  behaviour when no purpose is forwarded (fail-safe: never newly masks). */
+    static final String DEFAULT_PURPOSE = "TREAT";
 
     private final String myFhirBase;
     private final String myServiceKey;
@@ -79,19 +97,18 @@ public class ConsentInterceptor {
         if (myHttp == null || theShowDetails == null) {
             return;
         }
-        Object purpose = theRequestDetails == null ? null
-                : theRequestDetails.getUserData().get(AuthzInterceptor.CTX_PURPOSE_OF_USE);
-        if ("BTG".equalsIgnoreCase(String.valueOf(purpose))) {
+        String purpose = requestPurpose(theRequestDetails);
+        if ("BTG".equals(purpose)) {
             return; // break-glass overrides deny-by-consent (03 §5.2)
         }
         for (int i = 0; i < theShowDetails.size(); i++) {
             try {
                 IBaseResource resource = theShowDetails.getResource(i);
                 String patientId = subjectPatientId(resource);
-                if (patientId != null && isDenied(patientId, theRequestDetails)) {
+                if (patientId != null && isDenied(patientId, purpose, theRequestDetails)) {
                     theShowDetails.setResource(i, null);
-                    ourLog.info("medagent-consent: masked {} (subject Patient/{} has active deny-consent)",
-                            resource.fhirType(), patientId);
+                    ourLog.info("medagent-consent: masked {} (subject Patient/{} has active deny-consent for purpose {})",
+                            resource.fhirType(), patientId, purpose);
                 }
             } catch (RuntimeException e) {
                 ourLog.error("medagent-consent: evaluation error — passing (authz already gated)", e);
@@ -99,8 +116,32 @@ public class ConsentInterceptor {
         }
     }
 
-    /** True if this patient has an active Consent whose root provision denies sharing. */
-    boolean isDenied(String thePatientId, RequestDetails theRequestDetails) {
+    /**
+     * The purpose of use backing this request, upper-cased. Prefers the forwarded
+     * {@code X-MedAgent-Purpose} header (the fine-grained value: TREAT / HRESCH /
+     * HMARKT / BTG …), then the purpose the {@link AuthzInterceptor} stamped into the
+     * request context, and finally {@link #DEFAULT_PURPOSE}. Defaulting to TREAT is
+     * what keeps this fail-safe: an unlabelled read is treated as a treatment read,
+     * so a purpose-scoped deny for some OTHER purpose can never mask it.
+     */
+    String requestPurpose(RequestDetails theRequestDetails) {
+        if (theRequestDetails == null) {
+            return DEFAULT_PURPOSE;
+        }
+        String header = theRequestDetails.getHeader(PURPOSE_HEADER);
+        if (header != null && !header.isBlank()) {
+            return header.trim().toUpperCase(Locale.ROOT);
+        }
+        Object ctx = theRequestDetails.getUserData().get(AuthzInterceptor.CTX_PURPOSE_OF_USE);
+        if (ctx != null && !String.valueOf(ctx).isBlank()) {
+            return String.valueOf(ctx).toUpperCase(Locale.ROOT);
+        }
+        return DEFAULT_PURPOSE;
+    }
+
+    /** True if this patient has an active Consent whose provision denies sharing for
+     *  {@code theRequestPurpose} (a purpose-less deny denies every purpose). */
+    boolean isDenied(String thePatientId, String theRequestPurpose, RequestDetails theRequestDetails) {
         Map<String, Boolean> cache = requestCache(theRequestDetails);
         Boolean cached = cache == null ? null : cache.get(thePatientId);
         if (cached != null) {
@@ -124,9 +165,11 @@ public class ConsentInterceptor {
                     if (e.getResource() instanceof Consent c
                             && c.hasProvision()
                             && c.getProvision().getType() == Consent.ConsentProvisionType.DENY
-                            && isRecordSharingConsent(c)) {
+                            && isRecordSharingConsent(c)
+                            && deniesForPurpose(c, theRequestPurpose)) {
                         // A withdrawal of RECORD sharing — not a biometric/face-recognition
-                        // consent (which governs kiosk check-in, not FHIR visibility).
+                        // consent (which governs kiosk check-in, not FHIR visibility) — that
+                        // applies to THIS request's purpose (or is a global, purpose-less deny).
                         denied = true;
                         break;
                     }
@@ -224,6 +267,45 @@ public class ConsentInterceptor {
             }
         }
         return true;
+    }
+
+    /**
+     * Whether a record-sharing DENY consent applies to a request made for
+     * {@code theRequestPurpose}.
+     *
+     * <p><b>Back-compat / fail-safe contract:</b>
+     * <ul>
+     *   <li>A deny with NO {@code provision.purpose} is a <em>global</em> withdrawal
+     *       of record sharing (the original single-toggle model) — it applies to
+     *       every purpose, exactly as before.</li>
+     *   <li>A deny scoped to one or more purposes applies ONLY when the request's
+     *       purpose is one of them. A purpose-scoped deny for some other purpose
+     *       therefore never masks a read that flows today — adding a per-purpose
+     *       deny can only add masking for its own purpose, never remove or broaden it.</li>
+     * </ul>
+     */
+    static boolean deniesForPurpose(Consent theConsent, String theRequestPurpose) {
+        Set<String> purposes = provisionPurposeCodes(theConsent);
+        if (purposes.isEmpty()) {
+            return true; // global record-sharing deny — applies to all purposes (back-compat)
+        }
+        return theRequestPurpose != null
+                && purposes.contains(theRequestPurpose.toUpperCase(Locale.ROOT));
+    }
+
+    /** The PurposeOfUse codes on a consent's root provision (upper-cased), or empty
+     *  for an unscoped (global) deny. */
+    static Set<String> provisionPurposeCodes(Consent theConsent) {
+        Set<String> codes = new HashSet<>();
+        if (theConsent.hasProvision()) {
+            for (Coding coding : theConsent.getProvision().getPurpose()) {
+                String code = coding.getCode();
+                if (code != null && !code.isBlank()) {
+                    codes.add(code.toUpperCase(Locale.ROOT));
+                }
+            }
+        }
+        return codes;
     }
 
     private static String env(String key, String def) {
