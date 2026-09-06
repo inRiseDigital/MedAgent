@@ -53,10 +53,14 @@ the current commit; staging-only items are flagged.
   comes from the session claim, never the client, so a patient can only ever
   reach their own compartment (verified on summary, access-log, consent,
   export).
-- **DEFERRED (accepted risk R-1):** enforcement at the FHIR storage boundary
-  (HAPI authz/consent/audit interceptors) is not yet live — the JAR builds but
-  the interceptors are S1 skeletons (fail-closed authz would break reads). The
-  equivalent controls run at the app layer today. See the risk register.
+- **R-1 now largely closed:** enforcement at the FHIR storage boundary is
+  **implemented, verified live, and one overlay away**. All three interceptors are
+  real — Authz (ENFORCE, fail-closed), Consent (EVALUATE, deny-consent masking),
+  Audit (PERSIST, hash-chained + restart-continued) — activated by the opt-in
+  `infra/compose/docker-compose.fhir-enforce.yml`. Proven under ENFORCE: authorised
+  read 200 + cited, gated write 201, credential-less raw read 403. The base dev
+  compose still runs without it (app-layer controls gate the real paths); run under
+  the overlay before multi-facility. See the risk register.
 
 ## 4. Transport, rate limiting, audit — VERIFIED
 
@@ -81,15 +85,20 @@ the current commit; staging-only items are flagged.
 
 | ID | Risk | Exposure | Disposition |
 |----|------|----------|-------------|
-| R-1 | FHIR-boundary enforcement (authz/consent/read-audit interceptors) not live | A compromised or buggy service with a valid token could over-read at HAPI; app layer still gates the real call paths | **Accepted for pilot** — app-layer controls verified; interceptor is test-first S2 work (JAR builds). Prioritise before multi-facility. |
+| R-1 | FHIR-boundary enforcement (authz/consent/read-audit interceptors) not live | A compromised or buggy service with a valid token could over-read at HAPI; app layer still gates the real call paths | **Largely closed** — all 3 interceptors real + verified live under the `docker-compose.fhir-enforce.yml` overlay (authz ENFORCE, consent EVALUATE, audit PERSIST hash-chained; read 200/write 201/credential-less 403). Residual is operational: base dev runs without the overlay, and the per-user care-relationship boundary call is the S2 follow-on. Run under the overlay before multi-facility. |
 | R-2 | Dependency audit not automated in CI | A future dep bump could introduce a CVE unnoticed | **CLOSED 2026-07-23** — full stack audited clean (pnpm + pip-audit, 0 vulns) and both are now gating CI steps (`pnpm audit --prod --audit-level high`; `pip-audit --strict`), with pnpm-lock.yaml committed for reproducible installs. |
-| R-3 | Chat-concurrency + soak load scenarios not run | LLM-path behaviour under sustained concurrency unquantified | **Open** — needs a recorded-LLM harness (avoids token burn + nondeterminism) before the gate is meaningful. |
+| R-3 | Chat-concurrency + soak load scenarios not run | LLM-path behaviour under sustained concurrency unquantified | **Harness built** — `infra/perf/chat-concurrency.js` (TTFB<2s gate + real-answer/no-leak checks) and `infra/perf/soak.js` (constant-arrival drift/leak gate) now exist; `AGENT_LLM_MODE=stub` runs them quota-free. Remaining: record staging-scale numbers against the production model. |
 | R-4 | Dev self-signed TLS + dev throwaway Keycloak accounts | None in prod (dev-only, path-excluded from staging apply) | **Accepted** — documented, not applied beyond local. |
 
 ## 7. Next actions
 
 1. ~~Add the pnpm + pip-audit runs as a CI merge gate~~ **Done 2026-07-23**
    (R-2 closed).
-2. Interceptor enforcement, test-first on a side port before swap (closes R-1).
-3. Recorded-LLM harness → chat-concurrency + soak k6 (closes R-3).
+2. ~~Interceptor enforcement, test-first before swap~~ **Done** — all 3 interceptors
+   real + verified live via the `fhir-enforce` overlay (R-1 largely closed; remaining:
+   run under the overlay by default + the per-user care-relationship boundary call).
+3. ~~Build chat-concurrency + soak k6 scenarios~~ **Done** — harness exists (R-3
+   narrowed to recording staging-scale numbers against the production model).
+4. Engage an accredited external assessor for the formal security certification, and
+   run the clinical-validation protocol with clinicians (both externally gated).
 4. Restore drill (both DBs to scratch, audit chain verifies) + runbooks.
