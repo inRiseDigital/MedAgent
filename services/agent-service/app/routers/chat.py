@@ -484,6 +484,71 @@ def _delta_text(chunk: Any) -> str:
     return ""
 
 
+_TOOL_LEAK_KEYS = re.compile(
+    r'"(tool|tool_name|tool_call|name|function|action|arguments|parameters|tool_input|input)"\s*:',
+    re.IGNORECASE,
+)
+
+
+def _looks_like_tool_leak(text: str) -> bool:
+    """True when a model's 'answer' is actually a leaked/hallucinated tool call rather
+    than prose. Some open models (e.g. Qwen on Groq) emit a JSON function-call as TEXT
+    when told NOT to use tools; streamed verbatim it shows the user raw
+    '{"tool": "get_record_overview", "arguments": {}}' instead of an answer. We detect
+    that shape so a tool-free synthesis can discard it and fall back to a grounded,
+    deterministic answer — the user never sees the machine JSON."""
+    s = (text or "").strip()
+    if not s:
+        return False
+    # Unwrap a ```json … ``` fence if the model wrapped the call in one.
+    s = re.sub(r"^```[a-zA-Z]*\s*", "", s)
+    s = re.sub(r"\s*```$", "", s).strip()
+    if not (s.startswith("{") or s.startswith("[")):
+        return False  # prose never starts with a JSON brace
+    return bool(_TOOL_LEAK_KEYS.search(s[:500]))
+
+
+async def _synth_answer(llm: Any, msgs: list[Any], budget: float, on_usage) -> str:  # noqa: ANN001
+    """Run a bounded, tool-free synthesis and return the answer text, or "" if the model
+    produced nothing usable OR leaked a tool-call as text. BUFFERED (not streamed live)
+    on purpose: some providers emit a hallucinated tool-call as their whole 'answer', so
+    we must inspect the complete text before any of it reaches the client — streaming it
+    token-by-token would put raw JSON on screen before we could tell it was garbage.
+    Propagates asyncio.TimeoutError to the caller so a slow run is handled as a timeout."""
+    buf: list[str] = []
+    async with asyncio.timeout(budget):
+        async for chunk in llm.astream(msgs):
+            on_usage(chunk)
+            d = _delta_text(chunk)
+            if d:
+                buf.append(d)
+    text = "".join(buf).strip()
+    if not text or _looks_like_tool_leak(text):
+        return ""
+    return text
+
+
+_GROUNDED_SYNTH_NUDGE = (
+    "\n\nAnswer the question ENTIRELY from the CURRENT PATIENT CONTEXT above — do NOT call or "
+    "mention tools, and do NOT output JSON. Reuse the [source: …] citations exactly as given. If the "
+    "answer is not in the context, say plainly what you would need to check."
+)
+
+
+def _grounded_synth_messages(audience: str, locale: str, context: str,
+                             turn_messages: list[dict[str, str]], question: str) -> list[Any]:
+    """Messages for a grounded, tool-free synthesis of the current turn from the
+    pre-loaded cited context — the shared recipe behind both the quota fallback and
+    the tool-leak recovery. The system prompt forbids tools/JSON so an open model is
+    steered toward prose (and _synth_answer discards it if it leaks anyway)."""
+    from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+    msgs: list[Any] = [SystemMessage(content=build_system_prompt(audience, locale, context) + _GROUNDED_SYNTH_NUDGE)]
+    for mm in (turn_messages or [{"role": "user", "content": question}]):
+        msgs.append(HumanMessage(content=mm["content"]) if mm["role"] == "user"
+                    else AIMessage(content=mm["content"]))
+    return msgs
+
+
 @router.post("/chat")
 async def chat(
     body: ChatRequest,
@@ -701,14 +766,18 @@ async def chat(
                         else AIMessage(content=m["content"])
                     )
                 llm = build_chat_llm(settings, streaming=True)
-                async with asyncio.timeout(synth_budget):
-                    async for chunk in llm.astream(msgs):
-                        _add_usage(chunk)
-                        delta = _delta_text(chunk)
-                        if delta:
-                            streamed = True
-                            answer_parts.append(delta)
-                            yield _sse({"type": "text-delta", "id": text_id, "delta": delta})
+                # Buffered + validated: an open model told "don't use tools" can still
+                # emit a hallucinated tool-call as its whole answer. We inspect the full
+                # text first so raw '{"tool": …}' JSON never reaches the chat; on a leak
+                # (or empty) this returns "" and the deterministic overview below runs.
+                synth = await _synth_answer(llm, msgs, synth_budget, _add_usage)
+                if synth:
+                    streamed = True
+                    answer_parts.append(synth)
+                    yield _sse({"type": "text-delta", "id": text_id, "delta": synth})
+                else:
+                    logger.warning("overview synthesis produced no usable answer (empty/tool-leak); "
+                                   "using deterministic context overview")
             except (TimeoutError, asyncio.TimeoutError):
                 timed_out = True
                 logger.warning("overview synthesis exceeded %ss; using context-derived overview", synth_budget)
@@ -842,26 +911,17 @@ async def chat(
                 logger.warning("react: preferred provider capped — grounded synthesis fallback on the configured model")
                 yield _sse({"type": "data-status", "text": "Switching to the backup model…"})
                 try:
-                    from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
-                    fb_prompt = build_system_prompt(body.audience, body.locale, react_context) + (
-                        "\n\nAnswer the question ENTIRELY from the CURRENT PATIENT CONTEXT above — do NOT call or "
-                        "mention tools. Reuse the [source: …] citations exactly as given. If the answer is not in the "
-                        "context, say plainly what you would need to check."
-                    )
-                    fb_msgs: list[Any] = [SystemMessage(content=fb_prompt)]
-                    for mm in (turn_messages or [{"role": "user", "content": question}]):
-                        fb_msgs.append(HumanMessage(content=mm["content"]) if mm["role"] == "user"
-                                       else AIMessage(content=mm["content"]))
+                    fb_msgs = _grounded_synth_messages(body.audience, body.locale, react_context,
+                                                       turn_messages, question)
                     fb_llm = build_chat_llm(settings, streaming=True)
-                    async with asyncio.timeout(settings.agent_run_timeout_seconds):
-                        async for chunk in fb_llm.astream(fb_msgs):
-                            _add_usage(chunk)
-                            d = _delta_text(chunk)
-                            if d:
-                                streamed = True
-                                answer_parts.append(d)
-                                yield _sse({"type": "text-delta", "id": text_id, "delta": d})
-                    if streamed:
+                    # Buffered + validated (see _synth_answer): the backup model is the
+                    # same open model that can leak a tool-call as text, so we must not
+                    # stream it blind.
+                    synth = await _synth_answer(fb_llm, fb_msgs, settings.agent_run_timeout_seconds, _add_usage)
+                    if synth:
+                        streamed = True
+                        answer_parts.append(synth)
+                        yield _sse({"type": "text-delta", "id": text_id, "delta": synth})
                         for c in ([] if sources else _context_citations(record_context)):
                             sources.append(c)  # so the tail emits the grounding chips
                 except Exception:  # noqa: BLE001 — fallback is best-effort
@@ -879,11 +939,35 @@ async def chat(
                 errored = True
                 yield _sse({"type": "text-delta", "id": text_id, "delta": note})
 
+        # LEAK / EMPTY RECOVERY — an open model (Qwen) can END the tool loop with a
+        # hallucinated tool-call as its 'final answer' (raw '{"tool": …}' JSON) instead
+        # of prose, or with nothing usable. Never surface that: answer from the grounded
+        # context via a tool-free synthesis; if even that leaks, drop it so the clean
+        # floor message stands rather than machine JSON.
+        if (not streamed and not errored and not timed_out and record_context
+                and (not final_answer or _looks_like_tool_leak(final_answer))):
+            leaked_answer = bool(final_answer)
+            try:
+                rec_msgs = _grounded_synth_messages(body.audience, body.locale, react_context,
+                                                    turn_messages, question)
+                synth = await _synth_answer(build_chat_llm(settings, streaming=True), rec_msgs,
+                                            settings.agent_run_timeout_seconds, _add_usage)
+                if synth:
+                    final_answer = synth
+                    for c in ([] if sources else _context_citations(record_context)):
+                        sources.append(c)  # so the tail emits the grounding chips
+                elif leaked_answer:
+                    final_answer = ""  # leak with no clean synthesis → let the floor speak
+            except Exception:  # noqa: BLE001 — recovery is best-effort, never blocks the floor
+                logger.exception("tool-leak recovery synthesis failed")
+                if leaked_answer:
+                    final_answer = ""
+
         # ANSWER FLOOR — the stream must never be silent. Priority: streamed tokens
         # (nothing to do) → non-streaming provider's final answer → a graceful
         # message so the user always sees something actionable.
         if not streamed and not errored:
-            if final_answer:
+            if final_answer and not _looks_like_tool_leak(final_answer):
                 yield _sse({"type": "text-delta", "id": text_id, "delta": final_answer})
             else:
                 if timed_out:

@@ -112,6 +112,34 @@ async def test_non_streaming_final_answer_passes_through(monkeypatch: pytest.Mon
     assert "Here is your summary." in "".join(_deltas(body))
 
 
+def test_looks_like_tool_leak_detects_hallucinated_calls() -> None:
+    """The detector must catch a JSON tool-call emitted as text (Qwen on Groq does this
+    when told not to use tools) without flagging genuine prose answers."""
+    leak = chat_module._looks_like_tool_leak
+    assert leak('{\n"tool": "get_record_overview",\n"arguments": {}\n}')  # the field report
+    assert leak('```json\n{"name": "get_labs", "parameters": {"phn": "x"}}\n```')
+    assert leak('{"function": "foo", "arguments": {}}')
+    # Genuine answers must pass through untouched.
+    assert not leak("Here are your active medications: Metformin, Atorvastatin.")
+    assert not leak("Your potassium is critical [source: DiagnosticReport/1161].")
+    assert not leak("")
+    assert not leak('{"note": "plain data, not a tool call"}')  # JSON but no tool keys
+
+
+async def test_leaked_tool_call_is_never_shown(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A model that ENDS the loop with a hallucinated tool-call as its 'final answer'
+    must never have that raw JSON streamed to the user — the floor guard drops it and
+    a graceful message stands instead (there is no record context in this harness, so
+    the grounded recovery can't run, exercising the guard directly)."""
+    leak = '{\n"tool": "get_record_overview",\n"arguments": {}\n}'
+    steps = [("values", {"messages": [_FakeMsg("ai", leak)]})]
+    app, _ = _app_with_agent(monkeypatch, steps)
+    body = await _post_chat(app)
+    joined = "".join(_deltas(body))
+    assert "get_record_overview" not in joined and '"tool"' not in joined, "raw tool-call JSON leaked to the user"
+    assert joined.strip(), "must still emit a graceful floor, never silence"
+
+
 async def test_conversation_history_is_preserved(monkeypatch: pytest.MonkeyPatch) -> None:
     """History must not be dropped to the latest turn (multi-turn memory)."""
     steps = [("values", {"messages": [_FakeMsg("ai", "ok")]})]
