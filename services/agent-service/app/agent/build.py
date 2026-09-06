@@ -151,7 +151,9 @@ def build_chat_llm(settings: Settings, streaming: bool = False) -> Any:
             api_key=settings.llm_openai_api_key,
             base_url=settings.llm_openai_base_url,
             temperature=0,
-            max_tokens=settings.agent_max_tokens,
+            # Kept under Groq's free-tier output-per-minute limit (see config) so the
+            # request isn't rejected as "too large"; Anthropic keeps the fuller cap.
+            max_tokens=min(settings.agent_max_tokens, settings.llm_openai_max_tokens),
             max_retries=settings.llm_max_retries,
             request_timeout=settings.llm_timeout_seconds,
             streaming=streaming,
@@ -209,15 +211,20 @@ def build_agent(
     remember_fn: Any = None,
     locale: str = "en",
     context_text: str = "",
+    force_chat_llm: bool = False,
 ) -> CompiledStateGraph:
     """Compile a patient-scoped ReAct agent. `sources` accumulates citations;
     `proposals` accumulates write-intent drafts (sign-off cards). `audience`
     selects the persona: "clinician" (briefs the doctor) or "patient" (talks
     directly to the patient/guardian in plain, reassuring language). `context_text`
     is a pre-loaded, cited snapshot of the record (grounding by construction) — it
-    is appended to the system prompt so the agent starts from the chart."""
+    is appended to the system prompt so the agent starts from the chart.
+    `force_chat_llm` runs the loop on the configured chat model (Groq) instead of the
+    ReAct-preferred Claude — used to transparently fall back when Anthropic is capped."""
     system_prompt = build_system_prompt(audience, locale, context_text)
-    llm = build_react_llm(settings)  # tool loop → Claude (streams; see build_react_llm)
+    # tool loop → Claude (streams; see build_react_llm), unless forced onto the
+    # configured chat model (Groq) for the quota-fallback path.
+    llm = build_chat_llm(settings) if force_chat_llm else build_react_llm(settings)
     tools = build_patient_tools(
         settings.fhir_base_url, patient_fhir_id, sources, proposals, cards, widgets,
         remember_fn=remember_fn, audience=audience,

@@ -50,6 +50,12 @@ class Settings(BaseSettings):
     # Hard output cap per model turn. Raised from the prototype's 2048 so a
     # tool-heavy answer (e.g. a full record summary) isn't silently truncated.
     agent_max_tokens: int = 4096
+    # Output cap for the OpenAI-compatible (Groq) path specifically. Groq's free
+    # on-demand tier enforces an output-tokens-per-minute limit (OTPM ~1000) and
+    # rejects a request whose max output exceeds it ("request too large"), so this
+    # is kept under that ceiling; the fuller cap above applies to Anthropic. Raise
+    # it once on a paid Groq tier.
+    llm_openai_max_tokens: int = 900
     # ReAct super-step cap. The LangGraph default (25) let a broad request chain so
     # many tool calls it exhausted the budget with an empty final turn; a tighter
     # cap forces the model to answer sooner.

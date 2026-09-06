@@ -736,6 +736,8 @@ async def chat(
                 react_context = (react_context + "\n\nSPECIALIST LENS — " + lens) if react_context else ("SPECIALIST LENS — " + lens)
                 yield _sse({"type": "data-status", "text": f"Consulting as {domain}"})
 
+        # ReAct on the preferred loop provider (Claude when configured).
+        _can_fallback = settings.agent_react_provider == "anthropic" and bool(settings.anthropic_api_key)
         agent = build_agent(
             settings, fhir_id, sources, proposals,
             audience=body.audience, cards=cards, widgets=widgets,
@@ -784,21 +786,55 @@ async def chat(
             timed_out = True
             logger.warning("agent run exceeded %ss", settings.agent_run_timeout_seconds)
         except Exception as exc:  # noqa: BLE001 — never leak a stack trace to the UI
-            logger.exception("agent run failed")
             m = str(exc).lower()
-            if any(s in m for s in ("usage limit", "regain access", "rate limit", "429",
-                                    "credit balance", "insufficient", "quota")):
-                # Not a code fault — the LLM provider is capped. Retrying won't help,
-                # so say so honestly instead of "please retry".
-                note = (
-                    "\n\n[The AI assistant is temporarily unavailable — the language-model "
-                    "service usage limit has been reached. Record viewing, search and "
-                    "prescription safety are unaffected. Please try the assistant again later.]"
-                )
-            else:
-                note = "\n\n[The assistant hit an error. Please retry.]"
-            errored = True
-            yield _sse({"type": "text-delta", "id": text_id, "delta": note})
+            is_quota = any(s in m for s in ("usage limit", "regain access", "rate limit",
+                                            "429", "credit balance", "insufficient", "quota", "overloaded"))
+            # QUOTA-RESILIENCE fallback: if the preferred loop provider is capped BEFORE
+            # anything was produced, answer from the pre-loaded cited context via a
+            # grounded DIRECT SYNTHESIS on the configured model (Groq) — no tool loop,
+            # because Groq's Qwen is unreliable at function-calling. The answer is
+            # grounded in the record context; a domain not in it is answered honestly.
+            if (is_quota and _can_fallback and record_context and not streamed
+                    and not final_answer and not widgets and not proposals and not sources and not cards):
+                logger.warning("react: preferred provider capped — grounded synthesis fallback on the configured model")
+                yield _sse({"type": "data-status", "text": "Switching to the backup model…"})
+                try:
+                    from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+                    fb_prompt = build_system_prompt(body.audience, body.locale, react_context) + (
+                        "\n\nAnswer the question ENTIRELY from the CURRENT PATIENT CONTEXT above — do NOT call or "
+                        "mention tools. Reuse the [source: …] citations exactly as given. If the answer is not in the "
+                        "context, say plainly what you would need to check."
+                    )
+                    fb_msgs: list[Any] = [SystemMessage(content=fb_prompt)]
+                    for mm in (turn_messages or [{"role": "user", "content": question}]):
+                        fb_msgs.append(HumanMessage(content=mm["content"]) if mm["role"] == "user"
+                                       else AIMessage(content=mm["content"]))
+                    fb_llm = build_chat_llm(settings, streaming=True)
+                    async with asyncio.timeout(settings.agent_run_timeout_seconds):
+                        async for chunk in fb_llm.astream(fb_msgs):
+                            _add_usage(chunk)
+                            d = _delta_text(chunk)
+                            if d:
+                                streamed = True
+                                answer_parts.append(d)
+                                yield _sse({"type": "text-delta", "id": text_id, "delta": d})
+                    if streamed:
+                        for c in ([] if sources else _context_citations(record_context)):
+                            sources.append(c)  # so the tail emits the grounding chips
+                except Exception:  # noqa: BLE001 — fallback is best-effort
+                    logger.exception("fallback synthesis failed")
+            if not streamed and not errored:
+                logger.exception("agent run failed")
+                if is_quota:
+                    note = (
+                        "\n\n[The AI assistant is temporarily unavailable — the language-model "
+                        "service usage limit has been reached. Record viewing, search and "
+                        "prescription safety are unaffected. Please try the assistant again later.]"
+                    )
+                else:
+                    note = "\n\n[The assistant hit an error. Please retry.]"
+                errored = True
+                yield _sse({"type": "text-delta", "id": text_id, "delta": note})
 
         # ANSWER FLOOR — the stream must never be silent. Priority: streamed tokens
         # (nothing to do) → non-streaming provider's final answer → a graceful
