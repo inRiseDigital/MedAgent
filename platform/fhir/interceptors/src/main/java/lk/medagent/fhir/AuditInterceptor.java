@@ -8,6 +8,7 @@ import ca.uhn.fhir.rest.api.server.RequestDetails;
 import ca.uhn.fhir.rest.api.server.storage.TransactionDetails;
 import org.hl7.fhir.instance.model.api.IBaseResource;
 import org.hl7.fhir.r4.model.AuditEvent;
+import org.hl7.fhir.r4.model.Bundle;
 import org.hl7.fhir.r4.model.CodeableConcept;
 import org.hl7.fhir.r4.model.Coding;
 import org.hl7.fhir.r4.model.DecimalType;
@@ -29,6 +30,7 @@ import java.util.Date;
 import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
@@ -38,7 +40,7 @@ import java.util.concurrent.atomic.AtomicLong;
  * <p>Every storage mutation becomes a FHIR {@code AuditEvent}: action (C/U/D),
  * entity (resource ref), the real actor (forwarded roles) and the {@code purposeOfUse}
  * stamped by {@link AuthzInterceptor}. Each event carries the tamper-evidence
- * extensions {@code audit-seq} (per-process monotonic sequence) and
+ * extensions {@code audit-seq} (monotonic sequence, continued across restarts) and
  * {@code audit-prev-hash} (SHA-256 chained over the previous event).
  *
  * <p><b>Persistence:</b> the AuditEvent is PERSISTED by POSTing it to the server's
@@ -46,8 +48,9 @@ import java.util.concurrent.atomic.AtomicLong;
  * transaction (no nesting/deadlock), presenting the trusted-service credential so it
  * passes the fail-closed Authz gate, and with a re-entrancy guard so auditing never
  * audits itself. This is a real, persisted, chained audit — the step up from the S1
- * log-only skeleton. (Atomic in-transaction persistence into a dedicated append-only
- * partition, and a DB-continued chain across restarts, remain per 03 §5.3–5.4.)
+ * log-only skeleton. The chain is continued from the store across process restarts —
+ * see {@link #bootstrapChainIfNeeded()}. (Atomic in-transaction persistence into a
+ * dedicated append-only partition remains per 03 §5.3–5.4.)
  */
 @Interceptor
 public class AuditInterceptor {
@@ -70,6 +73,8 @@ public class AuditInterceptor {
     private final FhirContext myCtx = FhirContext.forR4();
     private final AtomicLong mySeq = new AtomicLong(0);
     private volatile String myPrevHash = GENESIS_HASH;
+    /** One-time guard: continue the store's chain lazily on the first audit (see bootstrap). */
+    private final AtomicBoolean myBootstrapped = new AtomicBoolean(false);
 
     public AuditInterceptor() {
         this(env(FHIR_BASE_ENV, "http://localhost:8080/fhir"), env(SERVICE_KEY_ENV, ""));
@@ -158,15 +163,78 @@ public class AuditInterceptor {
         return auditEvent;
     }
 
-    /** Assign the monotonic sequence + prev-hash chain, then advance the head. */
+    /** Assign the monotonic sequence + prev-hash chain, then advance the head.
+     *  Lazily continues the store's existing chain on the first event after startup. */
     synchronized void chain(AuditEvent theEvent) {
+        bootstrapChainIfNeeded();
         long seq = mySeq.incrementAndGet();
         theEvent.addExtension(EXT_AUDIT_SEQ, new DecimalType(new BigDecimal(seq)));
         theEvent.addExtension(EXT_AUDIT_PREV_HASH, new StringType(myPrevHash));
-        String material = myPrevHash + "|" + seq + "|" + theEvent.getAction() + "|"
+        myPrevHash = sha256(chainMaterial(myPrevHash, seq, theEvent));
+    }
+
+    /** The canonical bytes hashed for one event — MUST be identical at write time and
+     *  when re-derived from a persisted event at bootstrap (and by any chain verifier),
+     *  so it reads only fields that round-trip through the store: the prior hash, the
+     *  sequence, the action, the entity's logical reference, and the recorded instant. */
+    private static String chainMaterial(String thePrevHash, long theSeq, AuditEvent theEvent) {
+        return thePrevHash + "|" + theSeq + "|" + theEvent.getAction() + "|"
                 + (theEvent.hasEntity() ? theEvent.getEntityFirstRep().getWhat().getReference() : "")
                 + "|" + theEvent.getRecordedElement().getValueAsString();
-        myPrevHash = sha256(material);
+    }
+
+    /**
+     * Continue the store's existing tamper-evident chain across process restarts.
+     *
+     * <p>The seq + prev-hash chain lives in memory, so without this a fresh process would
+     * restart at seq=0/genesis — snapping the chain at every restart and leaving the prior
+     * history unverifiable as one run. On the first audit (guarded by {@code myBootstrapped}
+     * via compare-and-set, so it runs exactly once) we fetch the store's most recent chained
+     * {@code AuditEvent} over the same REST endpoint + service credential the writer uses,
+     * re-derive that head event's OWN hash with {@link #chainMaterial} (only its prev-hash is
+     * persisted, not its own), and seed {@link #mySeq}/{@link #myPrevHash} from it — so the
+     * next event links onto the real head.
+     *
+     * <p>Best-effort and fail-safe: this is a read (never a write, so it cannot recurse into
+     * this interceptor's precommit hooks); if the store is empty, unreachable at startup, or
+     * the response is unparseable, we log and stay at genesis rather than block auditing.
+     */
+    private void bootstrapChainIfNeeded() {
+        if (!myBootstrapped.compareAndSet(false, true)) {
+            return; // already attempted this process — one-time, never re-run
+        }
+        if (myHttp == null) {
+            return; // log-only (no base configured): nothing to continue, stay at genesis
+        }
+        try {
+            HttpRequest.Builder b = HttpRequest.newBuilder(
+                            URI.create(myFhirBase + "/AuditEvent?_sort=-_lastUpdated&_count=1"))
+                    .timeout(Duration.ofSeconds(6)).header("Accept", "application/fhir+json").GET();
+            if (!myServiceKey.isEmpty()) {
+                b.header(SERVICE_KEY_HEADER, myServiceKey);
+                b.header(ROLES_HEADER, "system");
+                b.header("X-MedAgent-Purpose", "TREAT");
+            }
+            HttpResponse<String> resp = myHttp.send(b.build(), HttpResponse.BodyHandlers.ofString());
+            if (resp.statusCode() < 300 && resp.body() != null && !resp.body().isBlank()) {
+                Bundle bundle = myCtx.newJsonParser().parseResource(Bundle.class, resp.body());
+                for (Bundle.BundleEntryComponent e : bundle.getEntry()) {
+                    if (e.getResource() instanceof AuditEvent head
+                            && head.hasExtension(EXT_AUDIT_SEQ) && head.hasExtension(EXT_AUDIT_PREV_HASH)) {
+                        long seq = new BigDecimal(
+                                head.getExtensionByUrl(EXT_AUDIT_SEQ).getValue().primitiveValue()).longValueExact();
+                        String prevHash = head.getExtensionByUrl(EXT_AUDIT_PREV_HASH).getValue().primitiveValue();
+                        mySeq.set(seq);
+                        myPrevHash = sha256(chainMaterial(prevHash, seq, head));
+                        ourLog.info("medagent-audit: chain continued from store — resuming after seq={}", seq);
+                        return;
+                    }
+                }
+            }
+            ourLog.info("medagent-audit: no prior chained AuditEvent in store — starting a new chain at genesis");
+        } catch (Exception e) {
+            ourLog.warn("medagent-audit: chain bootstrap failed — starting at genesis (continuity best-effort)", e);
+        }
     }
 
     private void persist(AuditEvent theEvent) {
