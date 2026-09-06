@@ -1,0 +1,97 @@
+# Self-hosted LLM overlay (sovereign · offline · zero-quota · private) — OPT-IN.
+#
+# Runs Qwen2.5-7B-Instruct on a local Ollama server, GPU-accelerated on an NVIDIA
+# card via Docker Desktop's WSL2 GPU passthrough, and points agent-service at it
+# through the OpenAI-compatible endpoint — NO agent code change, only env. This is
+# the on-ramp to the national/sovereign deployment: the SAME architecture scales to
+# vLLM + a 70B on server-grade GPUs by changing only the model + base_url.
+#
+# Bring up (layer ON TOP of the base compose):
+#   docker compose -f docker-compose.yml -f docker-compose.ollama.yml up -d
+# First run pulls the model (~4.7GB) into the `ollama-models` volume via the
+# one-shot `ollama-pull`; later starts are instant (model stays in the volume).
+# Combine with the FHIR-enforce overlay by adding its -f as usual.
+#
+# GPU: needs an NVIDIA driver + Docker Desktop WSL2 GPU support. If the GPU is
+# unavailable, delete the `deploy:` block below — Ollama then runs on CPU (slower
+# for a 7B, but functional). Verify GPU use with: `docker logs medagent-ollama-1`
+# (look for "inference compute … cuda") or `nvidia-smi` while a request runs.
+
+services:
+  ollama:
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    # [edge, internal]: `internal` is air-gapped (internal: true) so the SERVER — which
+    # is what fetches model blobs from the registry — needs `edge` for the one-time
+    # pull. For an air-gapped production deploy, pre-load the `ollama-models` volume
+    # (copy blobs in, or pull once) and drop `edge` so the LLM box has NO internet.
+    networks: [edge, internal]
+    ports:
+      - "11434:11434" # dev convenience: reach the model directly from the host
+    volumes:
+      - ollama-models:/root/.ollama
+    environment:
+      OLLAMA_KEEP_ALIVE: "24h" # keep the model resident in VRAM so first token is fast
+      OLLAMA_NUM_PARALLEL: "1" # a single 6GB laptop GPU — no concurrent decode
+      # The clinician system prompt + grounded patient context + history + a 2048-token
+      # answer can exceed the 4096 default and silently DROP the grounding — correctness
+      # matters more than the extra KV-cache VRAM here, so give it real headroom. On a
+      # 6GB GPU this spills a few more layers to CPU (slower, still fine); a server GPU
+      # runs it fully resident. Qwen2.5 supports up to 32k natively.
+      OLLAMA_CONTEXT_LENGTH: "8192"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD-SHELL", "ollama ps >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  # One-shot: tell the server to pull the model into the shared volume, then exit.
+  # agent-service waits for this to complete so the first chat never races the pull.
+  ollama-pull:
+    image: ollama/ollama:latest
+    restart: "no"
+    networks: [internal]
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        echo "waiting for ollama server…"
+        until ollama ps >/dev/null 2>&1; do sleep 2; done
+        echo "pulling qwen2.5:7b-instruct (first run downloads ~4.7GB)…"
+        ollama pull qwen2.5:7b-instruct
+        echo "model ready."
+    depends_on:
+      ollama:
+        condition: service_healthy
+
+  agent-service:
+    # Point the agent at the self-hosted model — overrides ./env/agent-service.env.
+    # AGENT_REACT_PROVIDER=configured runs the TOOL LOOP on the local model too, so
+    # the whole agent is sovereign (no Anthropic/Groq call leaves the box).
+    environment:
+      AGENT_LLM_MODE: openai
+      LLM_OPENAI_BASE_URL: http://ollama:11434/v1
+      LLM_OPENAI_MODEL: qwen2.5:7b-instruct
+      LLM_OPENAI_API_KEY: ollama # any non-empty string; Ollama ignores it
+      LLM_OPENAI_MAX_TOKENS: "2048" # no Groq OTPM cap locally → allow fuller answers
+      AGENT_REACT_PROVIDER: configured
+      # A 7B at ~12 tok/s can't synthesise a full 360 inside the cloud 45s budget, so
+      # don't stall on it — fall to the (excellent, instant) deterministic overview fast.
+      # Specific questions are unaffected (they use the full run timeout).
+      OVERVIEW_SYNTH_BUDGET_SECONDS: "12"
+    depends_on:
+      ollama-pull:
+        condition: service_completed_successfully
+
+volumes:
+  ollama-models:

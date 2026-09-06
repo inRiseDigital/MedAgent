@@ -65,6 +65,12 @@ class Settings(BaseSettings):
     # Whole-run wall-clock ceiling; on breach we emit a graceful floor message.
     # Kept under the web client's 120 s abort so the floor/answer always wins.
     agent_run_timeout_seconds: float = 110.0
+    # How long a broad-overview (360) may spend on ONE model synthesis pass before
+    # falling to the deterministic, cited context overview (which is excellent on its
+    # own). Ample for a fast cloud model; set LOW for a slow self-hosted model (e.g.
+    # a 7B on a laptop GPU at ~12 tok/s) so a 360 answers near-instantly from the
+    # deterministic path instead of stalling the full budget first.
+    overview_synth_budget_seconds: float = 45.0
 
     # LLM mode: "live" (real Claude), "stub" (deterministic offline model — no API
     # calls), or "openai" (any OpenAI-compatible provider — Groq / OpenRouter /

@@ -749,7 +749,7 @@ async def chat(
             # plenty, and a slow model must NOT be allowed to run out the whole budget
             # only to then trigger the tool crawl. On any miss we present the context
             # directly (below) — so an overview always answers fast and grounded.
-            synth_budget = min(45.0, settings.agent_run_timeout_seconds)
+            synth_budget = min(settings.overview_synth_budget_seconds, settings.agent_run_timeout_seconds)
             try:
                 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 

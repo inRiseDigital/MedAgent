@@ -147,17 +147,18 @@ def build_chat_llm(settings: Settings, streaming: bool = False) -> Any:
         from langchain_openai import ChatOpenAI
 
         # `reasoning_format=hidden` hides a reasoning model's chain-of-thought
-        # (otherwise emitted inline as <think>…</think>) — but it is a Groq param
-        # VALID ONLY for reasoning models (Qwen, gpt-oss, DeepSeek-R1). Groq REJECTS
-        # it (HTTP 400) for a plain chat model such as Llama. Send it only for a
-        # reasoning family, so the model/provider can be swapped by config alone with
-        # no code change (the whole point of the OpenAI-compatible shim).
+        # (otherwise emitted inline as <think>…</think>). It is a GROQ-SPECIFIC param:
+        # valid there only for reasoning models (Qwen, gpt-oss, DeepSeek-R1), rejected
+        # (HTTP 400) for a plain chat model such as Llama, and MEANINGLESS to a
+        # self-hosted OpenAI-compatible server (Ollama/vLLM) or another cloud (Gemini/
+        # OpenAI). So send it only when the provider IS Groq and the model is a
+        # reasoning family — the model/provider then swaps by config alone, no code.
+        base_l = (settings.llm_openai_base_url or "").lower()
         model_l = settings.llm_openai_model.lower()
-        extra_body = (
-            {"reasoning_format": "hidden"}
-            if any(k in model_l for k in ("qwen", "gpt-oss", "deepseek", "-r1", "reasoning", "thinking"))
-            else {}
+        is_groq_reasoning = "groq" in base_l and any(
+            k in model_l for k in ("qwen", "gpt-oss", "deepseek", "-r1", "reasoning", "thinking")
         )
+        extra_body = {"reasoning_format": "hidden"} if is_groq_reasoning else {}
         return ChatOpenAI(
             model=settings.llm_openai_model,
             api_key=settings.llm_openai_api_key,
