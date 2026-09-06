@@ -40,7 +40,10 @@ Completed & committed this sweep (each verified):
 - ✅ **Security residual risks R-1/R-3 narrowed** to reality; **clinical-validation protocol**
   written (harness done, execution externally gated).
 - ✅ **Consolidated this ROADMAP.**
-- 🔨 **Emergency escalation** + **per-purpose consent** — in progress (parallel agents).
+- ✅ **Emergency escalation** — deterministic red-flag detector → escalation widget (Call 1990
+  Suwaseriya / nearest ETU / mental-health helpline), additive + never-diagnoses. Live-verified.
+- ✅ **Per-purpose consent** (treatment / research / marketing) — scoped FHIR Consent + interceptor
+  that only ADDS purpose-scoped masking (no read regression). Interceptor build + reads verified.
 - ⏭️ **OTLP traces/logs** — left as next-pass (metrics + dashboards + alerts already deliver
   strong observability; distributed tracing is the incremental add).
 
