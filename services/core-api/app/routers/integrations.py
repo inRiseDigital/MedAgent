@@ -32,6 +32,7 @@ from app.integrations import IntegrationResult
 from app.integrations.hhims import HhimsClient
 from app.integrations.ndhx import NdhxClient
 from app.integrations.sludi import SludiClient
+from app.integrations.terminology import SNOMED_SYSTEM, SnomedClient
 from app.models import AuditOutbox
 
 logger = logging.getLogger(__name__)
@@ -86,6 +87,7 @@ async def integrations_health(
         "ndhx": NdhxClient.from_settings(settings),
         "sludi": SludiClient.from_settings(settings),
         "hhims": HhimsClient.from_settings(settings),
+        "snomed": SnomedClient.from_settings(settings),
     }
     integrations = {name: client.status() for name, client in clients.items()}
     return {
@@ -94,6 +96,36 @@ async def integrations_health(
         "any_available": any(v["available"] for v in integrations.values()),
         "integrations": integrations,
     }
+
+
+# ------------------------------------------------------------------- SNOMED CT
+# Terminology lookup/search. Read-only, so no audit-write. Resolves from the offline
+# subset always; the licensed terminology server (when enabled) resolves the rest.
+# A code not in the subset with the server off → 503 "licence/server required".
+
+
+@router.get("/terminology/lookup")
+async def terminology_lookup(
+    code: str,
+    principal: Annotated[Principal, Depends(require_user)],
+    settings: Annotated[Settings, Depends(get_settings)],
+    system: str = SNOMED_SYSTEM,
+) -> JSONResponse:
+    """Resolve a SNOMED (or other) code to its display. 503 if unknown offline and
+    the licensed terminology server is not configured."""
+    result = await SnomedClient.from_settings(settings).lookup(code, system)
+    return _respond(result)
+
+
+@router.get("/terminology/search")
+async def terminology_search(
+    q: str,
+    principal: Annotated[Principal, Depends(require_user)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> JSONResponse:
+    """Find concepts by display text. Offline subset first, then the licensed server."""
+    result = await SnomedClient.from_settings(settings).search(q)
+    return _respond(result)
 
 
 # --------------------------------------------------------------------------- NDHX

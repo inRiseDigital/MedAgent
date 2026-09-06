@@ -87,3 +87,10 @@ class Settings(BaseSettings):
     hhims_enabled: bool = False
     hhims_base_url: str = ""
     hhims_api_key: str = ""
+    # SNOMED CT — LICENCE-GATED terminology. Full concept resolution needs a national
+    # SNOMED International licence + a FHIR terminology server (Snowstorm/Ontoserver);
+    # without it a small non-authoritative offline subset resolves common disorders.
+    # OFF by default; base_url is the terminology-server FHIR root.
+    snomed_enabled: bool = False
+    snomed_base_url: str = ""
+    snomed_api_key: str = ""
