@@ -1,0 +1,9 @@
+# Generated candidate eval cases are an EPHEMERAL human-review queue, not source.
+# The learning loop (app/learning/growth.py + analyze.py) writes them here; a
+# reviewer promotes real ones into evals/golden/ via a gated PR. Keep the queue
+# out of git, but track this file and the README that documents the workflow.
+*.json
+*.yaml
+*.yml
+!.gitignore
+!README.md

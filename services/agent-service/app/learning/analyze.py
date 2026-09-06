@@ -95,21 +95,30 @@ def generate_candidates(events: list[dict[str, Any]], out_dir: Path | None = Non
 
 
 async def _main() -> None:
-    import os
+    from app.config import Settings
+    from app.learning.feedback import read_all
+
+    # AUTO EVAL-SET GROWTH lives in the focused sibling module app/learning/growth.py
+    # (imported here). It turns *recurring* failure patterns into candidate GOLDEN
+    # eval cases (run.py's YAML format, with provenance + counts, deduped) under the
+    # same governance guard. Use `python -m app.learning.growth` to run it alone.
+    from app.learning.growth import grow_eval_set
 
     from redis.asyncio import Redis
 
-    from app.learning.feedback import read_all
-
-    redis = Redis.from_url(os.environ.get("REDIS_URL", "redis://localhost:6379/0"), decode_responses=True)
+    # Use the configured Redis URL — the bare `default` user is ACL-blocked.
+    redis = Redis.from_url(Settings().redis_url, decode_responses=True)
     try:
         events = await read_all(redis)
         metrics = analyze(events)
         print(json.dumps(metrics, indent=2))
-        cands = generate_candidates(events)
-        print(f"\n{len(cands)} candidate(s) written for review:")
-        for c in cands:
-            print(f"  - {c}")
+        result = grow_eval_set(events)
+        print("\nauto eval-set growth:")
+        print(json.dumps(result.as_dict()["counts"], indent=2))
+        for p in result.created:
+            print(f"  + created {p}")
+        for p in result.updated:
+            print(f"  ~ updated {p}")
     finally:
         await redis.aclose()
 

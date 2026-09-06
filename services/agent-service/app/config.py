@@ -96,3 +96,17 @@ class Settings(BaseSettings):
     # tool-call as text there (fixed empirically 2026-09-06). Any OpenAI-compatible
     # tool-calling model works; the reasoning_format param is auto-gated in build.py.
     llm_openai_model: str = "qwen/qwen3.8-27b"
+
+    # --- Drift / quality-monitoring thresholds (governed learning loop). ---
+    # These gate ONLY the /api/v1/quality dashboard STATUS (ok|watch|degraded);
+    # they NEVER change clinical/safety behaviour, prompts, or the eval gate.
+    # Safe, generous defaults — tune per pilot once a baseline is known. "max"
+    # fields degrade when exceeded; the citation floor degrades when undershot.
+    quality_thumbs_down_rate_max: float = 0.25  # >25% down-votes on rated answers
+    quality_reject_rate_max: float = 0.15  # clinician rejects an engine proposal
+    quality_override_rate_max: float = 0.15  # clinician overrides an engine verdict
+    quality_refusal_rate_max: float = 0.20  # over-refusal signal (share of signals)
+    quality_citation_coverage_min: float = 0.90  # min share of turns that fully answered
+    quality_latency_p95_ms_max: int = 15000  # p95 turn latency budget (ms)
+    quality_error_rate_max: float = 0.05  # share of turns errored or timed out
+    quality_tokens_avg_max: int = 6000  # avg tokens/turn (cost proxy)
