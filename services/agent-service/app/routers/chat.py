@@ -298,6 +298,48 @@ async def _reflect(settings: Settings, plan: list[str], answer: str) -> str:
         return ""
 
 
+# ---- specialist roster (S11): a focused clinical lens per question domain -------
+# A deterministic classifier picks a specialty and injects a concise EXPERT FRAMING
+# (not specific medical claims) into the clinician's system prompt — the agent
+# reasons like the right specialist, while grounding + the deterministic Rx safety
+# engine are unchanged. Safety is never a function of this lens.
+_SPECIALTIES: tuple[tuple[str, tuple[str, ...], str], ...] = (
+    ("cardiology", ("heart", "cardiac", "chest pain", "blood pressure", "hypertension",
+                    "ace inhibit", "beta block", "statin", "arrhythmia", " ecg", "angina", "heart failure"),
+     "Frame this as a cardiology consult: weigh cardiovascular risk, cardiac history and vitals, and "
+     "any cardiac effects/contraindications of the drugs involved; escalate red-flag cardiac symptoms."),
+    ("endocrinology", ("diabet", "hba1c", "insulin", "metformin", "thyroid", "glucose", "hypoglyc", "hyperglyc"),
+     "Frame this as an endocrinology consult: consider glycaemic control, renal function before certain "
+     "agents, and endocrine interactions; flag hypo/hyperglycaemia risk."),
+    ("nephrology", ("kidney", "renal", "egfr", "creatinine", "potassium", "dialysis", "nephro"),
+     "Frame this as a nephrology consult: check renal function and electrolytes (especially potassium) "
+     "before dosing renally-cleared or nephrotoxic drugs; flag AKI/CKD concerns."),
+    ("respiratory", ("asthma", "copd", "breath", "wheez", "respirat", "inhaler", "pneumonia", "oxygen"),
+     "Frame this as a respiratory consult: consider airway/oxygenation, inhaler therapy, and infective "
+     "vs chronic causes; escalate respiratory distress."),
+    ("infectious disease", ("infect", "antibiotic", "sepsis", "fever", "culture", "amoxicillin",
+                            "penicillin", "resistance", "antimicrob"),
+     "Frame this as an infectious-disease consult: consider likely organisms, allergy/resistance, and "
+     "antimicrobial stewardship; flag sepsis red flags."),
+    ("paediatrics", ("child", "infant", "baby", "paediatric", "pediatric", "immunis", "immuniz",
+                     "vaccin", "growth", "weight-for-age"),
+     "Frame this as a paediatric consult: weight-based dosing, immunisation schedule and growth, and "
+     "age-appropriate safety; involve the guardian."),
+    ("mental health", ("depress", "anxiety", "suicid", "mental health", "ssri", "psychiat", " mood"),
+     "Frame this as a mental-health consult: assess risk sensitively and safety-net; consider SSRI "
+     "cautions/interactions; escalate any self-harm risk urgently."),
+)
+
+
+def _detect_specialty(question: str) -> tuple[str, str] | None:
+    """Return (specialty, lens) for a clinical question, or None. Deterministic."""
+    q = (question or "").lower()
+    for domain, kws, lens in _SPECIALTIES:
+        if any(k in q for k in kws):
+            return domain, lens
+    return None
+
+
 _SOURCE_RE = re.compile(r"\[source:\s*([A-Za-z]+)/([A-Za-z0-9._-]+)\]")
 
 
@@ -683,10 +725,21 @@ async def chat(
             else:
                 plan_steps = []
 
+        # SPECIALIST ROSTER (S11): for a clinician's domain question, inject a focused
+        # expert lens into the system prompt and show which specialist we're consulting
+        # as. Grounding + the deterministic Rx-safety engine are unchanged by this.
+        react_context = context_text
+        if body.audience != "patient":
+            specialty = _detect_specialty(question)
+            if specialty:
+                domain, lens = specialty
+                react_context = (react_context + "\n\nSPECIALIST LENS — " + lens) if react_context else ("SPECIALIST LENS — " + lens)
+                yield _sse({"type": "data-status", "text": f"Consulting as {domain}"})
+
         agent = build_agent(
             settings, fhir_id, sources, proposals,
             audience=body.audience, cards=cards, widgets=widgets,
-            remember_fn=_remember, locale=body.locale, context_text=context_text,
+            remember_fn=_remember, locale=body.locale, context_text=react_context,
         )
         try:
             # Provider-agnostic streaming. We ask for BOTH "messages" (token stream)
