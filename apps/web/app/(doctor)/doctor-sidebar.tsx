@@ -14,6 +14,7 @@ import {
   Activity,
   LayoutList,
   LogOut,
+  Monitor,
   Moon,
   PanelLeft,
   PanelLeftClose,
@@ -22,6 +23,8 @@ import {
   Users,
   type LucideIcon,
 } from "lucide-react";
+
+import { applyTheme, readTheme, type ThemeMode } from "@/components/theme-toggle";
 
 export type NavIcon = "queue" | "patients" | "referrals" | "dashboard";
 const ICONS: Record<NavIcon, LucideIcon> = {
@@ -36,6 +39,13 @@ export interface DoctorNavItem {
   label: string;
   icon: NavIcon;
 }
+
+// Light · dark · system, cycled from one compact rail button (the segmented
+// control needs more width than the collapsed rail has). Shares persistence +
+// resolution with the ThemeToggle via the exported helpers.
+const THEME_ICON: Record<ThemeMode, LucideIcon> = { light: Sun, dark: Moon, system: Monitor };
+const THEME_LABEL: Record<ThemeMode, string> = { light: "Light", dark: "Dark", system: "System" };
+const THEME_NEXT: Record<ThemeMode, ThemeMode> = { system: "light", light: "dark", dark: "system" };
 
 function initials(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);
@@ -57,7 +67,7 @@ export function DoctorSidebar({
 }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(true);
-  const [theme, setTheme] = useState<"light" | "dark">("light");
+  const [theme, setTheme] = useState<ThemeMode>("system");
   const [ready, setReady] = useState(false);
   // The user's saved preference — only honoured on wide screens. Below the
   // desktop breakpoint the rail always auto-collapses to icons so the content
@@ -75,7 +85,7 @@ export function DoctorSidebar({
     const apply = () => setOpen(wide.matches ? prefRef.current : false);
     apply();
     wide.addEventListener("change", apply);
-    setTheme(((document.documentElement.getAttribute("data-theme") as "light" | "dark") || "light"));
+    setTheme(readTheme());
     setReady(true);
     return () => wide.removeEventListener("change", apply);
   }, []);
@@ -97,15 +107,10 @@ export function DoctorSidebar({
     });
   }
 
-  function toggleTheme() {
-    const next = theme === "dark" ? "light" : "dark";
+  function cycleTheme() {
+    const next = THEME_NEXT[theme];
     setTheme(next);
-    document.documentElement.setAttribute("data-theme", next);
-    try {
-      localStorage.setItem("medagent-theme", next);
-    } catch {
-      /* non-fatal */
-    }
+    applyTheme(next);
   }
 
   // Avoid a first-paint flash: pre-hydration, mirror the responsive default —
@@ -170,16 +175,21 @@ export function DoctorSidebar({
 
       {/* Account controls — pinned to the bottom */}
       <div className="flex flex-col gap-1 border-t border-border p-2">
-        <button
-          type="button"
-          onClick={toggleTheme}
-          aria-label={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
-          title={theme === "dark" ? "Light theme" : "Dark theme"}
-          className={`flex items-center gap-3 rounded-lg px-2.5 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${open ? "" : "justify-center"}`}
-        >
-          {theme === "dark" ? <Sun className="h-4 w-4 shrink-0" /> : <Moon className="h-4 w-4 shrink-0" />}
-          {open ? <span className="truncate">{theme === "dark" ? "Light mode" : "Dark mode"}</span> : null}
-        </button>
+        {(() => {
+          const ThemeIcon = THEME_ICON[theme];
+          return (
+            <button
+              type="button"
+              onClick={cycleTheme}
+              aria-label={`Theme: ${THEME_LABEL[theme]}. Switch to ${THEME_LABEL[THEME_NEXT[theme]]}.`}
+              title={`Theme: ${THEME_LABEL[theme]}`}
+              className={`flex items-center gap-3 rounded-lg px-2.5 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${open ? "" : "justify-center"}`}
+            >
+              <ThemeIcon className="h-4 w-4 shrink-0" />
+              {open ? <span className="truncate">{`${THEME_LABEL[theme]} theme`}</span> : null}
+            </button>
+          );
+        })()}
 
         <div
           title={open ? undefined : `${displayName} · ${roleLabel}`}

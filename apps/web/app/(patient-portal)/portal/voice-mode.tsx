@@ -193,7 +193,7 @@ export function VoiceMode({ locale, name, ask, onClose }: {
   const ringAnim = status === "speaking" ? "vo-speak 1.4s ease-in-out infinite" : status === "thinking" ? "vo-think 1.2s ease-in-out infinite" : status === "listening" ? undefined : "vo-breathe 4s ease-in-out infinite";
 
   return (
-    <div className="mh fixed inset-0 z-[60] flex flex-col items-center justify-between bg-[color:var(--mh-bg)] px-6 py-8" role="dialog" aria-label="Voice assistant" style={{ background: "radial-gradient(120% 90% at 50% 15%, color-mix(in srgb, var(--mh-tint) 14%, #000) 0%, #000 60%)" }}>
+    <div className="mh mh-force-dark fixed inset-0 z-[60] flex flex-col items-center justify-between bg-[color:var(--mh-bg)] px-6 py-8" role="dialog" aria-label="Voice assistant" style={{ background: "radial-gradient(120% 90% at 50% 15%, color-mix(in srgb, var(--mh-tint) 14%, #000) 0%, #000 60%)" }}>
       <button type="button" onClick={close} aria-label="Close voice" className="mh-circ ghost self-end" style={{ background: "var(--mh-fill)", color: "var(--mh-ink)" }}>
         <X className="h-5 w-5" />
       </button>

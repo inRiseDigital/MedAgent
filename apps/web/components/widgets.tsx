@@ -96,8 +96,16 @@ function SafetyAlert({ spec }: { spec: WidgetSpec }) {
   const severity = String(spec.data.severity ?? "warn");
   const items = Array.isArray(spec.data.items) ? (spec.data.items as string[]) : [];
   const tone = severity === "block" ? "block" : severity === "info" ? "info" : "warn";
+  // Non-colour severity cue (icon + text, never colour alone) — WCAG 1.4.1.
+  const sevLabel = tone === "block" ? "Urgent" : tone === "info" ? "Info" : "Caution";
+  const sevSurface = tone === "block" ? "var(--destructive-surface)" : tone === "info" ? "var(--muted)" : "var(--warning-surface)";
+  const sevColor = tone === "block" ? "var(--destructive)" : tone === "info" ? "var(--muted-foreground)" : "var(--warning)";
   return (
     <Shell tone={tone} icon={<AlertTriangle className="h-4 w-4" />} title={spec.title ?? "Safety flags"}>
+      <span className="mb-2 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide"
+        style={{ background: sevSurface, color: sevColor }}>
+        {sevLabel}
+      </span>
       <ul className="flex flex-col gap-1.5">
         {items.map((raw, i) => {
           const { text, ref } = splitSource(raw);

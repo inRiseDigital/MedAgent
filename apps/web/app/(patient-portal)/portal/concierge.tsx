@@ -52,7 +52,9 @@ type Quick = { label: string; act: () => void };
 type BSlot = { id: string; start?: string; end?: string; specialty?: string; facility?: string };
 type BookResult = { appointment_id?: string; start?: string; end?: string; specialty?: string; facility?: string };
 
-const TONE_COLOR: Record<Tone, string> = { urgent: "var(--heart)", good: "var(--activity)", warn: "var(--nutri)", info: "var(--mh-tint)" };
+// `info` uses the AA-safe deep teal (--mh-tint-ink) so the kicker label holds
+// contrast on the light-teal tint; the others already pair colour + tint at AA.
+const TONE_COLOR: Record<Tone, string> = { urgent: "var(--heart)", good: "var(--activity)", warn: "var(--nutri)", info: "var(--mh-tint-ink)" };
 const TONE_BG: Record<Tone, string> = { urgent: "var(--heart-bg)", good: "var(--activity-bg)", warn: "var(--nutri-bg)", info: "var(--body-bg)" };
 const FACT_COLOR: Record<string, string> = { good: "var(--activity)", warn: "var(--nutri)", urgent: "var(--heart)" };
 
@@ -618,7 +620,7 @@ export function Concierge({ patientPhn, name, signals }: { patientPhn: string; n
               <div key={i} className="mh-msg me">
                 {n.pdf ? (
                   <div className="flex items-center gap-2.5 rounded-2xl px-3.5 py-3 text-[13px] font-semibold"
-                    style={{ background: "var(--mh-tint-2)", color: "#fff", boxShadow: "var(--mh-shadow)" }}>
+                    style={{ background: "var(--primary)", color: "var(--primary-foreground)", boxShadow: "var(--mh-shadow)" }}>
                     <FileText className="h-5 w-5" />
                     <span className="max-w-[220px] truncate">{n.name ?? "Document.pdf"}</span>
                   </div>

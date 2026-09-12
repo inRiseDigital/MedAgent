@@ -34,7 +34,13 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#000000",
+  // Adapts the browser/OS chrome to the resolved theme (light canvas vs the
+  // near-black premium dark). An explicit user choice is applied to <html> by
+  // the pre-paint script below; this covers the system case.
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#f8fafc" },
+    { media: "(prefers-color-scheme: dark)", color: "#000000" },
+  ],
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
@@ -44,11 +50,12 @@ export const viewport: Viewport = {
  * Root layout — S1 scaffold (docs/solution/06 §1).
  * - next-intl provider wraps everything; all strings come from
  *   messages/{locale}.json (06 §9, scaffolded day 1).
- * - Theme: light by default; dark mode is data-theme="dark" on <html>,
- *   which swaps the token values (tokens.css) and activates Tailwind
- *   `dark:` variants. The user-facing toggle + persisted preference land
- *   in S2 — the mechanism is complete now so no component ever hard-codes
- *   palette values (ADR W-3, no !important anywhere).
+ * - Theme: a real light / dark / system preference. `medagent-theme` in
+ *   localStorage is "light" | "dark" | "system" (default system). The pre-paint
+ *   script below applies it to <html> before first paint: an explicit choice
+ *   sets data-theme; "system" (or unset) REMOVES the attribute so tokens.css
+ *   resolves it live from prefers-color-scheme. The ThemeToggle keeps this in
+ *   sync. No component hard-codes palette values (ADR W-3, no !important).
  * - Latin + Sinhala + Tamil typefaces (Noto Sans companions, 06 §4.3) are
  *   wired via next/font when the locale switcher lands.
  */
@@ -59,11 +66,14 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
   return (
     <html lang={locale} data-theme="light" className={`${fontSans.variable} ${fontMono.variable}`} suppressHydrationWarning>
       <head>
-        {/* Apply the persisted theme before first paint (no flash). Reads the
-            same key the ThemeToggle writes; falls back to the OS preference. */}
+        {/* Apply the persisted theme before first paint (no flash-of-wrong-theme).
+            Reads the same key the ThemeToggle writes: an explicit light/dark
+            choice is stamped on <html>; "system" (or unset) removes the attribute
+            so tokens.css resolves it from prefers-color-scheme (and tracks OS
+            changes live, with no JS). */}
         <script
           dangerouslySetInnerHTML={{
-            __html: `(function(){try{var t=localStorage.getItem('medagent-theme');if(!t){t=window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';}document.documentElement.setAttribute('data-theme',t);}catch(e){}})();`,
+            __html: `(function(){try{var t=localStorage.getItem('medagent-theme');var e=document.documentElement;if(t==='light'||t==='dark'){e.setAttribute('data-theme',t);}else{e.removeAttribute('data-theme');}}catch(_){}})();`,
           }}
         />
       </head>

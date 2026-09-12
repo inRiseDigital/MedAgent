@@ -1,29 +1,60 @@
 /*
- * MedAgent design tokens — single source of truth for both themes.
- * docs/solution/06 §4.1–4.2: calm neutral clinical palette (slate-derived
- * surfaces), one restrained accent (teal), colour reserved for clinical
- * meaning (severity, verdicts, statuses).
+ * MedAgent design tokens — the single source of truth for BOTH themes and the
+ * whole motion/scale system. docs/solution/06 §4.1–4.3.
  *
- * Dark mode: same token names, dark values, switched on [data-theme="dark"].
+ * Palette: a calm clinical neutral base (slate surfaces) + one restrained teal
+ * accent identity, with colour reserved for clinical meaning (severity, verdicts,
+ * statuses) and a six-way health-metric category set (heart/activity/body/resp/
+ * nutri/mind). Every semantic token is defined for LIGHT (default) and DARK, so
+ * token-driven components — and the premium `.mh` skin, which now reads these
+ * variables instead of hard-coding a dark palette — theme automatically.
+ *
+ * Theme resolution (driven by data-theme on <html>, set pre-paint in layout.tsx):
+ *   • no attribute        → SYSTEM: light by default, dark via prefers-color-scheme
+ *   • [data-theme="light"] → force LIGHT (wins even on a dark OS)
+ *   • [data-theme="dark"]  → force DARK
+ *
+ * Contrast: every text/UI token pair holds WCAG 2.2 AA (>= 4.5:1 text, >= 3:1 UI)
+ * in BOTH themes — verified against the pairs the app actually renders.
  * NO `!important`, ever — it is lint-banned in packages/ui and apps/web
- * (06 §4.2, ADR W-3). Components consume semantic Tailwind utilities mapped
- * from these variables in tailwind-preset.ts; raw palette utilities
- * (bg-white, text-gray-*) are lint-warned.
- *
- * Contrast: every token pair must hold WCAG 2.1 AA (>= 4.5:1 text, 3:1 UI)
- * in both themes; the token-level contrast unit test lands with the
- * Storybook/axe CI gate (06 §4.5, S2).
+ * (06 §4.2, ADR W-3). Raw palette Tailwind utilities (bg-white, text-gray-*) are
+ * lint-warned; consume the semantic utilities from tailwind-preset.ts instead.
  */
 
 :root {
+  color-scheme: light;
+
   /* Typography (06 §4.3). next/font sets --font-inter / --font-jetbrains on
      <html>; these map them onto the semantic tokens the whole app + the .mh
-     skin consume (mh-theme.css already references var(--font)). Each keeps a
-     full fallback stack so nothing depends on the webfont having loaded. */
+     skin consume. Each keeps a full fallback stack so nothing depends on the
+     webfont having loaded. */
   --font: var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI",
     Roboto, "Helvetica Neue", Arial, sans-serif;
   --font-mono: var(--font-jetbrains), ui-monospace, SFMono-Regular, "SF Mono",
     Menlo, Consolas, "Liberation Mono", monospace;
+
+  /* ---- Motion system (one coherent language; consumed by mh-theme.css,
+     globals.css and the Tailwind preset). Reduced-motion is honoured at the
+     source in each stylesheet — never via a blanket !important reset. ---- */
+  --dur-instant: 80ms;
+  --dur-fast: 130ms;
+  --dur-base: 220ms;
+  --dur-slow: 340ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);       /* general UI easing */
+  --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);    /* decelerate — enters/lifts */
+  --ease-out-back: cubic-bezier(0.34, 1.4, 0.64, 1);  /* gentle overshoot — pops */
+  --ease-rise: cubic-bezier(0.2, 0.7, 0.3, 1);        /* message/widget enter */
+
+  /* ---- Radius scale (matches the values used across the component classes) ---- */
+  --radius-xs: 6px;
+  --radius-sm: 9px;
+  --radius-md: 13px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+  --radius-2xl: 24px;
+  --radius-pill: 999px;
+
+  /* ==================== LIGHT (default + system-light) ==================== */
 
   /* Surfaces */
   --background: #f8fafc;          /* page */
@@ -31,14 +62,15 @@
   --card: #ffffff;                /* raised surface */
   --card-foreground: #0f172a;
   --muted: #f1f5f9;               /* inset surface */
-  --muted-foreground: #475569;    /* secondary text */
+  --muted-foreground: #475569;    /* secondary text (7.6:1 on card) */
 
   /* Borders / focus */
   --border: #e2e8f0;
   --border-strong: #cbd5e1;
   --ring: #0f766e;                /* 2px focus-visible ring token (06 §4.5) */
 
-  /* Restrained interactive accent */
+  /* Restrained interactive accent (teal). Paired foreground is what sits ON a
+     filled primary surface — always use both together so contrast holds. */
   --primary: #0f766e;
   --primary-foreground: #ffffff;
 
@@ -55,39 +87,174 @@
   --verdict-warn: #b45309;
   --verdict-block: #b91c1c;
 
-  /* Tinted chip backgrounds (severity chips, verdict banners) */
+  /* Tinted chip / surface backgrounds (severity chips, verdict banners) */
   --destructive-surface: #fef2f2;
   --warning-surface: #fffbeb;
   --success-surface: #f0fdf4;
+
+  /* Premium `.mh` aliases — the concierge/copilot component classes read these.
+     In light they resolve to the clinical surfaces above; the deep-teal accents
+     stay AA as text on white. */
+  --mh-bg: var(--background);
+  --mh-surface: #ffffff;
+  --mh-surface-2: #f1f5f9;
+  --mh-elev: #ffffff;
+  --mh-ink: #0f172a;
+  --mh-ink-2: #334155;
+  --mh-ink-3: #5b6675;            /* tertiary text (5.8:1 on white) */
+  --mh-line: #e2e8f0;
+  --mh-fill: rgba(15, 23, 42, 0.05);
+  --mh-fill-2: rgba(15, 23, 42, 0.11);
+  --mh-tint: #0d9488;             /* bright accent — dots, markers, gradients */
+  --mh-tint-ink: #0f766e;         /* accent as TEXT on light surfaces (5.5:1) */
+  --mh-tint-2: var(--primary);    /* deep accent — kept in step with primary */
+  --ring-track: #e2e8f0;
+
+  /* Health-metric categories — colour paired with a tint background; the pair
+     holds AA so the category chip's coloured label is readable. */
+  --heart: #b91c1c;      --heart-bg: #fef2f2;
+  --activity: #15803d;   --activity-bg: #f0fdf4;
+  --body: #0f766e;       --body-bg: #effefb;
+  --resp: #1d4ed8;       --resp-bg: #eff6ff;
+  --nutri: #b45309;      --nutri-bg: #fffbeb;
+  --mind: #6d28d9;       --mind-bg: #f5f3ff;
+
+  /* Elevation — soft, low-spread shadows tuned for a light ground */
+  --mh-shadow: 0 1px 2px rgba(15, 23, 42, 0.06), 0 12px 30px -18px rgba(15, 23, 42, 0.18);
+  --mh-shadow-lg: 0 12px 34px -12px rgba(15, 23, 42, 0.16), 0 40px 90px -50px rgba(15, 23, 42, 0.3);
+  --mh-shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.08);
 }
 
-:root[data-theme="dark"] {
-  --background: #0f172a;
-  --foreground: #f1f5f9;
-  --card: #1e293b;
-  --card-foreground: #f1f5f9;
-  --muted: #1e293b;
-  --muted-foreground: #94a3b8;
+/* ==================== DARK (explicit) ====================
+ * The refined premium `.mh` palette — a near-black canvas, teal accent, vivid
+ * category set. KEEP IN SYNC with the system-dark block below (identical values;
+ * two selectors are required because CSS cannot share declarations across a
+ * media-query boundary).
+ *
+ * `.mh-force-dark` shares this block: it is an opt-in ALWAYS-dark scope for
+ * intentionally immersive surfaces (the voice orb) that must stay dark in every
+ * theme — its subtree inherits the dark palette from the nearest ancestor. */
+:root[data-theme="dark"],
+.mh-force-dark {
+  color-scheme: dark;
 
-  --border: #334155;
-  --border-strong: #475569;
+  --background: #000000;
+  --foreground: #f4f6f9;
+  --card: #16181c;
+  --card-foreground: #f4f6f9;
+  --muted: #0f1114;
+  --muted-foreground: #8b93a0;    /* raised from #727a84 → 5.7:1 on card (AA) */
+
+  --border: #26292f;
+  --border-strong: rgba(120, 132, 148, 0.26);
   --ring: #2dd4bf;
 
-  --primary: #2dd4bf;
-  --primary-foreground: #042f2e;
+  --primary: #0f9d8c;
+  --primary-foreground: #04231f;
 
-  --destructive: #f87171;
-  --destructive-foreground: #450a0a;
-  --warning: #fbbf24;
-  --warning-foreground: #451a03;
-  --success: #4ade80;
-  --success-foreground: #052e16;
+  --destructive: #ff566f;
+  --destructive-foreground: #2a0a10;
+  --warning: #ffab3d;
+  --warning-foreground: #2a1c04;
+  --success: #3ad884;
+  --success-foreground: #04231f;
 
-  --verdict-pass: #4ade80;
-  --verdict-warn: #fbbf24;
-  --verdict-block: #f87171;
+  --verdict-pass: #3ad884;
+  --verdict-warn: #ffab3d;
+  --verdict-block: #ff566f;
 
-  --destructive-surface: #451a1a;
-  --warning-surface: #422006;
-  --success-surface: #052e16;
+  --destructive-surface: #2a151b;
+  --warning-surface: #2e2210;
+  --success-surface: #0f2c1c;
+
+  --mh-bg: var(--background);
+  --mh-surface: #16181c;
+  --mh-surface-2: #0f1114;
+  --mh-elev: #20232a;
+  --mh-ink: #f4f6f9;
+  --mh-ink-2: #aab2bd;
+  --mh-ink-3: #8b93a0;
+  --mh-line: #26292f;
+  --mh-fill: rgba(120, 132, 148, 0.14);
+  --mh-fill-2: rgba(120, 132, 148, 0.26);
+  --mh-tint: #2ad3c1;
+  --mh-tint-ink: #5fe6d6;
+  --mh-tint-2: #0f9d8c;
+  --ring-track: #23262c;
+
+  --heart: #ff566f;      --heart-bg: #2a151b;
+  --activity: #3ad884;   --activity-bg: #0f2c1c;
+  --body: #2ad3c1;       --body-bg: #0d2b29;
+  --resp: #4a9bff;       --resp-bg: #112234;
+  --nutri: #ffab3d;      --nutri-bg: #2e2210;
+  --mind: #a382ff;       --mind-bg: #1f1830;
+
+  --mh-shadow: 0 1px 2px rgba(0, 0, 0, 0.5), 0 12px 30px -18px rgba(0, 0, 0, 0.8);
+  --mh-shadow-lg: 0 12px 34px -12px rgba(0, 0, 0, 0.7), 0 60px 110px -50px rgba(0, 0, 0, 0.95);
+  --mh-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+/* ==================== DARK (system) ====================
+ * Applies when no explicit theme is set AND the OS prefers dark. `:not(...light)`
+ * lets an explicit light choice still win on a dark OS. KEEP IN SYNC with the
+ * explicit-dark block above. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]):not([data-theme="dark"]) {
+    color-scheme: dark;
+
+    --background: #000000;
+    --foreground: #f4f6f9;
+    --card: #16181c;
+    --card-foreground: #f4f6f9;
+    --muted: #0f1114;
+    --muted-foreground: #8b93a0;
+
+    --border: #26292f;
+    --border-strong: rgba(120, 132, 148, 0.26);
+    --ring: #2dd4bf;
+
+    --primary: #0f9d8c;
+    --primary-foreground: #04231f;
+
+    --destructive: #ff566f;
+    --destructive-foreground: #2a0a10;
+    --warning: #ffab3d;
+    --warning-foreground: #2a1c04;
+    --success: #3ad884;
+    --success-foreground: #04231f;
+
+    --verdict-pass: #3ad884;
+    --verdict-warn: #ffab3d;
+    --verdict-block: #ff566f;
+
+    --destructive-surface: #2a151b;
+    --warning-surface: #2e2210;
+    --success-surface: #0f2c1c;
+
+    --mh-bg: var(--background);
+    --mh-surface: #16181c;
+    --mh-surface-2: #0f1114;
+    --mh-elev: #20232a;
+    --mh-ink: #f4f6f9;
+    --mh-ink-2: #aab2bd;
+    --mh-ink-3: #8b93a0;
+    --mh-line: #26292f;
+    --mh-fill: rgba(120, 132, 148, 0.14);
+    --mh-fill-2: rgba(120, 132, 148, 0.26);
+    --mh-tint: #2ad3c1;
+    --mh-tint-ink: #5fe6d6;
+    --mh-tint-2: #0f9d8c;
+    --ring-track: #23262c;
+
+    --heart: #ff566f;      --heart-bg: #2a151b;
+    --activity: #3ad884;   --activity-bg: #0f2c1c;
+    --body: #2ad3c1;       --body-bg: #0d2b29;
+    --resp: #4a9bff;       --resp-bg: #112234;
+    --nutri: #ffab3d;      --nutri-bg: #2e2210;
+    --mind: #a382ff;       --mind-bg: #1f1830;
+
+    --mh-shadow: 0 1px 2px rgba(0, 0, 0, 0.5), 0 12px 30px -18px rgba(0, 0, 0, 0.8);
+    --mh-shadow-lg: 0 12px 34px -12px rgba(0, 0, 0, 0.7), 0 60px 110px -50px rgba(0, 0, 0, 0.95);
+    --mh-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
+  }
 }

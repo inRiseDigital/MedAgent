@@ -60,6 +60,26 @@ const medagentPreset = {
           block: "var(--verdict-block)",
         },
       },
+      /* Elevation — theme-aware shadows from the token layer. New names (no
+         collision with Tailwind's shadow-sm/md/lg) so existing utilities keep
+         their values. */
+      boxShadow: {
+        card: "var(--mh-shadow)",
+        lift: "var(--mh-shadow-lg)",
+        "card-sm": "var(--mh-shadow-sm)",
+      },
+      /* Motion system — one coherent set of durations + easings (tokens.css). */
+      transitionTimingFunction: {
+        standard: "var(--ease-standard)",
+        "out-quart": "var(--ease-out-quart)",
+        "out-back": "var(--ease-out-back)",
+        rise: "var(--ease-rise)",
+      },
+      transitionDuration: {
+        fast: "var(--dur-fast)",
+        base: "var(--dur-base)",
+        slow: "var(--dur-slow)",
+      },
       /*
        * Type scale per 06 §4.3: 12/13/14/16/18/22/28 px steps.
        * 14 px body for clinical data density (doctor workspace);

@@ -10,6 +10,7 @@ import { HeartPulse } from "lucide-react";
 
 import { SessionGuard } from "@/components/session-guard";
 import { SignOutButton } from "@/components/sign-out-button";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { PATIENT, requireRoles } from "@/lib/require-role";
 import { LocaleSwitcher } from "./portal/locale-switcher";
 import { Notifications } from "./portal/notifications";
@@ -33,6 +34,7 @@ export default async function PortalLayout({ children }: { children: ReactNode }
             <span className="text-base font-semibold tracking-tight">{tc("appName")}</span>
           </span>
           <div className="flex items-center gap-2">
+            <ThemeToggle />
             <LocaleSwitcher />
             <SignOutButton label={tn("signOut")} />
           </div>
