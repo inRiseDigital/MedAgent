@@ -19,7 +19,7 @@ A crucial mental model: **almost all clinical data lives in FHIR, not in a relat
 |---|---|---|
 | **`patients_mpi`** | `id` (uuid PK), `phn` (str11, unique, indexed), `nic` (str20), `demographics` (JSONB), `ext_face_id` (str128, unique), `face_consent` (bool), `sludi_id` (str128), `created_at`, `updated_at` | Master Patient Index — the local identity/link record. Maps a PHN ↔ face id ↔ SLUDI id; the FHIR `Patient` holds the clinical projection. |
 | **`queue_entries`** | `id` (uuid PK), `patient_id` (uuid FK→mpi), `facility_id` (str64, indexed), `state` (enum), `arrival_ts`, `source` (enum) | The live clinic queue. `state ∈ {waiting, in_consultation, done, manual_verification}`; `source ∈ {face, manual}`. |
-| **`audit_outbox`** | `id` (uuid PK), `event` (JSONB), `created_ts`, `dispatched` (bool) | Transactional audit outbox — a row is written in the SAME transaction as the change, then drained to a FHIR `AuditEvent` (§9). |
+| **`audit_outbox`** | `id` (uuid PK), `event` (JSONB), `created_ts`, `dispatched` (bool) | Audit outbox — the row is written durably in the local `app_db` transaction, then a background dispatcher drains it to a FHIR `AuditEvent` (§9). NB: the remote HAPI write is NOT in the local transaction (see §7). |
 | **`audit_chain_head`** | `id` (int PK=1), `seq` (int), `hash` (str), `updated_ts` | The single-row head of the app-layer tamper-evident audit hash chain (§9). |
 
 **Not in `app_db` — these are FHIR resources** (a common misconception): prescriptions/proposals
@@ -33,8 +33,9 @@ the live multi-turn mechanism (§7).
 HAPI's `hfj_*` tables. Resource types in use: `Patient`, `Condition`, `MedicationRequest`,
 `AllergyIntolerance`, `Observation` (vitals + labs), `DiagnosticReport`, `Appointment`/`Slot`/
 `Schedule`, `Encounter`, `DocumentReference`, `ServiceRequest`, `Task`, `Consent`, `AuditEvent`,
-`RelatedPerson`, `Immunization`. Never queried directly by app code — only via core-api's pooled
-`FHIRClient`.
+`RelatedPerson`, `Immunization`. core-api reads/writes them through its pooled `FHIRClient`;
+the agent's read *tools* query HAPI directly over `fhir_base_url` (see §3), gated at the boundary
+by the interceptor under the enforce overlay.
 
 ### 1.3 Redis — namespaced, per-service ACL
 
@@ -109,8 +110,13 @@ locale, conversation_id, mode}`. Step by step:
 
 ## 3. The 24 agent tools (`app/agent/tools.py`)
 
-All read tools go through core-api with the caller's bearer and **cite** every resource they touch
-(via `PatientToolClient.cite()` → the `sources` list → `data-citations`).
+These read tools query **HAPI FHIR directly** (`PatientToolClient` over `fhir_base_url`), patient-
+scoped, and **cite** every resource they touch (via `.cite()` → the `sources` list →
+`data-citations`). They do **not** currently go through core-api's decision-checked path — the
+fail-closed interceptor (under the fhir-enforce overlay) is their boundary control, and
+`fhir_headers()` forwards the service key so they're admitted. (The grounding *context* in §2.3 IS
+fetched through core-api's consent-checked summary/brief. Routing tool reads through core-api is a
+tracked follow-up — see the security review F03.)
 
 - **Record reads (14):** `get_patient_summary`, `get_conditions`, `get_medications`,
   `get_allergies`, `get_vitals`, `get_lab_results`, `get_immunizations`, `get_encounters`,
@@ -164,9 +170,10 @@ Provider swap is config-only (`AGENT_LLM_MODE`, `LLM_OPENAI_BASE_URL/MODEL`, `AG
 
 ## 6. Memory & threads (multi-turn)
 
-- **Threads** (`threads.py`, `agent:thread:{cid}`) — the live mechanism. Each turn appends the
-  user+assistant text; `load_thread` returns the last `_MAX_TURNS`. Server-owned, so the client
-  sends only the new message + a stable `conversation_id`.
+- **Threads** (`threads.py`, `agent:thread:{sub}:{patient_fhir_id}:{cid}`) — the live mechanism.
+  The key is bound to the **verified owner** (the `sub` claim + resolved patient), so a
+  client-supplied `conversation_id` alone can never load another user's thread (fixed F03 BOLA);
+  each turn appends user+assistant text and `load_thread` returns the last `_MAX_TURNS`.
 - **Long-term memory** (`memory.py`, `agent:memory:{pid}`) — a capped list of PHI-safe notes
   (`remember` writes; `recall` reads into the prompt). Patient notes key by patient; clinician
   style-notes key by `clin:<subject>` so a doctor's preferences follow them across patients.
@@ -177,7 +184,12 @@ Provider swap is config-only (`AGENT_LLM_MODE`, `LLM_OPENAI_BASE_URL/MODEL`, `AG
 ## 7. The write spine + the two audit chains
 
 Every write: `web BFF (attach bearer) → core-api router → decision gate (authz + care-relationship
-+ consent) → FHIRClient → HAPI` and, in the **same transaction**, an `audit_outbox` row.
++ consent) → FHIRClient → HAPI`, with an `audit_outbox` row written durably in the local `app_db`
+transaction. **Honest caveat (review F04):** the remote HAPI write and the local outbox row are
+NOT one atomic transaction — a local SQL transaction cannot span a remote HTTP write. The outbox
+gives *durable-intent + eventual* consistency (the audit is never lost), not cross-store atomicity;
+a crash between the FHIR write and recording its outcome needs reconciliation (idempotency keys +
+conditional creates are the tracked hardening).
 
 **Audit chain #1 — app-layer dispatcher** (`core-api/app/audit.py`, always on): a background loop
 (and `/internal/audit/dispatch`) drains `audit_outbox` → FHIR `AuditEvent`, one at a time, each

@@ -88,7 +88,8 @@ flows through the gateway.
 | observability *(profile)* | Prometheus / Grafana / Tempo / Loki / otel-collector | — | 9090 / 3001 | Metrics + dashboards + alerts (§12) |
 
 **Networks:** `edge` (gateway ↔ app services, has outbound internet) and `internal`
-(`internal: true` — **air-gapped**: FHIR/Postgres/Redis live only here; members get no outbound
+(`internal: true` — **data-tier isolated** (not a true air gap — app services also bridge to
+`edge`, which has outbound internet): FHIR/Postgres/Redis live only here; members get no outbound
 internet). App services straddle both; the data tier is internal-only.
 
 ---
@@ -117,7 +118,7 @@ internet). App services straddle both; the data tier is internal-only.
 UI action → web BFF (attach session bearer) → core-api router
           → decision gate (authz + care-relationship + consent)
           → FHIRClient (pooled) → HAPI FHIR
-          → AuditOutbox (same transaction) → AuditEvent (hash-chained)
+          → AuditOutbox row (durable intent) → dispatched → AuditEvent (hash-chained)
 ```
 
 Every clinical write — a prescription, a consult note, a lab order, a booking, a refill Task,
@@ -193,7 +194,11 @@ FHIR **Encounter** + **DocumentReference** note → receipt.
   graph exists in `app/graph/` but is **dormant** — its value (plan→do→self-check) is delivered
   by the planner/reflect functions on the proven single-ReAct path; promoting it is a deferred,
   tested pass (see ROADMAP §2).
-- **Tools** (`app/agent/tools.py`): ~14 FHIR **read** tools (all via core-api, cited) +
+- **Tools** (`app/agent/tools.py`): ~14 FHIR **read** tools that read HAPI **directly**
+  (via `fhir_base_url`), cited — NOT through core-api's decision path; the fail-closed
+  interceptor is the boundary control for them, so run under the fhir-enforce overlay
+  (the grounding *context*, by contrast, IS fetched through core-api's consent-checked
+  summary/brief endpoints). Routing tool reads through core-api is a tracked follow-up. Plus
   `present_card`/`render_widget` (generative UI, allow-listed kinds) + action tools
   (`request_refill`, `book_appointment`, `start_video`, `order_lab` — each **stages** a confirm
   card, never executes) + `draft_prescription`. `fhir_headers()` forwards the service key +
@@ -347,6 +352,7 @@ Base: `docker-compose.yml`. Layer overlays with `-f`:
 |---|---|
 | `docker-compose.dev-fhir.yml` | stock HAPI for dev/seed (skeleton interceptors) |
 | `docker-compose.fhir-enforce.yml` | **fail-closed data layer** — registers the 3 interceptors, ENFORCE + shared service key |
+| `docker-compose.prod.yml` | **production hardening (F06)** — ENVIRONMENT=production (services fail to boot without auth + a non-default service key + enforce), removes all dev host ports; layer with fhir-enforce |
 | `docker-compose.ollama.yml` | sovereign self-hosted LLM (Qwen2.5-7B, GPU) |
 | `docker-compose.vllm.yml` | production self-hosted LLM (server GPU, guided decoding) |
 | `docker-compose.national.yml` | NDHX/SLUDI/HHIMS simulator + enables the facades |
