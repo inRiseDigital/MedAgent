@@ -1,0 +1,58 @@
+# Production hardening overlay (F06) — fail-closed by default.
+#
+# Production security must NOT depend on remembering to layer the fhir-enforce overlay.
+# This overlay sets ENVIRONMENT=production, which makes core-api + agent-service ASSERT
+# their mandatory security controls at startup (main.assert_production_security) and
+# REFUSE TO BOOT if auth is off, the service key is default/missing, or enforcement is
+# not asserted. It also requires a strong service key (compose itself errors if it is
+# unset), forces auth on, and removes every dev-only host port so only the gateway is
+# reachable.
+#
+# ALWAYS layer WITH the enforce overlay in production (it registers the HAPI
+# interceptors + gives the services the shared key):
+#
+#   MEDAGENT_SERVICE_KEY=$(openssl rand -hex 32) \
+#     docker compose -f docker-compose.yml \
+#                    -f docker-compose.fhir-enforce.yml \
+#                    -f docker-compose.prod.yml up -d --build
+#
+# Real secrets are SOPS-injected via env_file in a real deploy (10 §5). This overlay is
+# the canonical production definition; the base compose is dev-oriented.
+
+services:
+  core-api:
+    environment:
+      ENVIRONMENT: production
+      AUTH_DISABLED: "false"
+      MEDAGENT_AUTHZ_MODE: enforce
+      # Compose fails immediately if this is unset — no accidental default key in prod.
+      MEDAGENT_SERVICE_KEY: ${MEDAGENT_SERVICE_KEY:?production requires a strong non-default MEDAGENT_SERVICE_KEY}
+    ports: [] # no direct host port; reach via the gateway
+
+  agent-service:
+    environment:
+      ENVIRONMENT: production
+      AUTH_DISABLED: "false"
+      MEDAGENT_AUTHZ_MODE: enforce
+      MEDAGENT_SERVICE_KEY: ${MEDAGENT_SERVICE_KEY:?production requires a strong non-default MEDAGENT_SERVICE_KEY}
+    ports: []
+
+  notify-service:
+    environment:
+      ENVIRONMENT: production
+      AUTH_DISABLED: "false"
+    ports: []
+
+  web:
+    environment:
+      NODE_ENV: production
+    ports: [] # served through the gateway only
+
+  # Dev conveniences are closed in production — data tier + identity + object-store
+  # consoles are never exposed to the host; all access is in-network / via the gateway.
+  keycloak:
+    ports: []
+  minio:
+    ports: []
+  mailpit:
+    ports: []

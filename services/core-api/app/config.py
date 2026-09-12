@@ -15,6 +15,10 @@ class Settings(BaseSettings):
 
     service_name: str = "core-api"
     log_level: str = "INFO"
+    # Deployment environment: dev | staging | production. In production, startup
+    # asserts mandatory security controls (auth on, FHIR enforce, non-default service
+    # key) and refuses to boot otherwise — see main.assert_production_security (F06).
+    environment: str = "dev"
 
     # Core dependencies (01 §1).
     database_url: str = Field(

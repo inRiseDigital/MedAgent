@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -35,12 +36,39 @@ logger = logging.getLogger(__name__)
 API_V1_PREFIX = "/api/v1"
 
 
+def assert_production_security(settings: Settings) -> None:
+    """Fail startup in production if mandatory security controls are missing (F06).
+
+    Production security must NOT depend on remembering to layer a dev overlay. When
+    `ENVIRONMENT=production`, refuse to boot unless auth is enabled, the FHIR fail-closed
+    boundary is active (`MEDAGENT_AUTHZ_MODE=enforce`), and a non-default service key is
+    set. A misconfigured prod deploy fails loud at startup instead of silently serving
+    traffic without the boundary. No-op outside production."""
+    if settings.environment != "production":
+        return
+    missing: list[str] = []
+    if settings.auth_disabled:
+        missing.append("AUTH_DISABLED must be false")
+    key = os.environ.get("MEDAGENT_SERVICE_KEY", "")
+    if not key or key == "dev-fhir-service-key":
+        missing.append("MEDAGENT_SERVICE_KEY must be set to a non-default value")
+    if os.environ.get("MEDAGENT_AUTHZ_MODE") != "enforce":
+        missing.append("MEDAGENT_AUTHZ_MODE=enforce (fhir-enforce overlay) is required")
+    if missing:
+        raise RuntimeError(
+            "Refusing to start in production — missing mandatory security controls: "
+            + "; ".join(missing)
+        )
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or Settings()
     configure_logging(settings.service_name, settings.log_level)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        # Fail closed in production before opening anything (F06).
+        assert_production_security(settings)
         # Engine/client construction is lazy — no connections are opened here,
         # so the process starts even while dependencies are still coming up
         # (readiness is what gates traffic).

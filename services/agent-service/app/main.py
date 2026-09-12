@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -25,6 +26,30 @@ logger = logging.getLogger("agent-service")
 def _plain_dsn(url: str) -> str:
     """Normalise SQLAlchemy-style DSNs (postgresql+asyncpg://) for asyncpg."""
     return url.replace("postgresql+asyncpg://", "postgresql://", 1)
+
+
+def assert_production_security(settings: Settings) -> None:
+    """Fail startup in production if mandatory security controls are missing (F06).
+
+    Production security must NOT depend on remembering a dev overlay. When
+    `ENVIRONMENT=production`, refuse to boot unless auth is enabled, the FHIR fail-closed
+    boundary is active (`MEDAGENT_AUTHZ_MODE=enforce`), and a non-default service key is
+    set — so the agent's FHIR tool reads are gated at the boundary. No-op outside production."""
+    if settings.environment != "production":
+        return
+    missing: list[str] = []
+    if settings.auth_disabled:
+        missing.append("AUTH_DISABLED must be false")
+    key = os.environ.get("MEDAGENT_SERVICE_KEY", "")
+    if not key or key == "dev-fhir-service-key":
+        missing.append("MEDAGENT_SERVICE_KEY must be set to a non-default value")
+    if os.environ.get("MEDAGENT_AUTHZ_MODE") != "enforce":
+        missing.append("MEDAGENT_AUTHZ_MODE=enforce (fhir-enforce overlay) is required")
+    if missing:
+        raise RuntimeError(
+            "Refusing to start in production — missing mandatory security controls: "
+            + "; ".join(missing)
+        )
 
 
 def _verify_model_config(settings: Settings) -> None:
@@ -61,6 +86,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        assert_production_security(settings)  # fail closed in production (F06)
         app.state.redis = Redis.from_url(settings.redis_url, decode_responses=True)
         app.state.jwks = JWKSCache(
             settings.keycloak_internal_url or settings.keycloak_issuer,

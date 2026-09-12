@@ -11,6 +11,10 @@ class Settings(BaseSettings):
 
     service_name: str = "agent-service"
     log_level: str = "INFO"
+    # Deployment environment: dev | staging | production. In production, startup
+    # asserts mandatory security controls and refuses to boot otherwise — see
+    # main.assert_production_security (F06).
+    environment: str = "dev"
 
     # LangGraph Postgres checkpointer lives in app_db (04 §1); its tables are
     # created via Alembic revisions in core-api's tree (10 §9 rule 4), never here.
