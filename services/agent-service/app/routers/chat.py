@@ -647,7 +647,10 @@ async def chat(
         # client no longer needs to re-send it. Falls back to the client's messages
         # when there is no stored thread (e.g. the first turn).
         turn_messages = agent_messages
-        _thread = await load_thread(_redis, body.conversation_id)
+        # Owner-scoped (BOLA fix): the thread is bound to the VERIFIED caller
+        # (principal.subject) and the resolved patient fhir_id — a client-supplied
+        # conversation_id alone can never reach another owner's history.
+        _thread = await load_thread(_redis, principal.subject, fhir_id, body.conversation_id)
         if _thread:
             turn_messages = [*_thread, {"role": "user", "content": question}]
 
@@ -698,7 +701,9 @@ async def chat(
             # was produced (never store an orphan user turn on an error/empty run).
             answer = ("".join(answer_parts) or final_answer).strip()
             if path != "proactive" and answer:
-                await append_turn(_redis, body.conversation_id, question, answer)
+                await append_turn(
+                    _redis, principal.subject, fhir_id, body.conversation_id, question, answer
+                )
 
         # PROACTIVE (P5): an agent-authored grounded greeting/nudge on portal-open —
         # not a reply to a user turn. Synthesise a warm, brief greeting from the
