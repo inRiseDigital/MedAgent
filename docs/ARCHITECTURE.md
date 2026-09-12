@@ -8,6 +8,10 @@ full read of the running system (services, routers, interceptors, compose overla
 and the design set under `docs/solution/` (00–23). Where this doc and a solution doc
 disagree, **this doc reflects what is actually built**; the solution docs are the design intent._
 
+_For the **deep mechanical detail** — full DB schema, the agent turn lifecycle, the 24 tools, the
+two audit chains, auth/consent/check-in flows, and failure modes — see the companion
+[ARCHITECTURE-INTERNALS.md](ARCHITECTURE-INTERNALS.md)._
+
 ---
 
 ## 1. What MedAgent is
@@ -357,8 +361,11 @@ Typical national-pilot bring-up:
 
 ## 15. Data stores
 
-- **`app_db`** (Postgres) — core-api application tables (MPI, audit outbox, queue, proposals,
-  consent state) + the agent LangGraph checkpointer tables (created via core-api Alembic).
+- **`app_db`** (Postgres) — only 4 operational tables: `patients_mpi` (identity/link index),
+  `queue_entries` (live queue), `audit_outbox` (transactional audit), `audit_chain_head` (audit
+  chain head). **Proposals, consent, and all clinical data live in FHIR, not here.** The LangGraph
+  checkpointer is provisioned-for but not yet wired (Redis threads are the live mechanism). Full
+  table/column detail: [ARCHITECTURE-INTERNALS.md](ARCHITECTURE-INTERNALS.md) §1.
 - **`hapi_db`** (Postgres) — the FHIR store (HAPI `hfj_*`).
 - **keycloak DB** — realm/users/clients.
 - **Redis** (per-service ACL) — SSE tickets, personal notifications, agent long-term memory +
