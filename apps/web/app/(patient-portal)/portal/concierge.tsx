@@ -24,6 +24,7 @@ import {
 import { VideoRoom } from "@/components/video-room";
 import { streamAgentChat } from "@/lib/agent-stream";
 import { Widget, type WidgetSpec } from "@/components/widgets";
+import { Presence, type PresenceState } from "@/components/presence";
 import { FormattedText } from "./formatted-text";
 import { VoiceMode } from "./voice-mode";
 
@@ -101,6 +102,8 @@ export function Concierge({ patientPhn, name, signals }: { patientPhn: string; n
   const [busy, setBusy] = useState(false);
   const [inVideo, setInVideo] = useState(false);
   const [voiceOpen, setVoiceOpen] = useState(false);
+  // The Presence orb's live state, driven by real agent activity (below).
+  const [presence, setPresence] = useState<PresenceState>("idle");
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   // The confirm-action card awaiting a decision — so voice can act on "yes, book it".
@@ -133,6 +136,7 @@ export function Concierge({ patientPhn, name, signals }: { patientPhn: string; n
     async (question: string, opts?: { proactive?: boolean }) => {
       if (busy) return "";
       setBusy(true);
+      setPresence("thinking");
       const proactive = opts?.proactive === true;
       const prior = msgs.filter((n): n is Extract<Node, { t: "ai" | "me" }> => n.t === "ai" || n.t === "me");
       const history = proactive ? prior : [...prior, { t: "me" as const, text: question }];
@@ -172,7 +176,7 @@ export function Concierge({ patientPhn, name, signals }: { patientPhn: string; n
           {
             signal: ctrl.signal,
             onEvent: (o) => {
-              if (o.type === "text-delta" && o.delta) { full += o.delta; bump((n) => ({ ...n, text: n.text + o.delta, status: undefined })); down(); }
+              if (o.type === "text-delta" && o.delta) { setPresence("speaking"); full += o.delta; bump((n) => ({ ...n, text: n.text + o.delta, status: undefined })); down(); }
               else if (o.type === "data-status" && typeof o.text === "string") { bump((n) => ({ ...n, status: o.text })); down(); }
               else if (o.type === "data-citations" && Array.isArray(o.data)) { const cites = o.data as { ref: string; resource_type?: string }[]; bump((n) => ({ ...n, cites })); down(); }
               else if (o.type === "data-cards" && Array.isArray(o.data)) {
@@ -183,6 +187,9 @@ export function Concierge({ patientPhn, name, signals }: { patientPhn: string; n
               }
               else if (o.type === "data-widget" && o.widget) {
                 const spec = o.widget as WidgetSpec;
+                // A safety/escalation widget makes the Presence flare — the character
+                // gets serious the instant the agent surfaces something critical.
+                if (spec.kind === "safety-alert" || spec.kind === "escalation") setPresence("alert");
                 // Remember a confirm card so voice ("yes, book it") can act on it.
                 if (spec.kind === "confirm-action") {
                   pendingConfirm.current = { action: String(spec.data.action ?? ""), params: (spec.data.params as Record<string, unknown>) ?? {} };
@@ -201,6 +208,7 @@ export function Concierge({ patientPhn, name, signals }: { patientPhn: string; n
       } finally {
         window.clearTimeout(timer);
         setBusy(false);
+        setPresence("idle");
         // Always settle THIS turn's AI node: clear the "…" indicator, and if the
         // stream produced no text at all (should not happen — the server floors an
         // answer — but never leave a silent blank bubble), show a retry line.
@@ -730,13 +738,16 @@ export function Concierge({ patientPhn, name, signals }: { patientPhn: string; n
           className="hidden"
           onChange={(e) => { const f = e.target.files?.[0]; if (f) void sendImage(f); e.target.value = ""; }}
         />
+        <span aria-hidden="true" style={{ flex: "none", width: 40, height: 40, display: "grid", placeItems: "center" }}>
+          <Presence state={presence} size={40} />
+        </span>
         <button type="button" onClick={() => fileRef.current?.click()} disabled={busy} aria-label="Share a photo" className="mh-circ mic">
           <Paperclip className="h-5 w-5" />
         </button>
         <button type="button" onClick={() => setVoiceOpen(true)} aria-label="Voice mode" className="mh-circ mic">
           <Mic className="h-5 w-5" />
         </button>
-        <input value={input} onChange={(e) => setInput(e.target.value)} placeholder={tnav("ask")} aria-label={tnav("ask")} />
+        <input value={input} onChange={(e) => setInput(e.target.value)} onFocus={() => { if (!busy) setPresence("listening"); }} onBlur={() => { if (!busy) setPresence("idle"); }} placeholder={tnav("ask")} aria-label={tnav("ask")} />
         <button type="submit" className="mh-circ send" disabled={busy || !input.trim()} aria-label="Send"><Send className="h-5 w-5" /></button>
       </form>
     </div>
