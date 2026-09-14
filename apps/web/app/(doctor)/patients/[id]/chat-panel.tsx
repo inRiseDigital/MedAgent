@@ -16,6 +16,7 @@ import { Badge, Button, type BadgeProps } from "@medagent/ui";
 import { VoiceButton } from "@/components/voice-button";
 import { streamAgentChat } from "@/lib/agent-stream";
 import { Widget, type WidgetSpec } from "@/components/widgets";
+import { Presence, type PresenceState } from "@/components/presence";
 
 // Markdown rendering is loaded as a separate client-only chunk: it must NEVER
 // be able to break the chat's core interactivity (send / input) if the markdown
@@ -80,6 +81,8 @@ export function ChatPanel({ patientId, opening }: { patientId: string; opening?:
   const [turns, setTurns] = useState<Turn[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
+  // The Presence orb's live state, driven by real agent activity (below).
+  const [presence, setPresence] = useState<PresenceState>("idle");
   const [signState, setSignState] = useState<Record<string, string>>({});
   const logRef = useRef<HTMLDivElement>(null);
   const consultItems = useRef<Record<string, string>>({}); // agenda id → label, for the session summary
@@ -141,6 +144,7 @@ export function ChatPanel({ patientId, opening }: { patientId: string; opening?:
       if (!q || busy) return;
       setInput("");
       setBusy(true);
+      setPresence("thinking");
       const history: Turn[] = [...turns, { role: "user", text: q }];
       setTurns([...history, { role: "assistant", text: "", streaming: true }]);
 
@@ -159,6 +163,7 @@ export function ChatPanel({ patientId, opening }: { patientId: string; opening?:
             onEvent: (evt) => {
               if (evt.type === "text-delta" && typeof evt.delta === "string") {
                 const delta = evt.delta;
+                setPresence("speaking");
                 patch((a) => ({ ...a, text: a.text + delta, status: undefined }));
                 logRef.current?.scrollTo({ top: logRef.current.scrollHeight });
               } else if (evt.type === "data-status" && typeof evt.text === "string") {
@@ -169,7 +174,13 @@ export function ChatPanel({ patientId, opening }: { patientId: string; opening?:
               } else if (evt.type === "data-proposals" && Array.isArray(evt.data)) {
                 patch((a) => ({ ...a, proposals: evt.data as Proposal[] }));
               } else if (evt.type === "data-widget" && evt.widget) {
-                patch((a) => ({ ...a, widgets: [...(a.widgets ?? []), evt.widget as WidgetSpec] }));
+                const spec = evt.widget as WidgetSpec;
+                // Brief flare on a safety/escalation widget, then settle (see concierge).
+                if (spec.kind === "safety-alert" || spec.kind === "escalation") {
+                  setPresence("alert");
+                  window.setTimeout(() => setPresence((p) => (p === "alert" ? "idle" : p)), 2600);
+                }
+                patch((a) => ({ ...a, widgets: [...(a.widgets ?? []), spec] }));
               }
             },
           },
@@ -185,6 +196,7 @@ export function ChatPanel({ patientId, opening }: { patientId: string; opening?:
         patch((a) => ({ ...a, text: t("chatError"), streaming: false }));
       } finally {
         setBusy(false);
+        setPresence("idle");
       }
     },
     [busy, patientId, t, turns, convId],
@@ -380,6 +392,9 @@ export function ChatPanel({ patientId, opening }: { patientId: string; opening?:
       ) : null}
 
       <form className="mh-composer" onSubmit={(e) => { e.preventDefault(); void send(input); }}>
+        <span aria-hidden="true" style={{ flex: "none", width: 40, height: 40, display: "grid", placeItems: "center" }}>
+          <Presence state={presence} size={40} />
+        </span>
         <VoiceButton
           title="Voice command — say 'give summary'"
           onTranscript={(tx) => {
@@ -390,7 +405,7 @@ export function ChatPanel({ patientId, opening }: { patientId: string; opening?:
             }
           }}
         />
-        <input value={input} onChange={(e) => setInput(e.target.value)} placeholder={t("chatPrompt")} aria-label={t("chatPrompt")} />
+        <input value={input} onChange={(e) => setInput(e.target.value)} onFocus={() => { if (!busy) setPresence("listening"); }} onBlur={() => { if (!busy) setPresence("idle"); }} placeholder={t("chatPrompt")} aria-label={t("chatPrompt")} />
         <button type="submit" className="mh-circ send" disabled={busy || !input.trim()} aria-label={t("chatSend")}><Send className="h-5 w-5" /></button>
       </form>
     </div>
