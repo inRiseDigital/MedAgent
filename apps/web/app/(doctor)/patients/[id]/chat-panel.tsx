@@ -380,34 +380,39 @@ export function ChatPanel({ patientId, opening }: { patientId: string; opening?:
         )}
       </div>
 
-      {/* quick-reply chips — before any turn; lead with the consult session (H1) */}
-      {turns.length === 0 ? (
-        <div className="mh-quick">
-          <button type="button" className="mh-chip" onClick={() => void startConsult()}
-            style={{ color: "var(--primary-foreground)", background: "var(--primary)" }}>
-            🩺 Start consult session
-          </button>
-          {QUICK_PROMPTS.map((p) => (<button key={p} type="button" className="mh-chip" onClick={() => void send(p)}>{p}</button>))}
-        </div>
-      ) : null}
+      {/* Borderless dock (mirrors the patient concierge): quick prompts float above
+          a single rounded bar with the reacting Presence orb beside it. */}
+      <div className="mh-dock">
+        {turns.length === 0 ? (
+          <div className="mh-suggest">
+            <button type="button" className="mh-chip" onClick={() => void startConsult()}
+              style={{ color: "var(--primary-foreground)", background: "var(--primary)" }}>
+              🩺 Start consult session
+            </button>
+            {QUICK_PROMPTS.map((p) => (<button key={p} type="button" className="mh-chip" onClick={() => void send(p)}>{p}</button>))}
+          </div>
+        ) : null}
 
-      <form className="mh-composer" onSubmit={(e) => { e.preventDefault(); void send(input); }}>
-        <span aria-hidden="true" style={{ flex: "none", width: 40, height: 40, display: "grid", placeItems: "center" }}>
-          <Presence state={presence} size={40} />
-        </span>
-        <VoiceButton
-          title="Voice command — say 'give summary'"
-          onTranscript={(tx) => {
-            if (/\b(summary|brief)\b/i.test(tx)) {
-              void send("Give me a concise, cited summary of this patient — active problems, current medications, allergies, and recent results.");
-            } else {
-              setInput((prev) => (prev ? `${prev} ${tx}` : tx));
-            }
-          }}
-        />
-        <input value={input} onChange={(e) => setInput(e.target.value)} onFocus={() => { if (!busy) setPresence("listening"); }} onBlur={() => { if (!busy) setPresence("idle"); }} placeholder={t("chatPrompt")} aria-label={t("chatPrompt")} />
-        <button type="submit" className="mh-circ send" disabled={busy || !input.trim()} aria-label={t("chatSend")}><Send className="h-5 w-5" /></button>
-      </form>
+        <form className="mh-composer" onSubmit={(e) => { e.preventDefault(); void send(input); }}>
+          <span className="mh-orb-beside" aria-hidden="true">
+            <Presence state={presence} size={54} />
+          </span>
+          <div className="mh-bar">
+            <VoiceButton
+              title="Voice command — say 'give summary'"
+              onTranscript={(tx) => {
+                if (/\b(summary|brief)\b/i.test(tx)) {
+                  void send("Give me a concise, cited summary of this patient — active problems, current medications, allergies, and recent results.");
+                } else {
+                  setInput((prev) => (prev ? `${prev} ${tx}` : tx));
+                }
+              }}
+            />
+            <input value={input} onChange={(e) => setInput(e.target.value)} onFocus={() => { if (!busy) setPresence("listening"); }} onBlur={() => { if (!busy) setPresence("idle"); }} placeholder={t("chatPrompt")} aria-label={t("chatPrompt")} />
+            <button type="submit" className="mh-circ send" disabled={busy || !input.trim()} aria-label={t("chatSend")}><Send className="h-5 w-5" /></button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }
