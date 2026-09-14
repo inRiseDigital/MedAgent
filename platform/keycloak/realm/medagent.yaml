@@ -19,6 +19,9 @@
 realm: medagent
 enabled: true
 displayName: MedAgent Platform
+# Branded login/account experience — the theme baked into the image at
+# /opt/keycloak/themes/medagent (platform/keycloak/theme/, 02 §1).
+loginTheme: medagent
 
 # --- Realm hygiene & sessions (02 §1, §4) ------------------------------------
 bruteForceProtected: true            # supersedes prototype hand-rolled lockout (00 §1)

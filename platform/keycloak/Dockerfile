@@ -32,8 +32,8 @@ COPY --from=builder /opt/keycloak/ /opt/keycloak/
 COPY --from=config-cli /app/keycloak-config-cli.jar /opt/keycloak-config-cli/keycloak-config-cli.jar
 COPY realm/ /opt/keycloak-config/realm/
 
-# Custom theme layer (02 §1) — directory added in S2; keep the mount point stable.
-# COPY theme/ /opt/keycloak/themes/medagent/
+# Custom theme layer (02 §1) — MedAgent branded login theme.
+COPY theme/ /opt/keycloak/themes/medagent/
 
 ENV KC_DB=postgres \
     KC_HEALTH_ENABLED=true \
