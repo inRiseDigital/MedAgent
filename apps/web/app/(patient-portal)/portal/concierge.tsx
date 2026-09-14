@@ -187,9 +187,13 @@ export function Concierge({ patientPhn, name, signals }: { patientPhn: string; n
               }
               else if (o.type === "data-widget" && o.widget) {
                 const spec = o.widget as WidgetSpec;
-                // A safety/escalation widget makes the Presence flare — the character
-                // gets serious the instant the agent surfaces something critical.
-                if (spec.kind === "safety-alert" || spec.kind === "escalation") setPresence("alert");
+                // A safety/escalation widget makes the Presence FLARE — a brief, deliberate
+                // attention-grab (~2.6s), then it settles; the red widget card remains the
+                // persistent signal, so the orb never sits permanently red (alarm fatigue).
+                if (spec.kind === "safety-alert" || spec.kind === "escalation") {
+                  setPresence("alert");
+                  window.setTimeout(() => setPresence((p) => (p === "alert" ? "idle" : p)), 2600);
+                }
                 // Remember a confirm card so voice ("yes, book it") can act on it.
                 if (spec.kind === "confirm-action") {
                   pendingConfirm.current = { action: String(spec.data.action ?? ""), params: (spec.data.params as Record<string, unknown>) ?? {} };
