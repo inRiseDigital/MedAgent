@@ -1,119 +1,162 @@
-/* MedAgent login — a clean, premium, offline-safe brand skin over the classic
-   Keycloak login template. Teal accent, calm ground, centered card, system fonts. */
+/* MedAgent login — premium, offline-safe brand skin over the classic Keycloak
+   login template. Teal accent, calm ground, single clean card, works in light + dark. */
 
 :root{
   --fg:#0f172a; --fg2:#475569; --fg3:#64748b;
-  --card:#ffffff; --field:#f1f5f9; --border:#e2e8f0; --border-strong:#cbd5e1;
+  --card:#ffffff; --field:#eef2f7; --border:#e2e8f0; --border-strong:#cbd5e1;
   --primary:#0f766e; --primary-ink:#ffffff; --primary-dark:#0b5a54;
   --danger:#b91c1c; --danger-bg:#fef2f2;
   --font:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
-  --shadow:0 1px 2px rgba(15,23,42,.06),0 24px 60px -28px rgba(15,23,42,.35);
+  --shadow:0 1px 2px rgba(15,23,42,.06),0 30px 70px -30px rgba(15,23,42,.35);
+  --ground: radial-gradient(1100px 560px at 50% -10%, color-mix(in srgb, var(--primary) 15%, transparent), transparent 60%),
+            linear-gradient(180deg,#f4f7fb,#e9eef4);
 }
 @media (prefers-color-scheme:dark){
-  :root{ --fg:#f4f6f9; --fg2:#aab2bd; --fg3:#8b93a0; --card:#16181c; --field:#1c1f25;
-    --border:#26292f; --border-strong:#3a3f47; --primary:#2dd4bf; --primary-ink:#04231f; --primary-dark:#0f9d8c;
-    --danger:#ff566f; --danger-bg:#2a151b; --shadow:0 1px 2px rgba(0,0,0,.5),0 26px 64px -28px rgba(0,0,0,.9); }
+  :root{
+    --fg:#f4f6f9; --fg2:#aab2bd; --fg3:#8b93a0;
+    --card:#16181c; --field:#0f1114; --border:#2a2e35; --border-strong:#3a3f47;
+    --primary:#2dd4bf; --primary-ink:#04231f; --primary-dark:#0f9d8c;
+    --danger:#ff566f; --danger-bg:#2a151b;
+    --shadow:0 1px 2px rgba(0,0,0,.6),0 34px 80px -30px rgba(0,0,0,.95);
+    --ground: radial-gradient(1100px 620px at 50% -12%, color-mix(in srgb, var(--primary) 22%, transparent), transparent 58%),
+              radial-gradient(700px 420px at 50% 120%, color-mix(in srgb, var(--primary) 8%, transparent), transparent 60%),
+              #050607;
+  }
 }
 
 *{ box-sizing:border-box; }
 html,body{ height:100%; }
-body, body.login-pf{
-  margin:0; font-family:var(--font); color:var(--fg); background:transparent;
-  -webkit-font-smoothing:antialiased;
-}
+body, body.login-pf{ margin:0; font-family:var(--font); color:var(--fg); background:transparent; -webkit-font-smoothing:antialiased; }
 body.login-pf-page, .login-pf body, .login-pf-page{
-  min-height:100vh; display:flex; align-items:center; justify-content:center; padding:24px;
-  background:
-    radial-gradient(1000px 520px at 50% -8%, color-mix(in srgb, var(--primary) 16%, transparent), transparent 60%),
-    linear-gradient(180deg, color-mix(in srgb, var(--primary) 5%, #f8fafc), #eef2f6);
-}
-@media (prefers-color-scheme:dark){
-  body.login-pf-page, .login-pf body, .login-pf-page{
-    background:radial-gradient(1000px 520px at 50% -8%, color-mix(in srgb, var(--primary) 18%, transparent), transparent 60%), #050607;
-  }
+  min-height:100vh; display:flex; align-items:center; justify-content:center; padding:24px; background:var(--ground);
 }
 
-/* container — hide Keycloak's own header/logo; our lockup replaces it */
-.login-pf-page .login-pf-page-header,
-#kc-header, #kc-header-wrapper, .kc-logo-text{ display:none !important; }
+/* hide Keycloak's own header/logo — our lockup replaces it */
+.login-pf-page .login-pf-page-header, #kc-header, #kc-header-wrapper, .kc-logo-text{ display:none !important; }
 
-/* the card */
-.login-pf-page .card-pf, #kc-form, .card-pf{
-  width:100%; max-width:400px; margin:0 auto; background:var(--card);
-  border:1px solid var(--border); border-radius:22px; box-shadow:var(--shadow);
-  padding:30px 30px 26px;
+/* ONE card (do not also box the inner form) */
+.login-pf-page .card-pf, .card-pf{
+  position:relative; width:100%; max-width:410px; margin:0 auto; background:var(--card);
+  border:1px solid var(--border); border-radius:24px; box-shadow:var(--shadow); padding:34px 32px 28px;
 }
-/* brand lockup — ONE teal rounded mark at the top of the card, carrying an “M” */
-.card-pf{ position:relative; }
+/* brand mark */
 .card-pf::before{
-  content:""; display:block; width:54px; height:54px; margin:0 auto 14px; border-radius:16px;
+  content:""; display:block; width:56px; height:56px; margin:0 auto 16px; border-radius:17px;
   background:linear-gradient(150deg, var(--primary), var(--primary-dark));
-  box-shadow:0 8px 22px -10px color-mix(in srgb, var(--primary) 70%, transparent);
+  box-shadow:0 10px 26px -10px color-mix(in srgb, var(--primary) 75%, transparent);
 }
 .card-pf::after{
-  content:"M"; position:absolute; top:30px; left:50%; transform:translateX(-50%);
-  width:54px; height:54px; display:grid; place-items:center; color:var(--primary-ink);
-  font:800 26px/1 var(--font); letter-spacing:-.02em; pointer-events:none;
+  content:"M"; position:absolute; top:34px; left:50%; transform:translateX(-50%);
+  width:56px; height:56px; display:grid; place-items:center; color:var(--primary-ink);
+  font:800 27px/1 var(--font); letter-spacing:-.02em; pointer-events:none;
 }
-#kc-content-wrapper{ padding-top:2px; }
+#kc-content, #kc-content-wrapper, #kc-form{ background:transparent; border:none; box-shadow:none; padding:0; }
 
 /* titles */
-#kc-page-title, .pf-c-title, h1#kc-page-title{
-  margin:0 0 4px; text-align:center; font-size:22px; font-weight:800; letter-spacing:-.02em; color:var(--fg);
+#kc-page-title, h1#kc-page-title, .pf-c-title{
+  margin:0 0 20px; text-align:center; font-size:22px; font-weight:800; letter-spacing:-.02em; color:var(--fg);
 }
-#kc-page-title + *{ text-align:center; }
 .instruction, #kc-info-message{ color:var(--fg2); font-size:13.5px; text-align:center; }
 
-/* form fields */
-.form-group{ margin:0 0 14px; }
-label, .control-label, .pf-c-form__label{
-  display:block; margin:0 0 6px; font-size:12px; font-weight:700; letter-spacing:.04em;
+/* fields */
+.form-group, .pf-c-form__group{ margin:0 0 15px; text-align:left; }
+label, .control-label, .pf-c-form__label, .pf-c-form__label-text{
+  display:block; margin:0 0 6px; font-size:11.5px; font-weight:700; letter-spacing:.05em;
   text-transform:uppercase; color:var(--fg3);
 }
-input, .form-control, .pf-c-form-control, #username, #password, input[type=text], input[type=password], input[type=email]{
-  width:100%; padding:12px 14px; font:500 15px var(--font); color:var(--fg);
+input, .form-control, .pf-c-form-control,
+#username, #password, input[type=text], input[type=password], input[type=email]{
+  width:100%; height:46px; padding:0 14px; font:500 15px var(--font); color:var(--fg);
   background:var(--field); border:1px solid var(--border-strong); border-radius:12px; outline:none;
   transition:border-color .18s ease, box-shadow .18s ease;
 }
 input:focus, .form-control:focus, #username:focus, #password:focus{
-  border-color:var(--primary);
-  box-shadow:0 0 0 3px color-mix(in srgb, var(--primary) 22%, transparent);
+  border-color:var(--primary); box-shadow:0 0 0 3px color-mix(in srgb, var(--primary) 24%, transparent);
+}
+input::placeholder{ color:var(--fg3); }
+
+/* password + show/hide — the WRAPPER is the field; input + eye button live
+   seamlessly inside it. Real KC26 markup:
+     <div class="pf-c-input-group"><input id="password" .../><button data-password-toggle>…</button></div> */
+.pf-c-input-group, .input-group{
+  display:flex; align-items:stretch; width:100%; height:46px;
+  background:var(--field); border:1px solid var(--border-strong); border-radius:12px; overflow:hidden;
+  transition:border-color .18s ease, box-shadow .18s ease;
+}
+.pf-c-input-group:focus-within, .input-group:focus-within{
+  border-color:var(--primary); box-shadow:0 0 0 3px color-mix(in srgb, var(--primary) 24%, transparent);
+}
+/* the input inside the group: strip its own chrome + radius so the wrapper owns the shape */
+.pf-c-input-group > input, .input-group > input,
+.pf-c-input-group > .pf-c-form-control, #password{
+  flex:1 1 auto; height:100% !important; padding:0 14px;
+  border:none !important; border-radius:0 !important; box-shadow:none !important; background:transparent !important;
+}
+.pf-c-input-group:focus-within > input:focus{ box-shadow:none !important; } /* focus ring lives on the wrapper */
+/* the eye/toggle button: no box of its own, just an icon well */
+.pf-c-input-group > button, .input-group > button, .pf-c-input-group > .pf-c-button,
+button[data-password-toggle], button[aria-controls="password"]{
+  flex:0 0 46px; height:100%; border:none !important; border-radius:0 !important;
+  background:transparent !important; box-shadow:none !important; outline:none;
+  color:var(--fg3); display:grid; place-items:center; cursor:pointer; transition:color .15s ease;
+}
+.pf-c-input-group > button:hover, button[data-password-toggle]:hover, button[aria-controls="password"]:hover{ color:var(--fg); }
+.pf-c-input-group > button i, .pf-c-input-group > button svg{ fill:currentColor; font-size:15px; }
+/* PatternFly (loaded by parent=keycloak) draws the control-button divider with a
+   ::after pseudo-border + box-shadows — kill them so the eye blends into the field. */
+.pf-c-input-group::before, .pf-c-input-group::after,
+.pf-c-input-group > *::before, .pf-c-input-group > *::after,
+.pf-c-input-group > button::before, .pf-c-input-group > button::after,
+#password::before, #password::after{
+  content:none !important; display:none !important; border:none !important; box-shadow:none !important;
+}
+.pf-c-input-group > input, .pf-c-input-group > button, .pf-c-input-group > .pf-c-button{
+  box-shadow:none !important; outline:none !important; margin:0 !important;
 }
 
-/* remember-me / options row */
-#kc-form-options{ display:flex; align-items:center; justify-content:space-between; margin:2px 0 16px; font-size:13px; color:var(--fg2); }
-#kc-form-options a, #reset-login, #kc-registration a, a{ color:var(--primary); text-decoration:none; font-weight:600; }
+/* options row */
+#kc-form-options{ display:flex; align-items:center; justify-content:space-between; margin:4px 0 18px; font-size:13px; color:var(--fg2); }
+#kc-form-options a, #reset-login, a{ color:var(--primary); text-decoration:none; font-weight:600; }
 #kc-form-options a:hover, a:hover{ text-decoration:underline; }
 
 /* submit */
 input[type=submit], .btn-primary, #kc-login, button[type=submit], .pf-c-button.pf-m-primary{
-  width:100%; padding:12px 16px; margin-top:4px; border:none; border-radius:13px; cursor:pointer;
+  width:100%; height:48px; margin-top:6px; border:none; border-radius:13px; cursor:pointer;
   background:var(--primary); color:var(--primary-ink); font:800 15px var(--font); letter-spacing:.01em;
   transition:filter .18s ease, transform .06s ease;
 }
-input[type=submit]:hover, .btn-primary:hover, #kc-login:hover{ filter:brightness(1.06); }
+input[type=submit]:hover, .btn-primary:hover, #kc-login:hover{ filter:brightness(1.07); }
 input[type=submit]:active, .btn-primary:active, #kc-login:active{ transform:scale(.99); }
 
-/* secondary buttons */
-.btn:not(.btn-primary), .pf-c-button.pf-m-secondary{
-  width:100%; padding:11px 16px; border-radius:13px; background:color-mix(in srgb, var(--fg) 7%, transparent);
-  color:var(--fg); font:700 14px var(--font); border:none; margin-top:8px; cursor:pointer;
+/* --- social / "or" divider + provider buttons --- */
+#kc-social-providers{ margin-top:22px; }
+#kc-social-providers h2, #kc-social-providers > p, .pf-c-login__main-footer-band{
+  position:relative; text-align:center; color:var(--fg3) !important; font-size:12.5px; font-weight:600;
+  text-transform:none; letter-spacing:.02em; margin:0 0 14px;
 }
+#kc-social-providers h2::before, #kc-social-providers h2::after{
+  content:""; position:absolute; top:50%; width:34%; height:1px; background:var(--border);
+}
+#kc-social-providers h2::before{ left:0; } #kc-social-providers h2::after{ right:0; }
+#kc-social-providers ul{ list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:10px; }
+#kc-social-providers a, #kc-social-providers .pf-c-button, a.zocial, a[id^=social-]{
+  display:flex; align-items:center; justify-content:center; gap:8px; width:100%; height:46px;
+  border:1px solid var(--border); background:var(--card); color:var(--fg) !important; border-radius:13px;
+  font:700 14px var(--font) !important; text-decoration:none; transition:border-color .18s ease, background .18s ease;
+}
+#kc-social-providers a:hover{ border-color:var(--primary); background:color-mix(in srgb, var(--primary) 7%, var(--card)); }
+#kc-social-providers a span{ color:var(--fg) !important; }
 
 /* alerts / errors */
-.alert, .pf-c-alert, #input-error, .kc-feedback-text, .alert-error{
-  border:none; border-radius:12px; padding:11px 13px; font-size:13px; margin:0 0 14px;
+.alert, .pf-c-alert, .alert-error, .pf-c-alert.pf-m-danger{
+  border:none; border-radius:12px; padding:11px 13px; font-size:13px; margin:0 0 16px;
   background:var(--danger-bg); color:var(--danger);
 }
-#input-error, .kc-feedback-text{ background:transparent; padding:4px 0 0; }
+#input-error, .kc-feedback-text, .pf-c-form__helper-text.pf-m-error{ background:transparent; color:var(--danger); padding:5px 0 0; font-size:12.5px; }
 
-/* footer / registration prompt */
-#kc-registration, #kc-registration-container{ margin-top:16px; text-align:center; color:var(--fg2); font-size:13.5px; }
+/* registration prompt */
+#kc-registration, #kc-registration-container{ margin-top:18px; text-align:center; color:var(--fg2); font-size:13.5px; }
 
-/* language picker (top-right) — keep it subtle */
+/* language picker */
 #kc-locale{ position:fixed; top:16px; right:18px; }
-#kc-locale ul{ list-style:none; margin:0; padding:0; }
-#kc-locale a{ color:var(--fg3); font-size:13px; }
-
-/* hide leftover patternfly chrome we don't want */
-.login-pf-page .login-pf-page-header img, #kc-header .kc-logo-text{ display:none; }
+#kc-locale ul{ list-style:none; margin:0; padding:0; } #kc-locale a{ color:var(--fg3); font-size:13px; }
