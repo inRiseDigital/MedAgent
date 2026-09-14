@@ -4,7 +4,7 @@
   "private": true,
   "//": [
     "S1 scaffold — docs/solution/06 governs. Run `pnpm install` at the repo root.",
-    "playwright: `@playwright/test` joins devDependencies when the e2e smoke suite lands (S3+, 06 §12) — deliberately not installed in S1."
+    "playwright: `@playwright/test` is used by e2e/shot.mjs, a login+screenshot helper for eyeballing the running UI. See apps/web/e2e/README.md. Run `pnpm shot:setup` once to download Chromium."
   ],
   "scripts": {
     "dev": "next dev",
@@ -12,7 +12,12 @@
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "shot:setup": "playwright install chromium",
+    "shot": "node e2e/shot.mjs",
+    "shot:portal": "node e2e/shot.mjs patient_demo /portal portal",
+    "shot:queue": "node e2e/shot.mjs dr_demo /queue queue",
+    "shot:dashboard": "node e2e/shot.mjs dr_demo /dashboard dashboard"
   },
   "dependencies": {
     "@medagent/ts-sdk": "workspace:*",
@@ -24,13 +29,14 @@
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-markdown": "^9.1.0",
-    "remark-gfm": "^4.0.1",
     "redis": "^5.5.0",
+    "remark-gfm": "^4.0.1",
     "server-only": "^0.0.1",
     "zustand": "^5.0.5"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.3.0",
+    "@playwright/test": "^1.63.0",
     "@tailwindcss/postcss": "^4.1.0",
     "@testing-library/jest-dom": "^6.6.0",
     "@testing-library/react": "^16.3.0",

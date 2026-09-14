@@ -1,0 +1,4 @@
+
+# Playwright screenshot outputs (regenerable)
+e2e/shots/
+test-results/
