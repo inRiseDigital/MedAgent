@@ -94,6 +94,15 @@ export function Concierge({ patientPhn, name, signals }: { patientPhn: string; n
       return v;
     } catch { return `conv-${patientPhn}`; }
   }, [patientPhn]);
+  // A warm, time-aware greeting for the calm zero-state. Computed AFTER mount so
+  // the server (which renders at a different hour/timezone) and the client agree
+  // on the first paint — otherwise React reports a hydration mismatch.
+  const [greeting, setGreeting] = useState(`Hello, ${first}`);
+  useEffect(() => {
+    const h = new Date().getHours();
+    const g = h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening";
+    setGreeting(`${g}, ${first}`);
+  }, [first]);
   const tnav = useTranslations("patientNav");
   const tc = useTranslations("concierge");
   const [msgs, setMsgs] = useState<Node[]>([]);
@@ -575,6 +584,8 @@ export function Concierge({ patientPhn, name, signals }: { patientPhn: string; n
   useEffect(() => {
     if (ran.current) return;
     ran.current = true;
+    // Contextual suggestions are present from the very first frame (above the bar).
+    setQuicks(menu());
     // P5 — the agent AUTHORS a grounded proactive greeting: it streams a warm,
     // cited opening (name + the most important thing right now) and renders the
     // safety-alert / record-links / next-best-action widgets, replacing the old
@@ -620,11 +631,23 @@ export function Concierge({ patientPhn, name, signals }: { patientPhn: string; n
     );
   }
 
+  // "Fresh" = the patient hasn't spoken yet — show the calm zero-state hero.
+  const fresh = !msgs.some((n) => n.t === "me");
+
   return (
-    <div className="mh flex h-[calc(100dvh-9rem)] flex-col overflow-hidden md:h-[calc(100dvh-5.5rem)]">
+    <div className="mh flex h-[calc(100dvh-12rem)] flex-col overflow-hidden md:h-[calc(100dvh-5.5rem)]">
       {inVideo ? <VideoRoom room={videoRoom} displayName={name} onClose={() => setInVideo(false)} /> : null}
       {voiceOpen ? <VoiceMode locale={locale} name={name} ask={voiceAsk} onClose={() => setVoiceOpen(false)} /> : null}
-      <div ref={scrollRef} className="flex flex-1 flex-col gap-3 overflow-y-auto p-3.5">
+      <div ref={scrollRef} className="mh-thread flex flex-1 flex-col gap-4 overflow-y-auto px-3.5 pb-2 pt-5">
+        {fresh ? (
+          <div className="mh-hero">
+            <span className="mh-hero-orb" aria-hidden="true"><Presence state={presence} size={104} /></span>
+            <div className="flex flex-col gap-2">
+              <h2 className="mh-hero-title">{greeting}</h2>
+              <p className="mh-hero-sub">I'm your health concierge. Ask me anything about your health, or start with a suggestion below — everything I say is grounded in your record.</p>
+            </div>
+          </div>
+        ) : null}
         {msgs.map((n, i) => {
           if (n.t === "me") return <div key={i} className="mh-msg me"><div className="mh-bubble">{n.text}</div></div>;
           if (n.t === "image")
@@ -723,37 +746,43 @@ export function Concierge({ patientPhn, name, signals }: { patientPhn: string; n
         })}
       </div>
 
-      {quicks.length ? (
-        <div className="mh-quick">
-          {quicks.map((q, i) => (
-            <button key={i} type="button" className="mh-chip" onClick={q.act}>{q.label}</button>
-          ))}
-        </div>
-      ) : null}
+      {/* Borderless dock: contextual suggestions float above a single rounded bar,
+          with the reacting Presence orb beside it. */}
+      <div className="mh-dock">
+        {quicks.length ? (
+          <div className="mh-suggest">
+            {quicks.map((q, i) => (
+              <button key={i} type="button" className="mh-chip" onClick={q.act}>{q.label}</button>
+            ))}
+          </div>
+        ) : null}
 
-      <form
-        className="mh-composer"
-        onSubmit={(e) => { e.preventDefault(); const v = input.trim(); if (!v) return; setInput(""); handleFree(v); }}
-      >
-        <input
-          ref={fileRef}
-          type="file"
-          accept="image/png,image/jpeg,image/webp,image/gif,application/pdf"
-          className="hidden"
-          onChange={(e) => { const f = e.target.files?.[0]; if (f) void sendImage(f); e.target.value = ""; }}
-        />
-        <span aria-hidden="true" style={{ flex: "none", width: 40, height: 40, display: "grid", placeItems: "center" }}>
-          <Presence state={presence} size={40} />
-        </span>
-        <button type="button" onClick={() => fileRef.current?.click()} disabled={busy} aria-label="Share a photo" className="mh-circ mic">
-          <Paperclip className="h-5 w-5" />
-        </button>
-        <button type="button" onClick={() => setVoiceOpen(true)} aria-label="Voice mode" className="mh-circ mic">
-          <Mic className="h-5 w-5" />
-        </button>
-        <input value={input} onChange={(e) => setInput(e.target.value)} onFocus={() => { if (!busy) setPresence("listening"); }} onBlur={() => { if (!busy) setPresence("idle"); }} placeholder={tnav("ask")} aria-label={tnav("ask")} />
-        <button type="submit" className="mh-circ send" disabled={busy || !input.trim()} aria-label="Send"><Send className="h-5 w-5" /></button>
-      </form>
+        <form
+          className="mh-composer"
+          onSubmit={(e) => { e.preventDefault(); const v = input.trim(); if (!v) return; setInput(""); handleFree(v); }}
+        >
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/png,image/jpeg,image/webp,image/gif,application/pdf"
+            className="hidden"
+            onChange={(e) => { const f = e.target.files?.[0]; if (f) void sendImage(f); e.target.value = ""; }}
+          />
+          <span className="mh-orb-beside" aria-hidden="true">
+            <Presence state={presence} size={54} />
+          </span>
+          <div className="mh-bar">
+            <button type="button" onClick={() => fileRef.current?.click()} disabled={busy} aria-label="Share a photo" className="mh-circ mic">
+              <Paperclip className="h-5 w-5" />
+            </button>
+            <button type="button" onClick={() => setVoiceOpen(true)} aria-label="Voice mode" className="mh-circ mic">
+              <Mic className="h-5 w-5" />
+            </button>
+            <input value={input} onChange={(e) => setInput(e.target.value)} onFocus={() => { if (!busy) setPresence("listening"); }} onBlur={() => { if (!busy) setPresence("idle"); }} placeholder={tnav("ask")} aria-label={tnav("ask")} />
+            <button type="submit" className="mh-circ send" disabled={busy || !input.trim()} aria-label="Send"><Send className="h-5 w-5" /></button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }

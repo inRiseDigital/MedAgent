@@ -87,11 +87,22 @@
 .mh-typing i:nth-child(3) { animation-delay: 0.4s; }
 @keyframes mh-blink { 0%, 60%, 100% { opacity: 0.35; transform: translateY(0); } 30% { opacity: 1; transform: translateY(-3px); } }
 
-.mh-composer { flex: none; display: flex; align-items: center; gap: 8px; padding: 10px 12px 12px; border-top: 1px solid var(--mh-line);
-  background: color-mix(in srgb, var(--mh-bg) 82%, transparent); backdrop-filter: saturate(1.6) blur(16px); }
-.mh-composer input { flex: 1; min-width: 0; border: none; background: var(--mh-fill); color: var(--mh-ink); border-radius: 999px; padding: 12px 16px; font-size: 15px;
+/* borderless canvas composer — a single floating rounded bar with the reacting
+   Presence orb beside it; suggestions sit above it (see .mh-dock / .mh-suggest). */
+.mh-composer { flex: none; display: flex; align-items: center; gap: 12px; width: 100%; max-width: 48rem; margin: 0 auto;
+  padding: 0; border: none; background: transparent; }
+.mh-orb-beside { flex: none; width: 58px; height: 58px; display: grid; place-items: center; }
+/* on phones every pixel of the bar counts — the hero + message avatars already
+   carry the presence, so the beside-orb steps aside */
+@media (max-width: 767px) { .mh-orb-beside { display: none; } }
+.mh-bar { flex: 1; min-width: 0; display: flex; align-items: center; gap: 5px; background: var(--mh-surface);
+  border-radius: 27px; box-shadow: var(--mh-shadow-lg); padding: 7px 7px 7px 10px;
+  transition: box-shadow var(--dur-base) var(--ease-out-quart); }
+.mh-bar:focus-within { box-shadow: var(--mh-shadow-lg), 0 0 0 2px color-mix(in srgb, var(--primary) 42%, transparent); }
+.mh-bar input, .mh-composer input { flex: 1; min-width: 0; border: none; background: transparent; color: var(--mh-ink);
+  border-radius: 999px; padding: 11px 8px; font-size: 15px; outline: none;
   transition: box-shadow var(--dur-fast) var(--ease-standard); }
-.mh-composer input::placeholder { color: var(--mh-ink-3); }
+.mh-bar input::placeholder, .mh-composer input::placeholder { color: var(--mh-ink-3); }
 .mh-circ { width: 44px; height: 44px; border-radius: 50%; border: none; flex: none; cursor: pointer; display: grid; place-items: center;
   transition: transform var(--dur-fast) var(--ease-out-quart), filter var(--dur-fast) var(--ease-standard); }
 .mh-circ:hover { filter: brightness(1.06); }
@@ -193,4 +204,75 @@
   @keyframes vo-breathe { from {} to {} }
   @keyframes vo-speak { from {} to {} }
   @keyframes vo-think { from {} to {} }
+}
+
+/* ===========================================================================
+   Borderless zero-canvas: full-bleed thread, calm zero-state, floating dock,
+   contextual suggestions, and the summon-rail + slide-over that "bloom" the
+   Summary / Record / Me panels over the canvas instead of stealing layout.
+   (Mobile-first — the same structure powers the future mobile app.)
+   =========================================================================== */
+
+/* invisible scrollbar on the thread (modern chat feel); smooth section scroll */
+.mh-thread { scrollbar-width: none; scroll-behavior: smooth; }
+.mh-thread::-webkit-scrollbar { width: 0; height: 0; }
+
+/* zero-state hero — a calm, centred welcome that fills the empty canvas */
+.mh-hero { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 16px;
+  margin: auto; padding: 6px 16px 22px; max-width: 42rem; animation: mh-rise var(--dur-slow) var(--ease-rise) both; }
+.mh-hero-orb { filter: drop-shadow(0 18px 40px color-mix(in srgb, var(--primary) 34%, transparent)); }
+.mh-hero-title { margin: 0; font-size: clamp(1.55rem, 4.6vw, 2.2rem); font-weight: 800; letter-spacing: -0.03em; color: var(--mh-ink); }
+.mh-hero-sub { margin: 0; font-size: 14.5px; line-height: 1.55; color: var(--mh-ink-3); max-width: 30rem; }
+.mh-hero-prompts { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; margin-top: 2px; }
+.mh-hero-prompt { cursor: pointer; border: 1px solid var(--mh-line); background: var(--mh-surface); color: var(--mh-ink);
+  border-radius: 16px; padding: 13px 15px; max-width: 15rem; text-align: left; font: 600 13px/1.35 var(--font, inherit);
+  box-shadow: var(--mh-shadow); transition: transform var(--dur-fast) var(--ease-out-quart),
+    box-shadow var(--dur-fast) var(--ease-out-quart), border-color var(--dur-fast) var(--ease-standard); }
+.mh-hero-prompt:hover { transform: translateY(-2px); box-shadow: var(--mh-shadow-lg);
+  border-color: color-mix(in srgb, var(--primary) 34%, var(--mh-line)); }
+.mh-hero-prompt:active { transform: scale(0.97); }
+
+/* the docked composer region: contextual suggestions stacked above the bar,
+   with a soft fade so the thread reads as scrolling *under* the bar */
+.mh-dock { flex: none; display: flex; flex-direction: column; align-items: center; gap: 11px;
+  padding: 10px 12px calc(12px + env(safe-area-inset-bottom));
+  background: linear-gradient(to top, var(--mh-bg) 64%, transparent); }
+/* mobile: one tidy horizontal-scroll row (no 6-row stack); desktop: centred wrap */
+.mh-suggest { display: flex; flex-wrap: nowrap; overflow-x: auto; gap: 8px; width: 100%; max-width: 48rem;
+  scrollbar-width: none; padding-bottom: 1px; }
+.mh-suggest::-webkit-scrollbar { height: 0; }
+@media (min-width: 768px) { .mh-suggest { flex-wrap: wrap; justify-content: center; overflow: visible; } }
+
+/* summon rail — quiet icons that bloom the panels; horizontal on mobile,
+   a slim vertical rail on desktop (replaces the old word-tab sidebar) */
+.mh-summon { display: flex; gap: 4px; }
+@media (min-width: 768px) { .mh-summon { flex-direction: column; } }
+.mh-summon-btn { display: flex; flex-direction: column; align-items: center; gap: 4px; width: 62px; padding: 9px 4px;
+  border: none; background: transparent; color: var(--mh-ink-3); border-radius: 14px; cursor: pointer;
+  font: 700 10px/1.1 var(--font, inherit); transition: background var(--dur-fast) var(--ease-standard), color var(--dur-fast) var(--ease-standard); }
+.mh-summon-btn:hover { background: var(--mh-fill); color: var(--mh-ink); }
+.mh-summon-btn.on { background: color-mix(in srgb, var(--primary) 13%, transparent); color: var(--mh-tint-ink); }
+.mh-summon-btn:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+
+/* right slide-over sheet — Summary / Record / Me bloom over the canvas */
+.mh-sheet-scrim { position: fixed; inset: 0; z-index: 40; background: color-mix(in srgb, var(--mh-ink) 34%, transparent);
+  backdrop-filter: blur(2px); animation: mh-fade var(--dur-base) ease both; }
+.mh-sheet { position: fixed; top: 0; right: 0; z-index: 41; height: 100dvh; width: min(560px, 94vw);
+  background: var(--mh-bg); box-shadow: -30px 0 90px -40px rgba(0, 0, 0, 0.55); display: flex; flex-direction: column;
+  animation: mh-slide-in var(--dur-slow) var(--ease-out-quart) both; }
+.mh-sheet-head { flex: none; display: flex; align-items: center; justify-content: space-between;
+  padding: 15px 18px; font: 800 15px/1 var(--font, inherit); color: var(--mh-ink); border-bottom: 1px solid var(--mh-line); }
+.mh-sheet-x { display: grid; place-items: center; width: 36px; height: 36px; border: none; background: var(--mh-fill);
+  color: var(--mh-ink-2); border-radius: 50%; cursor: pointer; transition: color var(--dur-fast) var(--ease-standard); }
+.mh-sheet-x:hover { color: var(--mh-ink); }
+.mh-sheet-body { flex: 1; overflow-y: auto; padding: 18px; scrollbar-width: none; }
+.mh-sheet-body::-webkit-scrollbar { width: 0; }
+@keyframes mh-slide-in { from { transform: translateX(26px); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes mh-fade { from { opacity: 0; } to { opacity: 1; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .mh-hero, .mh-sheet, .mh-sheet-scrim { animation: none; }
+  .mh-hero-prompt { transition: none; }
+  .mh-hero-prompt:hover, .mh-hero-prompt:active { transform: none; }
+  @keyframes mh-slide-in { from {} to {} }
 }
